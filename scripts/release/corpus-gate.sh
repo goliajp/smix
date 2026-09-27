@@ -190,6 +190,19 @@ cleanup() {
                 | sed 's/.*takeScreenshot: *//' | sort -u); do
     rm -f "$REPO_ROOT/$shot"
   done
+  # The runner's own log, beside the flows' — the other side of every
+  # request. A step that "was sent and no answer came back" cannot be told
+  # from the host alone: CI once had only the host's half. `runner up`
+  # names the file, as `Log: <path>.` on a cold start and `log <path>,`
+  # on a warm one; copied after `down` so the stop is in it too.
+  local runner_log
+  runner_log="$(grep -oE '[Ll]og:? /[^ ,]+\.log' "$LOG_DIR/runner-up.log" 2>/dev/null \
+    | head -1 | sed -E 's/^[Ll]og:? //')"
+  if [ -n "$runner_log" ] && [ -f "$runner_log" ]; then
+    cp "$runner_log" "$LOG_DIR/runner.log"
+  else
+    echo "corpus gate: WARNING — no runner log to keep (runner up named '${runner_log:-nothing}')"
+  fi
   # Diagnostic dump AFTER runner down — captures the last observed state.
   "$SMIX_BIN" diagnostic dump --json \
     > "$LOG_DIR/diagnostic-dump.json" 2>/dev/null || true
