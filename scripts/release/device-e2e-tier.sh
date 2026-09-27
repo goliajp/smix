@@ -49,7 +49,11 @@ e2e_state() {
 #
 # Separated from the running so it can be checked without a simulator.
 # Reads lines on stdin, one script per line: `<name> <drove|skip|fail>`.
+# `$1`, when given, names the leg ("on API 36"): it follows the verdict and
+# each named script, so the two legs cannot be read as one.
 e2e_verdict() {
+  local leg="${1:-}" tag=""
+  [ -n "$leg" ] && tag=" (${leg#on })"
   local drove=0 skipped=0 failed=0
   local -a skips=() fails=()
   local name state
@@ -64,26 +68,66 @@ e2e_verdict() {
 
   local total=$((drove + skipped + failed))
   if [ "$total" -eq 0 ]; then
-    echo "device-e2e-tier: NOTHING DRIVEN — no scripts were run at all"
+    echo "device-e2e-tier: NOTHING DRIVEN${leg:+ $leg} — no scripts were run at all"
     return 1
   fi
 
-  for f in "${fails[@]+"${fails[@]}"}"; do echo "  - FAIL $f"; done
-  for s in "${skips[@]+"${skips[@]}"}"; do echo "  - skip $s"; done
+  for f in "${fails[@]+"${fails[@]}"}"; do echo "  - FAIL $f$tag"; done
+  for s in "${skips[@]+"${skips[@]}"}"; do echo "  - skip $s$tag"; done
 
   if [ "$drove" -eq 0 ]; then
     # The case this script exists for. Every script skipped, every one
     # exited 0, and the loop that ran them would have reported success
     # while driving nothing.
-    echo "device-e2e-tier: NOTHING DRIVEN — $skipped skipped, $failed failed of $total"
+    echo "device-e2e-tier: NOTHING DRIVEN${leg:+ $leg} — $skipped skipped, $failed failed of $total"
     return 1
   fi
   if [ "$failed" -gt 0 ]; then
-    echo "device-e2e-tier: FAILED — $drove drove, $skipped skipped, $failed failed of $total"
+    echo "device-e2e-tier: FAILED${leg:+ $leg} — $drove drove, $skipped skipped, $failed failed of $total"
     return 1
   fi
-  echo "device-e2e-tier: DROVE $drove/$total — $skipped skipped"
+  echo "device-e2e-tier: DROVE $drove/$total${leg:+ $leg} — $skipped skipped"
   return 0
+}
+
+# The scripts run a second time on API 36, after the main leg.
+#
+# The main leg's Android device is API 33, and until 2026-09-27 no gate
+# had run on anything newer. A consumer drives API 36 (google_apis with
+# Gboard), where the system draws apps edge to edge and the keyboard is a
+# window of its own, and the first run there found a tap that the status
+# bar took. These are the scripts whose subject changes with the API
+# level: keyboard, windows, where a tap lands, typing, a watch for a
+# flash. Each has an Android leg and takes its device from E2E_ANDROID,
+# except v2.14-c2, which takes the serial (SMIX_ANDROID_SERIAL).
+API36_E2E="v11.0-c8-something-appeared-between-e2e
+v11.0-c9e-an-empty-field-holds-nothing-e2e
+v11.0-c9h-focus-after-enter-e2e
+v11.0-c9i-keyboard-beside-the-probe-e2e
+v11.0-c9m-a-field-that-submits-itself-e2e
+v2.14-c2-android-clear-e2e"
+
+# api36_list_check [list] — every name on the list is a script here that
+# can be pointed at another Android device. A renamed script would
+# otherwise drop out of the leg in silence, which is the departure a walk
+# over the list cannot see.
+api36_list_check() {
+  local list="${1:-$API36_E2E}" name f bad=0 n=0
+  while read -r name; do
+    [ -z "$name" ] && continue
+    n=$((n + 1))
+    f="$ROOT/scripts/dev/$name.sh"
+    if [ ! -f "$f" ]; then
+      echo "API 36 list names $name, and there is no scripts/dev/$name.sh"
+      bad=1
+    elif ! grep -qE 'E2E_ANDROID|SMIX_ANDROID_SERIAL' "$f"; then
+      echo "API 36 list names $name, which takes its Android device from neither E2E_ANDROID nor SMIX_ANDROID_SERIAL"
+      bad=1
+    fi
+  done <<< "$list"
+  [ "$n" -gt 0 ] || { echo "API 36 list is empty"; return 1; }
+  [ "$bad" = 0 ] || return 1
+  echo "API 36 list is whole — $n scripts"
 }
 
 # shellcheck source=../lib/e2e-devices.sh
@@ -113,6 +157,42 @@ if [ "${1:-}" = "--selftest" ]; then
   check "a failure is not hidden by skips" 1 "FAIL b" "$(printf 'a skip\nb fail\nc skip')"
   check "a skipped script is named" 0 "skip b" "$(printf 'a drove\nb skip')"
   check "nothing at all" 1 "NOTHING DRIVEN" ""
+  # The API 36 leg is counted on its own, under its own name, by the same
+  # rules: a leg that skipped everything drove nothing on API 36, however
+  # green the main leg was.
+  check36() { # label expected-exit expected-substring input
+    local out rc
+    out="$(printf '%s\n' "$4" | e2e_verdict "on API 36")" && rc=0 || rc=$?
+    if [ "$rc" -ne "$2" ]; then
+      echo "device-e2e-tier selftest: $1 — exit $rc, wanted $2" >&2
+      fails=$((fails + 1))
+    fi
+    case "$out" in
+      *"$3"*) ;;
+      *) echo "device-e2e-tier selftest: $1 — output lacks '$3': $out" >&2
+         fails=$((fails + 1)) ;;
+    esac
+  }
+  check36 "API 36: everything drove" 0 "DROVE 2/2 on API 36" "$(printf 'a drove\nb drove')"
+  check36 "API 36: everything skipped" 1 "NOTHING DRIVEN on API 36" "$(printf 'a skip\nb skip')"
+  check36 "API 36: one failed" 1 "FAILED on API 36" "$(printf 'a drove\nb fail')"
+  check36 "API 36: the failure is named" 1 "FAIL b (API 36)" "$(printf 'a drove\nb fail')"
+  list_check() { # label expected-exit expected-substring [list]
+    local out rc
+    out="$(api36_list_check "${4:-}")" && rc=0 || rc=$?
+    if [ "$rc" -ne "$2" ]; then
+      echo "device-e2e-tier selftest: $1 — exit $rc, wanted $2: $out" >&2
+      fails=$((fails + 1))
+    fi
+    case "$out" in
+      *"$3"*) ;;
+      *) echo "device-e2e-tier selftest: $1 — output lacks '$3': $out" >&2
+         fails=$((fails + 1)) ;;
+    esac
+  }
+  list_check "the API 36 list as written" 0 "API 36 list is whole"
+  list_check "a name with no script" 1 "no scripts/dev/v0-gone-e2e.sh" "v0-gone-e2e"
+  list_check "a script that cannot be pointed at API 36" 1 "neither E2E_ANDROID" "v2.7-c1-tap-hit-e2e"
 
   # The classification itself, which is where the reading used to be
   # wrong. Each of these was a real misreading: a passing script whose
@@ -158,7 +238,7 @@ if [ "${1:-}" = "--selftest" ]; then
     echo "device-e2e-tier selftest: FAIL ($fails)" >&2
     exit 1
   fi
-  echo "device-e2e-tier selftest: 16 cases pass — a count, a verdict, what each exit code means, and whether a screen can show an app"
+  echo "device-e2e-tier selftest: 23 cases pass — a count, a verdict for each leg, the API 36 list, what each exit code means, and whether a screen can show an app"
   exit 0
 fi
 
@@ -189,26 +269,100 @@ if [ -n "$problem" ]; then
   exit 1
 fi
 
-results=""
-for e2e in "$ROOT"/scripts/dev/*-e2e.sh; do
+# run_one <script> <leg-label> — run one script, log it, print `<name> <state>`.
+run_one() {
+  local e2e="$1" leg="$2" name out rc state log
   name="$(basename "$e2e" .sh)"
-  echo "device-e2e-tier: [$name] running..." >&2
+  log="/tmp/device-e2e-$name${leg:+-api36}.log"
+  echo "device-e2e-tier: [$name]${leg:+ ($leg)} running..." >&2
   out="$(bash "$e2e" 2>&1)" && rc=0 || rc=$?
-  printf '%s\n' "$out" > "/tmp/device-e2e-$name.log"
-
+  printf '%s\n' "$out" > "$log"
   state="$(e2e_state "$rc")"
-  echo "device-e2e-tier: [$name] $state" >&2
-  results="$results$name $state"$'\n'
-  # A device that stopped being able to show anything fails every script
-  # after it, each about its own step. Stop at the first, with the cause.
-  if [ "$state" = fail ]; then
-    problem="$(android_problem)"
-    if [ -n "$problem" ]; then
-      printf '%s' "$results" | e2e_verdict || true
-      echo "device-e2e-tier: STOPPED after [$name] — $problem"
-      exit 1
-    fi
-  fi
-done
+  echo "device-e2e-tier: [$name]${leg:+ ($leg)} $state" >&2
+  echo "$name $state"
+}
 
-printf '%s' "$results" | e2e_verdict
+main_rc=0
+if [ "${SMIX_TIER_ONLY:-}" != api36 ]; then
+  results=""
+  for e2e in "$ROOT"/scripts/dev/*-e2e.sh; do
+    line="$(run_one "$e2e" "")"
+    results="$results$line"$'\n'
+    # A device that stopped being able to show anything fails every script
+    # after it, each about its own step. Stop at the first, with the cause.
+    if [ "${line##* }" = fail ]; then
+      problem="$(android_problem)"
+      if [ -n "$problem" ]; then
+        printf '%s' "$results" | e2e_verdict || true
+        echo "device-e2e-tier: STOPPED after [${line% *}] — $problem"
+        exit 1
+      fi
+    fi
+  done
+  printf '%s' "$results" | e2e_verdict || main_rc=1
+fi
+
+# ---- the API 36 leg ----------------------------------------------------
+#
+# After the main leg, never beside it: two emulators and a simulator at
+# once is load the machine's other users feel. The AVD is booted through
+# smix, so the ledger records who booted it, and shut down through smix
+# only when this leg booted it — a 36 that was already running is used
+# and left as it was found.
+# SMIX_TIER_ONLY=api36 runs this leg alone.
+api36_rc=0
+API36_AVD="$E2E_ANDROID_36"   # scripts/lib/e2e-devices.sh
+list_said="$(api36_list_check)" || { echo "device-e2e-tier: $list_said"; exit 1; }
+api36_booted=0
+api36_down() {
+  if [ "$api36_booted" = 1 ]; then
+    "$SMIX" sim shutdown "$API36_AVD" >/dev/null 2>&1 \
+      || echo "device-e2e-tier: warning: could not shut down $API36_AVD" >&2
+  fi
+}
+trap api36_down EXIT
+
+api36_serial="$("$SMIX" sim resolve "$API36_AVD" 2>/dev/null | tail -1 | tr -d '[:space:]')" || api36_serial=""
+if [ -z "$api36_serial" ] || ! adb -s "$api36_serial" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; then
+  echo "device-e2e-tier: booting $API36_AVD for the API 36 leg" >&2
+  if ! "$SMIX" sim boot "$API36_AVD" >/tmp/device-e2e-api36-boot.log 2>&1; then
+    echo "device-e2e-tier: FAILED on API 36 — could not boot $API36_AVD: $(tail -3 /tmp/device-e2e-api36-boot.log)"
+    exit 1
+  fi
+  api36_booted=1
+  api36_serial="$("$SMIX" sim resolve "$API36_AVD" 2>/dev/null | tail -1 | tr -d '[:space:]')"
+fi
+case "$api36_serial" in
+  emulator-*) : ;;
+  *) echo "device-e2e-tier: FAILED on API 36 — $API36_AVD resolves to '$api36_serial', not an emulator"; exit 1 ;;
+esac
+for _ in $(seq 1 90); do
+  adb -s "$api36_serial" shell getprop sys.boot_completed 2>/dev/null | grep -q 1 && break
+  sleep 2
+done
+problem36="$(e2e_android_screen_problem_of "$api36_serial")"
+if [ -n "$problem36" ]; then
+  echo "device-e2e-tier: FAILED on API 36 — $API36_AVD ($api36_serial): $problem36"
+  exit 1
+fi
+
+# The list is read on fd 3 and each script gets /dev/null on stdin: a
+# script's adb or ssh reads stdin, and on the first run of this leg the
+# first script swallowed the rest of the list, so one ran of six.
+# SMIX_C8_PLATFORMS=android: c8's iOS legs would repeat the main leg's.
+results36=""
+while read -r name <&3; do
+  [ -z "$name" ] && continue
+  line="$(SMIX_E2E_ANDROID="$API36_AVD" SMIX_ANDROID_SERIAL="$api36_serial" SMIX_C8_PLATFORMS=android \
+    run_one "$ROOT/scripts/dev/$name.sh" "API 36" </dev/null)"
+  results36="$results36$line"$'\n'
+done 3<<< "$API36_E2E"
+n_ran="$(printf '%s' "$results36" | grep -c .)"
+n_listed="$(printf '%s\n' "$API36_E2E" | grep -c .)"
+if [ "$n_ran" != "$n_listed" ]; then
+  echo "device-e2e-tier: FAILED on API 36 — $n_listed scripts listed, $n_ran ran"
+  api36_rc=1
+fi
+printf '%s' "$results36" | e2e_verdict "on API 36" || api36_rc=1
+
+[ "$main_rc" = 0 ] && [ "$api36_rc" = 0 ]
