@@ -18,7 +18,7 @@ to a Compose root other than the one the opt-in was set on" is the actual
 reason, and it holds in an app nobody here has seen.
 
 Usage:
-  two-paths-agree.py --device emulator-5554 [--port 22095] [--app dev.smix.fixture]
+  two-paths-agree.py --device <serial> --port <runner port> [--app dev.smix.fixture]
   two-paths-agree.py --a11y a11y.json --semantics probe.json
   two-paths-agree.py --prove-differences-exhibited ...   (also require each
                                                           rule to match)
@@ -515,7 +515,7 @@ def state_agrees(a11y_tree, sem_roots, focus_tag):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device")
-    ap.add_argument("--port", default="22095")
+    ap.add_argument("--port", required=True, help="the port of the runner the caller brought up")
     ap.add_argument("--app", default="dev.smix.fixture")
     # Default: the one resolver's answer (this tree's debug build unless
     # SMIX_BIN names another). It was `./target/release/smix`, relative to

@@ -19,7 +19,7 @@ is a rule nobody has checked, and this one guards against a capability that
 would look like an improvement right up until a release went out on it.
 
 Usage:
-  a-semantics-action-is-not-a-touch.py --device emulator-5554 --port 22095
+  a-semantics-action-is-not-a-touch.py --device <serial> --port <runner port>
 """
 
 import argparse
@@ -107,7 +107,7 @@ def smix(binary, device, port, *args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", required=True)
-    ap.add_argument("--port", default="22095")
+    ap.add_argument("--port", required=True, help="the port of the runner the caller brought up")
     # This tree's binary unless SMIX_BIN names another (e2e-binary.sh);
     # it was `./target/release/smix`, relative to the caller's directory.
     ap.add_argument("--binary")

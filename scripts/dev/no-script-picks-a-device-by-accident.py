@@ -18,11 +18,16 @@ device. A script that touches no device is not this gate's business and
 says so by not matching the touch patterns at all.
 """
 
+from __future__ import annotations
+
+import ast
 import os
 import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from _shell_lines import code_lines  # noqa: E402
 # `SMIX_GATE_ROOT` lets the harness point this at a fixture tree. Without
 # it the only tree this gate has ever judged is the one it lives in, and
 # every accident it exists to catch has been removed from that tree.
@@ -45,6 +50,70 @@ TOUCHES = re.compile(
 # sight in the same move: they stopped spelling `adb`, so they stopped
 # looking like scripts that touch a device. A set you walk cannot show you
 # something leaving it.
+# A shell line that only says something: the words may name a command
+# without running it.
+SPEECH = re.compile(r"^\s*(log|echo|printf|step|fail|bad|ok|cannot_judge|note|say|die|warn)\b")
+# The subcommands that reach a device, for an argv written as a list.
+ADB_VERBS = {"shell", "install", "emu", "forward", "uninstall", "push", "pull"}
+# The calls that run a process from a command string.
+RUNS_A_PROCESS = {"run", "Popen", "check_output", "check_call", "call", "system",
+                  "popen", "getoutput", "getstatusoutput"}
+
+
+def shell_touches(body: str) -> bool:
+    """A command line that runs adb against a device: code, not words about it.
+
+    Lines inside a string, a heredoc or a comment are not commands, and a
+    `log` / `echo` of one is a sentence. The whole text used to be read, so
+    a gate whose error message said "an adb forward can hold it" was taken
+    for a script that drives a device.
+    """
+    return any(TOUCHES.search(ln) for _, ln in code_lines(body) if not SPEECH.match(ln))
+
+
+def _text(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(v.value if isinstance(v, ast.Constant) else "X" for v in node.values)
+    return None
+
+
+def python_touches(body: str) -> bool:
+    """An adb argv in the program, or an adb command line handed to a call.
+
+    An argv is a list or tuple literal whose first element is "adb" and
+    which names a device verb — wherever it is written, since it is built
+    to be run (`cmd = ["adb", ...]; run(cmd)`). A string counts only as the
+    command of a call that runs a process (`run("adb shell ...",
+    shell=True)`): the same words in a docstring, or in a message handed to
+    `print` or `append`, run nothing.
+    """
+    try:
+        tree = ast.parse(body)
+    except SyntaxError:
+        return bool(TOUCHES.search(body))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.List, ast.Tuple)) and node.elts and _text(node.elts[0]) == "adb":
+            words = {_text(e) for e in node.elts[1:]}
+            if words & ADB_VERBS:
+                return True
+        if isinstance(node, ast.Call):
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+            if name not in RUNS_A_PROCESS:
+                continue
+            for arg in [*node.args, *(k.value for k in node.keywords)]:
+                t = _text(arg)
+                if t is not None and TOUCHES.search(t):
+                    return True
+    return False
+
+
+def touches(name: str, body: str) -> bool:
+    return python_touches(body) if name.endswith(".py") else shell_touches(body)
+
+
 IMPORTS_A_TOUCHER = re.compile(r"^\s*(?:from|import)\s+(_[a-z_]+)", re.M)
 
 # A module with no entry point is imported, never run. It has no argv to
@@ -101,7 +170,6 @@ NOT_A_SUBJECT = {
     "adb-guard.test.sh": "feeds adb command lines to the guard under test; it runs none of them",
     "an-e2e-leaves-the-phones-alone.test.py": "writes shell lines into scratch files for the phones gate to judge; it runs none of them",
     "hook-command.test.py": "same — the strings are the guard's inputs, not commands",
-    "gate-port-scan.py": "reads scripts; `adb forward` is in its message about what can hold a port, not a command it runs",
     "no-script-picks-a-device-by-accident.test.py": "this gate's own harness: its fixtures ARE the accidents, written down to be refused",
     "no-script-picks-a-device-by-accident.py": "this gate: its patterns spell the accidents in order to find them",
     "v4.1-c1-android-payload-e2e.sh": "its serial is emulator-9999, one nobody can hold: the check is what smix says about a device that is not there",
@@ -126,8 +194,8 @@ def main() -> int:
             code = "\n".join(l for l in body.splitlines() if not l.lstrip().startswith("#"))
             imported = {m for m in IMPORTS_A_TOUCHER.findall(code)
                         if os.path.exists(os.path.join(base, m + ".py"))
-                        and TOUCHES.search(open(os.path.join(base, m + ".py"),
-                                               encoding="utf-8").read())}
+                        and python_touches(open(os.path.join(base, m + ".py"),
+                                                encoding="utf-8").read())}
             rel = f"{d}/{name}"
             # A serial written as a default is a guess whether or not this
             # file drives the device itself. ship.sh never touched one, so
@@ -137,7 +205,7 @@ def main() -> int:
             # The accident lives in whoever chose, so it is looked for in
             # every file, not only in the ones that go on to use it.
             handed_down = [why for pat, why in ACCIDENTS if pat.search(code)]
-            if not TOUCHES.search(code) and not imported:
+            if not touches(name, body) and not imported:
                 # Only a written-down serial is handed on. Listing what adb
                 # sees is how the picker itself works before it asks the
                 # ledger, and a file that does not drive a device is not

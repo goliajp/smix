@@ -49,6 +49,13 @@ PORT="$SMIX_RUNNER_PORT"
 "$SMIX" runner up "$UDID" --runner-port "$PORT"
 """
 
+# A Python gate that attaches to its caller's runner, so the scan's Python
+# half has a member in every fixture tree; cases about Python replace it.
+PY_TAKER = """import argparse
+ap = argparse.ArgumentParser()
+ap.add_argument("--port", required=True)
+"""
+
 CASES = [
     (
         "a literal default behind an override whose name has digits",
@@ -157,6 +164,31 @@ REMOTE_CASES = [
      False, "clean"),
 ]
 
+# The Python half: a port the caller gives, or none at all.
+PY_CASES = [
+    ("a python gate defaulting its port to a literal",
+     'import argparse\nap = argparse.ArgumentParser()\nap.add_argument("--port", default="22095")\n',
+     True, "attach-gate.py:3: --port defaults to 22095"),
+    ("a python proxy defaulting where it listens",
+     'import argparse\nap = argparse.ArgumentParser()\nap.add_argument("--port", required=True)\n'
+     'ap.add_argument("--listen", type=int, default=28090)\n',
+     True, "--listen defaults to 28090"),
+    ("a python gate falling back to the default port",
+     'import argparse, os\nap = argparse.ArgumentParser()\nap.add_argument("--port", required=True)\n'
+     'P = os.environ.get("SMIX_RUNNER_PORT", "22087")\n',
+     True, "falls back to port 22087 when SMIX_RUNNER_PORT is unset"),
+    ("a python gate starting a runner with no port",
+     PY_TAKER + 'import subprocess\nsubprocess.run(["smix", "runner", "up", "U"])\n',
+     True, "starts a runner without --runner-port"),
+    ("a python gate starting a runner on a port it names",
+     PY_TAKER + 'import subprocess\nsubprocess.run(["smix", "runner", "up", "U", "--runner-port", P])\n',
+     False, "clean"),
+    ("a literal in a python string is not a default",
+     PY_TAKER + 'USAGE = "attach-gate.py --port 22095"\n', False, "clean"),
+    ("no python gate takes a port from its caller",
+     'print("nothing")\n', True, "the Python half is reading air"),
+]
+
 # The caller-side half: a literal that reaches a correct gate through
 # whoever runs it is the same fixed socket, one step further away.
 CALLER_CASES = [
@@ -170,8 +202,8 @@ CALLER_CASES = [
 ]
 
 
-def run(gate_body: str, caller_body: str = CALLER):
-    """Run the scan over a fixture tree containing exactly these two scripts."""
+def run(gate_body: str, caller_body: str = CALLER, py_body: str = PY_TAKER):
+    """Run the scan over a fixture tree: these two scripts and one Python gate."""
     with tempfile.TemporaryDirectory() as root:
         dev = os.path.join(root, "scripts", "dev")
         lib = os.path.join(root, "scripts", "lib")
@@ -186,6 +218,8 @@ def run(gate_body: str, caller_body: str = CALLER):
             fh.write(gate_body)
         with open(os.path.join(dev, "run-the-gates.sh"), "w") as fh:
             fh.write(caller_body)
+        with open(os.path.join(dev, "attach-gate.py"), "w") as fh:
+            fh.write(py_body)
         # The scan reads ROOT from its own location: put it where the
         # fixture's scripts/ is the one it walks.
         gate = os.path.join(dev, "gate-port-scan.py")
@@ -223,6 +257,13 @@ def main() -> int:
     for name, body, must_refuse, expected in REMOTE_CASES:
         failures += judge(name, run(body), must_refuse, expected)
 
+    for name, py, must_refuse, expected in PY_CASES:
+        failures += judge(name, run(ASKS_THE_OS, CALLER, py), must_refuse, expected)
+
+    failures += judge("a caller handing a python gate a literal port",
+                      run(ASKS_THE_OS, CALLER + 'python3 scripts/dev/attach-gate.py --port 22095\n'),
+                      True, "hands a runner-driving script a literal port")
+
     # The floor. A tree with no runner in it must be a failure and not a
     # clean verdict: this scan's own history is two ways of seeing
     # nothing and calling it agreement.
@@ -238,7 +279,7 @@ def main() -> int:
             print(f"  - {f}")
         return 1
     print(
-        f"gate-port-scan.test: {len(CASES) + len(CALLER_CASES) + len(TALK_CASES) + len(REMOTE_CASES) + 1} cases pass — "
+        f"gate-port-scan.test: {len(CASES) + len(CALLER_CASES) + len(TALK_CASES) + len(REMOTE_CASES) + len(PY_CASES) + 2} cases pass — "
         f"a pinned literal, a prefixed invocation and an empty tree are each judged"
     )
     return 0

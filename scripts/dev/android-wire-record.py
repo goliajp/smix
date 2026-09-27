@@ -10,7 +10,7 @@ Instrument, not product — it lives in scripts/dev/ and nothing in
 crates/ knows it exists.
 
 Usage:
-  android-wire-record.py --listen 28090 --forward 28080 --out /tmp/wire.jsonl
+  android-wire-record.py --listen <proxy port> --forward <runner port> --out /tmp/wire.jsonl
 """
 
 import argparse
@@ -26,7 +26,7 @@ RECORDED_RESPONSE_HEADERS = ("X-View-Id-Match",)
 
 
 class Recorder(http.server.BaseHTTPRequestHandler):
-    forward_port = 28080
+    forward_port = 0
     out_path = "/tmp/smix-wire.jsonl"
     lock = threading.Lock()
 
@@ -102,8 +102,8 @@ class Recorder(http.server.BaseHTTPRequestHandler):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--listen", type=int, default=28090)
-    ap.add_argument("--forward", type=int, default=28080)
+    ap.add_argument("--listen", type=int, required=True, help="the port the flow talks to")
+    ap.add_argument("--forward", type=int, required=True, help="the port of the runner")
     ap.add_argument("--out", default="/tmp/smix-wire.jsonl")
     args = ap.parse_args()
 

@@ -104,6 +104,42 @@ def run_with(script_body, extra=None):
         return subprocess.run([sys.executable, GATE], capture_output=True, text=True, env=env)
 
 
+# Words about a command are not the command. Each case sits beside a script
+# that deliberately touches a device, so the floor rule is satisfied and a
+# pass means the words were not read as a touch.
+TOUCHES_NO_SOURCE = "touches a device and neither asks the ledger"
+WORDS_CASES = [
+    ("a shell message naming adb forward",
+     {"probe.sh": 'fail "an adb forward can hold the port"\n'}, False, "clean"),
+    ("a heredoc naming adb shell",
+     {"probe.sh": 'cat <<EOF\nrun: adb -s X shell echo\nEOF\n'}, False, "clean"),
+    ("a python message naming adb forward",
+     {"probe.py": 'problems = []\nproblems.append(f"{p} pins a port. An adb forward or another checkout")\nif __name__ == "__main__":\n    pass\n'},
+     False, "clean"),
+    ("a python docstring naming an argv",
+     {"probe.py": '"""Writes `subprocess.run(["adb", "-s", serial, "shell"])`."""\nif __name__ == "__main__":\n    pass\n'}, False, "clean"),
+    ("a shell adb forward with no source for its device",
+     {"probe.sh": 'adb -s "$X" forward tcp:1 tcp:2\n'}, True, TOUCHES_NO_SOURCE),
+    ("a python argv built before it is run",
+     {"probe.py": 'import subprocess\ncmd = ["adb", "-s", X, "forward", "tcp:1", "tcp:2"]\nsubprocess.run(cmd)\nif __name__ == "__main__":\n    pass\n'},
+     True, TOUCHES_NO_SOURCE),
+    ("a python command string run through a shell",
+     {"probe.py": 'import subprocess\nsubprocess.run(f"adb -s {X} shell echo", shell=True)\nif __name__ == "__main__":\n    pass\n'},
+     True, TOUCHES_NO_SOURCE),
+]
+
+
+def run_files(files):
+    with tempfile.TemporaryDirectory() as root:
+        d = os.path.join(root, "scripts", "dev")
+        os.makedirs(d)
+        for n, b in {"deliberate.sh": DELIBERATE_SCRIPT, **files}.items():
+            with open(os.path.join(d, n), "w") as fh:
+                fh.write(b)
+        env = dict(os.environ, SMIX_GATE_ROOT=root)
+        return subprocess.run([sys.executable, GATE], capture_output=True, text=True, env=env)
+
+
 def main() -> int:
     failures = []
     for name, body, must_refuse in CASES:
@@ -115,6 +151,15 @@ def main() -> int:
             failures.append(f"{name}: refused a deliberate choice\n{r.stdout}")
         else:
             print(f"  {name} → {'refused' if refused else 'allowed'}")
+
+    for name, files, must_refuse, expected in WORDS_CASES:
+        r = run_files(files)
+        said = r.stdout + r.stderr
+        if (r.returncode != 0) != must_refuse or expected not in said:
+            failures.append(f"{name}: expected {'a refusal' if must_refuse else 'a pass'} "
+                            f"saying {expected!r}\n{said}")
+        else:
+            print(f"  {name} → {'refused' if must_refuse else 'allowed'}")
 
     # The floor: a tree that touches nothing must not read as clean.
     r = run_with("#!/usr/bin/env bash\necho hello\n")
@@ -142,7 +187,7 @@ def main() -> int:
             print(f"  - {f}")
         return 1
     print(f"no-script-picks-a-device-by-accident.test: "
-          f"{len(CASES) + len(IMPORT_CASES) + 1} cases pass")
+          f"{len(CASES) + len(IMPORT_CASES) + len(WORDS_CASES) + 1} cases pass")
     return 0
 
 
