@@ -21,7 +21,8 @@ pub struct RunnerState {
     /// Port the runner's HTTP server answers on.
     pub port: u16,
     /// Where `xcodebuild`'s output is being written. `None` for a runner
-    /// recorded before the ledger carried it.
+    /// recorded before the ledger carried it, or whose row an older smix
+    /// rewrote without it.
     pub log: Option<PathBuf>,
     /// Target bundle the runner's XCUIApplication is bound to (None =
     /// runner default, com.apple.Preferences).
@@ -2338,15 +2339,7 @@ pub fn supervise(root: &Path, port: u16, runner_project: Option<&Path>) -> Resul
              run `smix runner up <device> --bundle <id>` first"
                 )
             })?;
-    // A runner recorded before the ledger carried its log has nothing
-    // to tail. Saying so is better than tailing a path nobody wrote.
-    let log_path = st.log.clone().ok_or_else(|| {
-        format!(
-            "the runner on port {} was recorded before its log path was; \
-             `smix runner cycle` it so the record carries one",
-            st.port
-        )
-    })?;
+    let log_path = crate::runner_log::runner_output(&st)?;
     let port = st.port;
     println!(
         "smix runner supervise: attached\n  udid={} port={} log={}",
