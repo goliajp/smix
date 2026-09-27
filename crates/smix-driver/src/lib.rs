@@ -512,7 +512,7 @@ impl IosDriver {
                 // runner reports what the tapped point turned out to be
                 // inside, and that is only worth anything next to what
                 // was aimed at.
-                Ok(coord) => {
+                Ok(_) => {
                     let node = resolve_selector(&tree, selector);
                     // Found, and out of reach. A modal leaves what is behind
                     // it in the tree and swallows touches aimed there, so
@@ -538,12 +538,17 @@ impl IosDriver {
                         ));
                     }
                     // Where a touch reaches it, which is not its centre when
-                    // the keyboard or the status bar is over that.
-                    let first = aim_in(&tree, selector)?.unwrap_or((
-                        coord.0,
-                        coord.1,
-                        node.map(hit_element),
-                    ));
+                    // the keyboard or the status bar is over that. Read by
+                    // the same rule as every re-reading below: a target that
+                    // shows nowhere is not on screen yet, and its centre is
+                    // not a place to touch.
+                    let Some(first) = aim_in(&tree, selector)? else {
+                        if start.elapsed() > timeout {
+                            return Err(element_not_found(&tree, selector));
+                        }
+                        sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
+                        continue;
+                    };
                     // Aimed only at a target that has stopped moving: this
                     // tree may be a frame of an entrance still under way.
                     // iOS frames are in points.
