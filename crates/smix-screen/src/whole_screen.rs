@@ -50,10 +50,18 @@ pub fn beside_other_windows(
     let windows = std::mem::take(&mut root.children);
     let mut place = None;
     let mut focused = false;
+    let mut layer: Option<i32> = None;
+    let mut touchable = None;
     for w in windows {
         if is_the_apps(&w, app.as_deref()) {
             place.get_or_insert(root.children.len());
-            focused |= w.window.as_ref().is_some_and(|i| i.focused);
+            let info = w.window.as_ref();
+            focused |= info.is_some_and(|i| i.focused);
+            // The probe's tree stands where the app's topmost window stood.
+            if info.and_then(|i| i.layer) >= layer {
+                layer = info.and_then(|i| i.layer);
+                touchable = info.and_then(|i| i.touchable);
+            }
         } else {
             root.children.push(w);
         }
@@ -64,6 +72,8 @@ pub fn beside_other_windows(
         // No window of the app listed means the reader has not caught up
         // with it; the probe answered, so it is the app in front.
         focused: focused || place.is_none(),
+        layer,
+        touchable,
     });
     let at = place.unwrap_or(root.children.len());
     root.children.insert(at, app_tree);

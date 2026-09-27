@@ -62,6 +62,7 @@
 #![doc(html_root_url = "https://docs.smix.dev/smix-host-coord-resolver")]
 
 mod reach;
+mod uncovered;
 
 pub use reach::{
     MAX_RECENTER, NormBox, Reach, Verdict, near_center, norm_box, verdict, visible_share,
@@ -70,6 +71,7 @@ use smix_screen::A11yNode;
 use smix_selector::Selector;
 use smix_selector_resolver::resolve_selector;
 use thiserror::Error;
+pub use uncovered::{Cover, Covering, Touchable, touch_point};
 
 /// Errors returned by [`resolve_to_norm_coord`].
 #[derive(Debug, Error, PartialEq)]

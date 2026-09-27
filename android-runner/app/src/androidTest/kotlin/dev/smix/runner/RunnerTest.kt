@@ -2289,7 +2289,7 @@ object TreeBuilder {
                 TreeWire.roleForWindowType(window.type)?.let { obj.put("role", it) }
                 obj.put(
                     "window",
-                    TreeWire.windowJson(window.type, pkg, window.isFocused),
+                    TreeWire.windowJson(window.type, pkg, window.isFocused, window.layer, touchableOf(window)),
                 )
                 rootChildren.put(obj)
             } finally {
@@ -2297,6 +2297,14 @@ object TreeBuilder {
             }
         }
         return TreeWire.windowRootJson(display.first, display.second, rootChildren, unreadable)
+    }
+
+    /// Where `window` takes touches, as `[left, top, width, height]`.
+    private fun touchableOf(window: android.view.accessibility.AccessibilityWindowInfo): IntArray {
+        val region = android.graphics.Region()
+        window.getRegionInScreen(region)
+        val b = region.bounds
+        return intArrayOf(b.left, b.top, b.width(), b.height())
     }
 
     private fun nodeToJson(node: AccessibilityNodeInfo, walk: Boolean = true): JSONObject {

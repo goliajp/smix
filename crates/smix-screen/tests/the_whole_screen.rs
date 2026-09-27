@@ -109,6 +109,8 @@ fn the_app_window_is_the_probes_and_keeps_its_place() {
             package: Some("dev.smix.fixture".into()),
             kind: WindowKind::Application,
             focused: true,
+            layer: None,
+            touchable: None,
         }),
         "the probe's subtree must say whose window it is"
     );

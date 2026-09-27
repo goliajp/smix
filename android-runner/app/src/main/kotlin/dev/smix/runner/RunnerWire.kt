@@ -876,14 +876,25 @@ object TreeWire {
     fun leavesHollow(windowType: Int, pkg: String?, hollow: String?): Boolean =
         hollow != null && windowType == 1 && pkg == hollow
 
-    fun windowJson(windowType: Int, pkg: String?, focused: Boolean): JSONObject {
+    /// `touchable` is where the window takes touches, `[left, top, width,
+    /// height]` in screen pixels — not its bounds: the keyboard's window
+    /// spans the screen below the status bar and takes touches only on the
+    /// keys. All zero for a window that takes none.
+    fun windowJson(windowType: Int, pkg: String?, focused: Boolean, layer: Int, touchable: IntArray): JSONObject {
         val kind = when (windowType) {
             1 -> "application"
             2 -> "inputMethod"
             3 -> "system"
             else -> "other"
         }
-        val o = JSONObject().put("kind", kind).put("focused", focused)
+        // The layer, because the list is not in screen order: the host
+        // aims a touch at the part of an element no higher window covers.
+        val o = JSONObject().put("kind", kind).put("focused", focused).put("layer", layer)
+            .put(
+                "touchable",
+                JSONObject().put("x", touchable[0]).put("y", touchable[1])
+                    .put("w", touchable[2]).put("h", touchable[3]),
+            )
         if (pkg != null) o.put("package", pkg)
         return o
     }

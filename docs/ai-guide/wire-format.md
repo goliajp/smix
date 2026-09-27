@@ -77,6 +77,7 @@ Node fields of note:
 - `rawType` — element type name. iOS: camelCase `XCUIElement.ElementType` name (`"button"`, `"staticText"`, …); Android: full a11y class name (`"android.widget.Button"`, …).
 - `elementTypeRaw` (v1.0.22+) — the numeric `XCUIElement.ElementType.rawValue`. **iOS-only signal**; Android payloads omit it and deserialize to the default `1` (`.other`). Triage rule on iOS: `elementTypeRaw != 1 && identifier == "" && label == ""` ⇒ the OS typed the element but the app's a11y bridge dropped its name (app-side issue, not smix).
 - `role` — curated semantic role. Android emits it directly (derived from class name); iOS consumers derive it client-side from `rawType`.
+- `window` (Android, on each child of the root) — whose window the subtree is: `{ kind, package?, focused, layer, touchable }`, `kind` one of `application` / `inputMethod` / `system` / `other`. `layer` is the window's place in the stack, higher drawn over lower; the children are not listed in screen order. `touchable` (`{x, y, w, h}`, screen pixels) is where the window takes touches, which is not its bounds: the keyboard's window spans the screen below the status bar and takes touches only on the keys. A host aims a touch at the part of an element that no higher window takes touches over — an app drawn edge to edge has content under the status bar, and a touch there goes to the bar.
 
 Response headers (metadata only — body shape unchanged; all additive):
 

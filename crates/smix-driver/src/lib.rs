@@ -537,16 +537,22 @@ impl IosDriver {
                             .with_screen(screen_facts(&tree, 10)),
                         ));
                     }
-                    let aimed = node.map(hit_element);
+                    // Where a touch reaches it, which is not its centre when
+                    // the keyboard or the status bar is over that.
+                    let first = aim_in(&tree, selector)?.unwrap_or((
+                        coord.0,
+                        coord.1,
+                        node.map(hit_element),
+                    ));
                     // Aimed only at a target that has stopped moving: this
                     // tree may be a frame of an entrance still under way.
                     // iOS frames are in points.
                     let (nx, ny, aimed) = settle::until_aim_settles(
-                        (coord.0, coord.1, aimed),
+                        first,
                         || async {
                             let t = self.perceived_with_retry(include).await?;
                             *read_by.lock().expect("never poisoned") = t.source;
-                            Ok(settle_reading(&t.root, selector))
+                            settle_reading(&t.root, selector)
                         },
                         1.0,
                         settle::POLL,
@@ -1274,22 +1280,6 @@ pub(crate) fn hit_element(n: &A11yNode) -> HitElement {
     }
 }
 
-/// One reading of where `selector` is in `tree`: the point to touch and the
-/// element, or `None` when it is not there.
-pub(crate) fn aim_in(tree: &A11yNode, selector: &Selector) -> Option<settle::Aim> {
-    let (nx, ny) = resolve_to_norm_coord(tree, selector).ok()?;
-    Some((nx, ny, resolve_selector(tree, selector).map(hit_element)))
-}
-
-/// One settle reading of `tree`: where the target is, or the failure for
-/// an element this screen does not have.
-pub(crate) fn settle_reading(tree: &A11yNode, selector: &Selector) -> settle::Reading {
-    match aim_in(tree, selector) {
-        Some(aim) => settle::Reading::At(aim),
-        None => settle::Reading::Gone(Box::new(element_not_found(tree, selector))),
-    }
-}
-
 /// `ELEMENT_NOT_FOUND` for `selector` on `tree`, with what was on screen
 /// and the near misses — the shape every "not found" takes.
 pub(crate) fn element_not_found(tree: &A11yNode, selector: &Selector) -> ExpectationFailure {
@@ -1867,11 +1857,13 @@ fn _silence_unused_imports() {
 // Cross-platform Driver trait + Android-ready architecture
 // ===========================================================================
 
+mod aim;
 mod android;
 mod android_aim;
 mod android_input;
 mod android_notes;
 mod landing;
+pub(crate) use aim::{aim_in, settle_reading};
 pub use landing::{Aimed, ChainCoverage, landing_outcome, tap_landed_within, verdict_reader};
 mod ios;
 mod scroll_until;

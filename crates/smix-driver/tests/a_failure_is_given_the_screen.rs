@@ -8,6 +8,7 @@
 
 const SOURCES: &[(&str, &str)] = &[
     ("smix-driver/src/lib.rs", include_str!("../src/lib.rs")),
+    ("smix-driver/src/aim.rs", include_str!("../src/aim.rs")),
     (
         "smix-driver/src/android.rs",
         include_str!("../src/android.rs"),
@@ -43,7 +44,7 @@ fn no_failure_is_handed_a_list_without_its_count() {
     );
 }
 
-/// The check above reads four files for one spelling. If none of them held
+/// The check above reads five files for one spelling. If none of them held
 /// a failure at all, it would pass on nothing.
 #[test]
 fn the_files_it_reads_do_build_failures() {
