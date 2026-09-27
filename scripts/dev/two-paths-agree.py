@@ -515,7 +515,7 @@ def state_agrees(a11y_tree, sem_roots, focus_tag):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device")
-    ap.add_argument("--port", required=True, help="the port of the runner the caller brought up")
+    ap.add_argument("--port", help="the port of the runner the caller brought up; required unless both --a11y and --semantics name files")
     ap.add_argument("--app", default="dev.smix.fixture")
     # Default: the one resolver's answer (this tree's debug build unless
     # SMIX_BIN names another). It was `./target/release/smix`, relative to
@@ -553,6 +553,8 @@ def main():
              "meaning something after the blindness is fixed.",
     )
     args = ap.parse_args()
+    if not (args.a11y and args.semantics) and not args.port:
+        ap.error("--port is required when reading a device")
     if args.device and not args.binary:
         args.binary = _e2e_binary.this_tree_smix()
 

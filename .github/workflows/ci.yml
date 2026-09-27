@@ -347,6 +347,10 @@ jobs:
       # counterpart: preflight.sh.
       - name: the fixture stamp can still go red
         run: python3 scripts/dev/fixture-apk-stamp.test.py
+      # The two-paths gate over recorded payloads. Device-free: it reads
+      # files, not a runner. Local counterpart: preflight.sh.
+      - name: the two-paths gate can still go red
+        run: python3 scripts/dev/two-paths-agree.test.py
       # What the tier makes of those exit codes. Device-free: the
       # reading, not a device. Local counterpart: preflight.sh.
       - name: the device e2e tier reads an exit code

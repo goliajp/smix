@@ -36,6 +36,7 @@ LOCAL = {
     "an e2e says whether it judged": "an-e2e-says-whether-it-judged.py",
     "the judged-or-not scan can still go red": "an-e2e-says-whether-it-judged.test.py",
     "the fixture stamp can still go red": "fixture-apk-stamp.test.py",
+    "the two-paths gate can still go red": "two-paths-agree.test.py",
     "the device e2e tier reads an exit code": "device-e2e-tier.sh --selftest",
     # How the release verifier reads a registry that is merely late.
     "a late registry is not a failed one": "verify-published.sh --selftest",
