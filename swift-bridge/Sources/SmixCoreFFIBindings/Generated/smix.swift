@@ -941,8 +941,8 @@ public protocol SmixSessionProtocol: AnyObject, Sendable {
     func launchApp(cancel: CancelToken?) async throws 
     
     /**
-     * Press a hardware-like key. `key` is a name the runner knows —
-     * "return", "delete", "arrowUp"; an unknown one is refused here, before
+     * Press a key by name, read as a flow's `pressKey` reads it —
+     * "return", "back", "Volume Up"; an unknown one is refused here, before
      * any request, so the string boundary is not a way to send nonsense on.
      */
     func pressKey(key: String, cancel: CancelToken?) async throws 
@@ -1123,8 +1123,8 @@ open func launchApp(cancel: CancelToken?)async throws   {
 }
     
     /**
-     * Press a hardware-like key. `key` is a name the runner knows —
-     * "return", "delete", "arrowUp"; an unknown one is refused here, before
+     * Press a key by name, read as a flow's `pressKey` reads it —
+     * "return", "back", "Volume Up"; an unknown one is refused here, before
      * any request, so the string boundary is not a way to send nonsense on.
      */
 open func pressKey(key: String, cancel: CancelToken?)async throws   {
@@ -1707,7 +1707,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_smix_ffi_checksum_method_smixsession_launch_app() != 47408) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_press_key() != 16558) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_press_key() != 9337) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_smix_ffi_checksum_method_smixsession_relaunch_app() != 5743) {
