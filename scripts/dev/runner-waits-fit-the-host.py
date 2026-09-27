@@ -24,7 +24,9 @@ This gate holds the three against each other:
 - every route the host calls is in the table;
 - a route whose wait the request sets is sent by a method that passes its
   own wait (`json_post_within`), since the table gives it none;
-- the burst defaults the host assumes are the runners' own.
+- the burst defaults the host assumes are the runners' own;
+- the iOS server's own handler limit is the table's, which the table's
+  tests hold above every wait the host makes.
 
 A statement can still be wrong about its handler; the number is read from
 the code by a person. What this makes impossible is the host and the
@@ -201,6 +203,17 @@ def judge(root: str) -> list[str]:
             )
 
     table_text = read(root, TABLE)
+    # The iOS server answers 500 in a handler's place at its own limit; the
+    # table's figure is checked there against every wait the host makes.
+    server_rust = re.search(r"SERVER_HANDLER_TIMEOUT_MS: u64 = ([\d_]+)", table_text)
+    server_swift = re.search(r"handlerTimeoutSeconds: TimeInterval = ([\d.]+)", read(root, IOS))
+    if not server_rust or not server_swift:
+        problems.append("could not read the iOS server's handler limit from the table or the Swift server")
+    elif int(server_rust.group(1).replace("_", "")) != int(float(server_swift.group(1)) * 1000):
+        problems.append(
+            f"the iOS server lets a handler run {server_swift.group(1)} s and the table says "
+            f"{server_rust.group(1)} ms — the server would cut off waits the host is still making"
+        )
     host_interval = re.search(r"BURST_INTERVAL_MS: u32 = (\d+)", table_text)
     host_hold = re.search(r"BURST_HOLD_MS: u32 = (\d+)", table_text)
     ios_interval = re.search(r"defaultIntervalMs: Int = (\d+)", read(root, TIMELINE))
