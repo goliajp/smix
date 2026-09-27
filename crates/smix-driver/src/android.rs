@@ -27,6 +27,7 @@ use smix_selector_resolver::{resolve_selector, resolve_selector_all};
 
 use crate::Orientation;
 use crate::android_aim::{resolve_aimed, resolve_rect_with_implicit_wait};
+use crate::android_notes::dispatch_unsupported_err;
 use crate::traits::{Driver, Platform};
 
 /// Android `Driver` impl. Wraps `HttpRunnerClient` connecting to the
@@ -58,35 +59,6 @@ impl AndroidDriver {
         })
     }
 
-    /// What the reader that just failed cannot see, or nothing when it has
-    /// nothing to admit.
-    ///
-    /// Asked only here, on a path that has already failed, so it costs a
-    /// request nobody pays for twice. A Compose dialog's controls arrive in
-    /// the accessibility tree as anonymous views: a flow looking for one by
-    /// id gets "not found", which is true and useless — the fix is a line
-    /// in a build file, and a reader who does not already suspect that will
-    /// never guess it from a timeout.
-    async fn reader_caveat(&self) -> String {
-        let Some(app) = self.runner.target_bundle_id().map(str::to_string) else {
-            return String::new();
-        };
-        match self.runner.probe_status(&app).await {
-            Ok(s) if s.present => String::new(),
-            Ok(s) => format!(
-                "\n  the tree came from the accessibility reader, which sees a \
-                 Compose dialog's contents as unnamed views. {} — adding \
-                 `debugImplementation(\"jp.golia.smix:smix-probe\")` to its debug \
-                 build lets smix read the semantics tree instead.",
-                s.why.unwrap_or_else(|| format!("{app} has no smix probe")),
-            ),
-            // The probe route itself not answering says nothing about the
-            // app, and guessing here would send a reader to edit a build
-            // file over a runner that is simply older.
-            Err(_) => String::new(),
-        }
-    }
-
     #[must_use]
     pub fn new(runner: HttpRunnerClient) -> Self {
         AndroidDriver {
@@ -98,29 +70,6 @@ impl AndroidDriver {
     pub fn runner(&self) -> &HttpRunnerClient {
         &self.runner
     }
-}
-
-/// `dispatch:` overrides are an iOS-runner mechanism.
-///
-/// The guide says this "errors with an explicit unsupported message";
-/// what it actually said was "not implemented by the Kotlin runner",
-/// which reads as a missing feature someone should wait for. There is
-/// nothing to wait for: Android's default tap already IS native event
-/// synthesis, which is what the override buys on iOS. The fix is to
-/// drop the key, so the error says that.
-fn dispatch_unsupported_err() -> ExpectationFailure {
-    ExpectationFailure::new(FailureInit {
-        code: Some(FailureCode::DriverError),
-        message: "tapOn `dispatch:` is an iOS-runner mechanism and has no \
-                  meaning on Android"
-            .to_string(),
-        hint: Some(
-            "remove `dispatch:` from this step — Android taps already use \
-             native event synthesis, which is what the override selects on iOS"
-                .to_string(),
-        ),
-        ..Default::default()
-    })
 }
 
 #[async_trait]
@@ -373,6 +322,36 @@ impl Driver for AndroidDriver {
                 })
             })?;
         crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed)
+    }
+
+    /// Found once — read and held still, as a tap is — then touched
+    /// `times` times in one request, `interval_ms` apart. One resolve per
+    /// touch, the default, read the screen and waited for the target to
+    /// hold still before every one, and the gaps ran past what a gesture
+    /// gated on "ten taps, each within 1.5 s" allows. What the first touch
+    /// is delivered to is judged as a tap is; after it the screen may
+    /// change, so the later ones are not.
+    async fn tap_burst(
+        &self,
+        selector: &Selector,
+        times: u32,
+        interval_ms: Option<u32>,
+        hold_ms: Option<u32>,
+        include: Option<IncludeScope>,
+    ) -> Result<(), ExpectationFailure> {
+        let (nx, ny, aimed, reader) = resolve_aimed(self, selector, include).await?;
+        let landed = self
+            .runner
+            .tap_at_norm_coord_aimed(nx, ny, times.max(1), interval_ms, hold_ms, Some(reader))
+            .await
+            .map_err(|e| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!("AndroidDriver::tap_burst: runner.tap_at_norm_coord: {e}"),
+                    ..Default::default()
+                })
+            })?;
+        crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())
     }
 
     async fn tap_with_mode(

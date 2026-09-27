@@ -193,6 +193,14 @@ one that stops.
     intervalMs: 80                       # optional; runner default
     holdMs: 50                           # optional; how long each touch stays down
 
+# maestro's own spelling of the same thing: the target is found once and
+# tapped `repeat` times, `delay` ms apart (100 when not given). `optional`,
+# `dispatch` and `point` do not go with `repeat` and are refused by name.
+- tapOn:
+    id: "hidden-trigger"
+    repeat: 10
+    delay: 200
+
 - doubleTapOn: "Reset"
 - longPressOn:
     id: "list-row-3"

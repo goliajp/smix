@@ -910,6 +910,17 @@ moved and `Step` is now `#[non_exhaustive]`.
   boot` uses. `smix init --app` boots a shut-down simulator to install the
   app and now records that it did, so `smix down` turns it off again; it
   recorded nothing, which the claim above had been hiding.
+- **`tapOn` takes maestro's `repeat` and `delay`.** The target is found
+  once and tapped `repeat` times, `delay` ms apart (100 when not given) —
+  the same act as `repeatTap`. On Android a repeated tap read the screen
+  and waited for its target to hold still before every touch, so the gaps
+  ran past what a gesture gated on "ten taps, each within 1.5 s" allows; the
+  Android runner now takes the burst in one request, as the iOS runner
+  does, and ten taps 200 ms apart arrive about half a second apart. The
+  first touch is judged as a tap is. A `repeat` that is not a whole number
+  of at least 1, a `delay` that is not a whole number of milliseconds, a
+  `delay` without `repeat`, and `repeat` beside `point`, `optional` or
+  `dispatch` are refused by name.
 - **A tap on a control drawn over a sibling is judged by what is drawn on
   top.** Where a tap landed was read by walking into the last child that
   held the point, in list order. A view group that sets its own drawing

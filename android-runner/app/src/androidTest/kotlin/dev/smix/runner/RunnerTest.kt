@@ -572,11 +572,8 @@ class SmixHttpServer(
 
     private fun serveTapAtNormCoord(session: IHTTPSession): Response {
         // OK MEANS: injected — `UiDevice.click` is `clickNoSync`, which
-        // is `touchDown`/`touchUp` through `injectEventSync` and nothing
-        // else: the touch was delivered (and it refuses outright when the
-        // point is off the display). Whether the app did anything with it
-        // is the caller's next assertion, not a question this route can
-        // answer.
+        // is `injectEventSync` for every touch and refuses a point off the
+        // display. Whether the app did anything is the next assertion.
         val payload = readBodyString(session)
         val req = RunnerWire.decodeNormCoord(payload)
         val (w, h) = displaySize()
@@ -584,7 +581,9 @@ class SmixHttpServer(
         val py = RunnerWire.normToPixel(req.ny, h)
         // Before the touch: a confirm that lands takes its dialog away.
         val chain = hitChainAt(session, RunnerWire.decodeAimedBy(payload), px, py)
-        val ok = device.click(px, py)
+        val ok = TapBurst.decode(payload).touch(
+            { device.click(px, py) }, { device.swipe(px, py, px, py, RunnerWire.longPressSteps(it)) }, Thread::sleep,
+        )
         // Give the dispatched IO event time to render before /tree probes
         // observe the post-tap UI state.
         device.waitForIdle(500)
