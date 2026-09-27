@@ -32,8 +32,6 @@ mkdir -p "$W/.smix/leases"
 e2e_start_emulator "$WORK/e.log" -avd sim-smix-android-03 -port 5640
 e2e_stop_emulator emulator-5640
 "$SMIX" down >/dev/null 2>&1 || true
-. "$ROOT/scripts/lib/gate-port.sh"
-"$SMIX" runner down >/dev/null 2>&1 || true
 if [ "$(simulator_state "$UDID")" != Booted ]; then "$SMIX" sim boot "$UDID"; fi
 e2e_yield_if_held "$UDID"
 """
@@ -67,33 +65,6 @@ CASES = [
         {"base.sh": BASELINE, "down.sh": '"$SMIX" down >/dev/null 2>&1 || true\n'},
         1,
         "down.sh:1: runs `smix down` against the machine's real ledger",
-    ),
-    (
-        "a runner stopped on the machine's default port is named",
-        {"base.sh": BASELINE, "port.sh": 'if ! out="$("$SMIX" runner down 2>&1)"; then :; fi\n'},
-        1,
-        "port.sh:1: acts on a runner at the machine's default port",
-    ),
-    (
-        "a port taken here does not reach a runner stopped over ssh",
-        {
-            "base.sh": BASELINE,
-            "ssh.sh": '. "$ROOT/scripts/lib/gate-port.sh"\n'
-            "rssh \"cd /r && target/release/smix runner down\" || true\n",
-        },
-        1,
-        "ssh.sh:2: acts on a runner at the machine's default port",
-    ),
-    (
-        "a runner named by device or port is not the default port",
-        {
-            "base.sh": BASELINE,
-            "named.sh": '"$SMIX" runner down --device "$UDID" --runner-port "$P"\n'
-            '"$SMIX" runner down --platform android --device "$SERIAL"\n'
-            'SMIX_RUNNER_PORT="$P" "$SMIX" runner down\n',
-        },
-        0,
-        "clean",
     ),
     (
         "an emulator started in the script's process group is named",

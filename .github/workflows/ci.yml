@@ -282,6 +282,12 @@ jobs:
         run: cargo build -p smix-cli
       - name: mcp cli parity scan
         run: python3 scripts/dev/mcp-cli-parity-scan.py
+      # The commands the port scan treats as dialling a runner, held
+      # against the built CLI's own help.
+      - name: runner commands match the cli
+        run: python3 scripts/dev/runner-commands-match-the-cli.py
+      - name: the runner-commands gate can still go red
+        run: python3 scripts/dev/runner-commands-match-the-cli.test.py
       # Three hand-written readers of one recorded document, one per host
       # language. They drift quietly — each keeps its own green suite — so
       # the payloads are checked byte-identical across all three trees.

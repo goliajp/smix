@@ -19,7 +19,9 @@ source "$ROOT/scripts/lib/e2e-devices.sh"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_C6D_IOS:-smix-ios}"
-PORT="${SMIX_C6D_PORT:-22092}"
+# shellcheck source=../lib/gate-port.sh
+. "$ROOT/scripts/lib/gate-port.sh"
+PORT="${SMIX_C6D_PORT:-$SMIX_RUNNER_PORT}"
 BUNDLE="jp.golia.smix.fixture"
 FIXTURE="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"
 PROJECT="$ROOT/swift-bridge/SmixRunner.xcodeproj"

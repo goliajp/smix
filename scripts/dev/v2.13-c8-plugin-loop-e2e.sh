@@ -40,6 +40,11 @@ command -v claude >/dev/null || fail "the claude CLI is not on PATH"
 source "$ROOT/scripts/lib/e2e-binary.sh"
 # shellcheck source=../lib/e2e-devices.sh
 source "$ROOT/scripts/lib/e2e-devices.sh"
+# The session's MCP server inherits this port, and teardown stops the
+# runner on it. On the default port, `runner down` stopped whatever runner
+# the machine's ledger had on 22087 — anybody's.
+# shellcheck source=../lib/gate-port.sh
+. "$ROOT/scripts/lib/gate-port.sh"
 
 # Its own variable first, then the one the whole tier is driven by.
 #

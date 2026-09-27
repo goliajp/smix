@@ -1,199 +1,227 @@
 #!/usr/bin/env python3
-"""A gate that starts a runner does not take the default port.
+"""A script that talks to a runner does it on a port of its own.
 
-`smix runner up` defaults to 22087. A gate that takes that default is
-red whenever anything else on the machine holds the port — another
-checkout, a developer's session, a runner orphaned by a crash. It fails
-at startup, before running a single flow, and the failure reads as smix
-being broken rather than as two gates wanting the same socket.
-
-That happened on 2026-08-09: the corpus gate exited 3 at `runner up`
-against an unrelated runner, in the middle of judging whether the corpus
-was deterministic enough to release on. A gate a bystander can turn red
-answers no question about the product.
+`smix runner up` defaults to 22087, and so does every command that dials a
+runner. A gate that takes that default is red whenever anything else on
+the machine holds the port — another checkout, a developer's session, a
+runner orphaned by a crash — and the failure reads as smix being broken
+rather than as two gates wanting the same socket (the corpus gate,
+2026-08-09). Worse, it can reach somebody else's runner: a test's teardown
+that ran `runner down` with no port stopped whatever runner the machine's
+ledger had on 22087, and a consumer's run found its runner's record beside
+one of ours on that port and refused to start (2026-09-26).
 
 `scripts/lib/gate-port.sh` asks the OS for a free port and exports
-`SMIX_RUNNER_PORT`, which `--runner-port` reads via clap's `env`, so one
-export reaches startup, every flow, and teardown alike. Sourcing it is
-the fix; this scan is what keeps the next gate from forgetting.
+`SMIX_RUNNER_PORT`, which every runner command reads, so one export
+reaches startup, every flow, an MCP session started from the script, and
+teardown alike. Setting `SMIX_RUNNER_PORT` some other way also satisfies
+this — the requirement is a port of one's own, not a way of getting one.
 
-Setting `SMIX_RUNNER_PORT` some other way also satisfies this — the
-requirement is a port of one's own, not a particular way of getting one.
+Three rules:
 
-What this does not see: a `runner up` nested inside an ssh string, as
-the federation gates run on their far node. Those ports belong to the
-other machine and are not this scan's business, but the exemption is a
-consequence of the regex rather than a decision, so it is written down
-here instead of being a list that reads like coverage. An earlier draft
-did keep such a list; it matched nothing and said so on every run.
+1. A script that runs a runner command here, or starts an MCP session
+   (which dials the runner the environment names), holds a port of its
+   own — or names, in every such command, the port its caller gave it.
+   An Android `runner down --device` is not a runner command for this
+   purpose: it is scoped by device and never reads the port.
+2. A runner command sent over ssh names its port in that line. An export
+   does not cross ssh, and the far machine's default is somebody's too.
+3. No port is pinned to a literal, here or by whoever calls the script.
 
-The script that starts the runner is not always the script that chose
-the port. `a-tap-that-cannot-land-says-so.sh` asks the OS and then takes
-an argument if it is given one -- and both of its callers gave it a
-literal 22091, so a gate that reads correctly on its own ran on a fixed
-port anyway, and this scan called it covered. So the second half below
-follows the port back through the caller's own variables.
+Which commands dial a runner is the CLI's to say: `RUNNER_COMMANDS` is
+held against the built binary by runner-commands-match-the-cli.py.
 
-Its boundary, stated rather than left as a consequence of the regex: a
-port passed to something that *attaches* to a runner someone else
-started (`--port` on the python gates in `v10-exit.sh`) is that
-operator's choice of an existing socket, not a port this scan gets to
-pick. Only the port a runner is brought *up* on is its business.
+A port passed to something that *attaches* to a runner someone else
+started (`--port` on the python gates in `v10-exit.sh`) is that operator's
+choice of an existing socket, not a port this scan gets to pick.
+
+Usage:
+  scripts/dev/gate-port-scan.py
 """
+
+from __future__ import annotations
 
 import os
 import re
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from _shell_lines import code_lines  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(HERE))
 SCRIPTS = os.path.join(ROOT, "scripts")
 
-# Executes `runner up` rather than merely mentioning it.
-#
-# The first version matched the words anywhere on a non-comment line and
-# reported four scripts that only talk about the command: a `log "…"`
-# telling the reader what to run next, and a `case` pattern in the adb
-# guard's own test table. A scan that cannot tell a command from a
-# sentence about a command makes work rather than finding it.
-#
-# The environment prefix is there for the same reason: `ANDROID_SERIAL=…
-# "$SMIX" runner up …` is how one gate spells it, and without this the
-# scan walked past a script that starts a runner on a pinned port —
-# invisible rather than excused, which is worse.
-STARTS_A_RUNNER = re.compile(
-    r"""^\s*
-        (?:if\s+!?\s*|\(\s*cd\s[^&]*&&\s*)?     # `if !` / `( cd X &&` prefixes
-        (?:[A-Za-z_][A-Za-z_0-9]*=\S*\s+)*      # `VAR=value ` environment prefixes
-        "?\$?\{?(?:smix|SMIX_BIN|SMIX)\}?"?     # the binary, however spelled
-        (?:/[\w/.\-]*smix)?                     # or a path ending in smix
-        \s+runner\ up\b""",
-    re.VERBOSE,
-)
+# Commands that dial a runner. The ones the help does not mention are in
+# READS_THE_PORT_UNSAID with where they read it.
+RUNNER_COMMANDS = {
+    "runner up", "runner down", "runner supervise", "runner cycle",
+    "runner list-sessions", "capsule up", "capsule down", "run",
+    "run-script", "tap", "find", "wait-for", "fill", "press-key", "swipe",
+    "scroll", "hide-keyboard", "tree", "describe", "system-popups",
+    "system-popup-action", "authoring suggest", "authoring capture-tree",
+    "authoring diff-tree", "authoring record", "diagnostic dump",
+    "sim screenshot",
+}
+READS_THE_PORT_UNSAID = {
+    "runner cycle": "main.rs `RunnerAction::Cycle` reads runner_port()",
+    "runner list-sessions": "main.rs `RunnerAction::ListSessions` reads runner_port()",
+    "capsule up": "main.rs `Cmd::Capsule` reads runner_port()",
+    "capsule down": "main.rs `Cmd::Capsule` reads runner_port()",
+    "diagnostic dump": "main.rs `DiagnosticAction::Dump` reads runner_port()",
+    "sim screenshot": "main.rs `PhoneScreenshotRoute::Runner` reads runner_port()",
+}
+# Offer a runner port only to write it into the registry; they dial nothing.
+RECORDS_A_PORT = {
+    "sim register": "stores the sim's runner port in the registry",
+}
+
+# A bare `smix` right after a quote or `*` is inside a pattern or a string
+# (`*"smix runner up"*)` in a case table), not a command.
+_BINARY = r"""(?:"?\$\{?(?:SMIX|SMIX_BIN)\}?"?|(?<![\w./*'"`-])smix|\S*/smix)"""
+_VERBS = "|".join(sorted((re.escape(c).replace(r"\ ", r"\s+") for c in RUNNER_COMMANDS), key=len, reverse=True))
+RUNS_A_COMMAND = re.compile(rf"{_BINARY}\s+(?:{_VERBS})(?![\w-])")
+RUNS_A_FLOW = re.compile(r'"?\$\{?SMIX_RUN\}?"?\s')
+# A session that loads the plugin, or the server run directly. The word
+# `smix-mcp` in an install or a path starts nothing.
+MCP_SESSION = re.compile(r"\bclaude\b.*--plugin-dir\b|^\s*(?:\(\s*)?\"?\$\{?SMIX_MCP\}?\"?\s")
+ANDROID_DOWN = re.compile(r"\brunner\s+down\b(?=.*--platform\s+\"?android)(?=.*--device\b)")
+OVER_SSH = re.compile(r"\brssh\b|\bssh\s")
+NAMES_A_PORT = re.compile(r"--runner-port\s+\"?\$|SMIX_RUNNER_PORT=\"?\$")
+# Prose about a command, in the forms this repository writes it.
+SPEECH = re.compile(r"^\s*(?:log|echo|printf|step|fail|bad|ok|cannot_judge|note|say|die|warn)\b")
 # A port written as a number: `PORT=28080`, or a default for an override
-# (`${SMIX_GATE_RUNNER_PORT:-28080}`). Four or five digits, so a `-p 80`
-# or an index is not mistaken for one.
-#
-# The override's name takes digits after the first character. It did not,
-# and three gates written in one version escaped through that: their
-# overrides are named after the checkpoint (`SMIX_C5_ANDROID_PORT`,
-# `SMIX_C6_PORT`, `SMIX_C7_PORT`), so the literal default behind each was
-# never looked at, and two of them passed on the other branch below for
-# mentioning `SMIX_RUNNER_PORT=` while still pinning a socket.
+# (`${SMIX_C5_ANDROID_PORT:-22097}`). Four or five digits, so a `-p 80` or
+# an index is not mistaken for one. Override names take digits: three gates
+# escaped through `SMIX_C5_…`-style names when they could not.
 PINS_A_PORT = re.compile(
     r"[A-Z_]*PORT[A-Z_]*=\s*\"?(?:\$\{[A-Za-z_][A-Za-z_0-9]*:-)?\s*\d{4,5}\b"
 )
-
-# Prose about the command, in any of the forms this repo writes it.
-MENTIONS_ONLY = re.compile(r"^\s*(?:#|log\b|echo\b|printf\b|\*[\"'])")
-
-problems: list[str] = []
-checked = 0
-covered = 0
-bodies: dict[str, str] = {}
-runner_scripts: set[str] = set()
-
-for dirpath, _dirs, files in os.walk(SCRIPTS):
-    for name in sorted(files):
-        if not name.endswith(".sh"):
-            continue
-        path = os.path.join(dirpath, name)
-        rel = os.path.relpath(path, ROOT)
-        try:
-            body = open(path, encoding="utf-8").read()
-        except (OSError, UnicodeDecodeError):
-            continue
-        bodies[rel] = body
-        starts = [
-            ln
-            for ln in body.splitlines()
-            if STARTS_A_RUNNER.match(ln) and not MENTIONS_ONLY.match(ln)
-        ]
-        if not starts:
-            continue
-        runner_scripts.add(name)
-        checked += 1
-        # A literal is not a port of one's own, however it is spelled. The
-        # first version of this check looked for the string
-        # `SMIX_RUNNER_PORT=` and found it in a teardown line that merely
-        # passed a hardcoded 28080 along -- so a gate pinned to a fixed
-        # port counted as covered, and died when an unrelated emulator's
-        # adb forward held that port during a ship.
-        pinned = [
-            ln.strip() for ln in body.splitlines()
-            if not MENTIONS_ONLY.match(ln) and PINS_A_PORT.search(ln)
-        ]
-        if pinned:
-            problems.append(
-                f"{rel} pins a host port to a literal. An adb forward or "
-                f"another checkout can hold it, and then this gate is red "
-                f"about something else entirely. Ask the OS: source "
-                f"scripts/lib/gate-port.sh.\n      {pinned[0]}"
-            )
-            continue
-        if "gate-port.sh" in body or "SMIX_RUNNER_PORT=" in body:
-            covered += 1
-            continue
-        problems.append(
-            f"{rel} brings a runner up on the default port — one unrelated "
-            f"runner anywhere on the machine turns it red before it runs "
-            f'anything. Source scripts/lib/gate-port.sh.\n      {starts[0].strip()}'
-        )
-
-# The other half: whoever hands one of those gates a port. A literal
-# reaching the gate through the caller's variable is the same fixed
-# socket, arrived at by a longer road.
+OWN_PORT = re.compile(r"\bgate-port\.sh\b|SMIX_RUNNER_PORT=")
 LITERAL = re.compile(r"(?<![\w.])\d{4,5}(?![\w.])")
 REFERENCES = re.compile(r"\$\{?([A-Za-z_][A-Za-z_0-9]*)\}?")
-callers = 0
-for rel, body in sorted(bodies.items()):
-    # `\`-continued invocations put the port on the next physical line.
-    logical = body.replace("\\\n", " ").splitlines()
-    for ln in logical:
-        if MENTIONS_ONLY.match(ln):
-            continue
-        # Not its own name. A gate's usage string carries it, and counting
-        # that as a caller would let this half satisfy itself -- the same
-        # shape as an assertion that counts its own invocation as evidence.
+
+
+def logical(lines: list[str], n: int) -> str:
+    """Line n (1-based) with the lines its trailing backslashes continue onto."""
+    out = []
+    for ln in lines[n - 1:]:
+        out.append(ln.rstrip())
+        if not ln.rstrip().endswith("\\"):
+            break
+    return " ".join(x.rstrip("\\") for x in out)
+
+
+def dials(line: str) -> bool:
+    if MCP_SESSION.search(line) or RUNS_A_FLOW.search(line):
+        return True
+    m = RUNS_A_COMMAND.search(line)
+    return bool(m) and not ANDROID_DOWN.search(line[m.start():])
+
+
+def scan_scripts() -> int:
+    problems: list[str] = []
+    bodies: dict[str, str] = {}
+    runner_scripts: set[str] = set()
+    covered = remote = 0
+    for dirpath, _dirs, files in os.walk(SCRIPTS):
+        for name in sorted(files):
+            if not name.endswith(".sh"):
+                continue
+            path = os.path.join(dirpath, name)
+            rel = os.path.relpath(path, ROOT)
+            try:
+                body = open(path, encoding="utf-8").read()
+            except (OSError, UnicodeDecodeError):
+                continue
+            bodies[rel] = body
+            physical = body.splitlines()
+            local: list[tuple[int, str]] = []
+            for n, ln in code_lines(body):
+                if SPEECH.match(ln) or not dials(ln):
+                    continue
+                whole = logical(physical, n)
+                if OVER_SSH.search(whole):
+                    remote += 1
+                    if not NAMES_A_PORT.search(whole):
+                        problems.append(
+                            f"{rel}:{n}: sends a runner command over ssh without naming its "
+                            f"port — an export does not cross ssh, and the far machine's "
+                            f"default port is somebody's too. Put --runner-port \"$PORT\" in "
+                            f"the remote command.\n      {ln.strip()}"
+                        )
+                else:
+                    local.append((n, whole))
+            if not local:
+                continue
+            runner_scripts.add(name)
+            pinned = [
+                ln.strip() for _, ln in code_lines(body)
+                if not SPEECH.match(ln) and PINS_A_PORT.search(ln)
+            ]
+            if pinned:
+                problems.append(
+                    f"{rel} pins a host port to a literal. An adb forward or another "
+                    f"checkout can hold it, and then this gate is red about something "
+                    f"else entirely. Ask the OS: source scripts/lib/gate-port.sh.\n"
+                    f"      {pinned[0]}"
+                )
+            elif OWN_PORT.search(body) or all(NAMES_A_PORT.search(w) for _, w in local):
+                # A port of its own, or every runner command names the one
+                # its caller gave it (attaching to a runner somebody started).
+                covered += 1
+            else:
+                n, ln = local[0]
+                problems.append(
+                    f"{rel}:{n}: talks to a runner on the machine's default port (22087, "
+                    f"every smix's) — it collides with, or acts on, whoever else is there. "
+                    f"Source scripts/lib/gate-port.sh.\n      {ln.strip()}"
+                )
+
+    # Whoever hands one of those scripts a port: a literal reaching it through
+    # the caller's variable is the same fixed socket, one step further away.
+    callers = 0
+    for rel, body in sorted(bodies.items()):
         others = runner_scripts - {os.path.basename(rel)}
-        if not any(script in ln for script in others):
-            continue
-        callers += 1
-        args = ln.split(".sh", 1)[1] if ".sh" in ln else ln
-        if LITERAL.search(args):
-            problems.append(
-                f"{rel} hands a runner-starting gate a literal port. The "
-                f"gate asks the OS for one of its own and this overrides "
-                f"that choice, so the pin is here even though the gate "
-                f"reads correctly.\n      {ln.strip()}"
-            )
-            continue
-        for var in REFERENCES.findall(args):
-            for assign in body.splitlines():
-                if assign.lstrip().startswith(f"{var}=") and PINS_A_PORT.search(assign):
-                    problems.append(
-                        f"{rel} hands a runner-starting gate ${var}, which "
-                        f"is pinned to a literal. Follow the port back: it "
-                        f"is a fixed socket by the time the gate sees it.\n"
-                        f"      {assign.strip()}"
-                    )
+        for ln in body.replace("\\\n", " ").splitlines():
+            if SPEECH.match(ln) or ln.lstrip().startswith("#"):
+                continue
+            if not any(script in ln for script in others):
+                continue
+            callers += 1
+            args = ln.split(".sh", 1)[1] if ".sh" in ln else ln
+            if LITERAL.search(args):
+                problems.append(
+                    f"{rel} hands a runner-driving script a literal port, overriding the "
+                    f"one it would ask the OS for.\n      {ln.strip()}"
+                )
+                continue
+            for var in REFERENCES.findall(args):
+                for assign in body.splitlines():
+                    if assign.lstrip().startswith(f"{var}=") and PINS_A_PORT.search(assign):
+                        problems.append(
+                            f"{rel} hands a runner-driving script ${var}, which is pinned "
+                            f"to a literal.\n      {assign.strip()}"
+                        )
 
-# A regex that matches nothing agrees with every script there is.
-if callers == 0:
-    problems.append(
-        "nothing was found invoking a runner-starting gate — either the "
-        "gates lost their callers or the invocation shape changed, and the "
-        "caller-side half of this scan is reading air"
+    # A pattern that matches nothing agrees with every script there is.
+    if not runner_scripts:
+        problems.append("no script was found talking to a runner — the invocation shape "
+                        "changed and this scan is reading air")
+    if callers == 0:
+        problems.append("nothing was found invoking a runner-driving script — the "
+                        "caller-side half of this scan is reading air")
+    if problems:
+        print("gate-port-scan: FAIL")
+        for p in problems:
+            print(f"  - {p}")
+        return 1
+    print(
+        f"gate-port-scan: clean — {covered} script(s) talking to a runner hold a port of "
+        f"their own; {remote} runner command(s) over ssh name theirs"
     )
-if checked == 0:
-    problems.append(
-        "no script was found starting a runner — the invocation shape changed "
-        "and this scan is now reading air"
-    )
+    return 0
 
-if problems:
-    print("gate-port-scan: FAIL")
-    for p in problems:
-        print(f"  - {p}")
-    sys.exit(1)
 
-print(f"gate-port-scan: clean — {covered} runner-starting gates hold a port of their own")
+if __name__ == "__main__":
+    sys.exit(scan_scripts())

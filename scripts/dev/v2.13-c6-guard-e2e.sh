@@ -29,6 +29,10 @@ fail() { printf '[c6-guard] FAIL: %s\n' "$*" >&2; exit 1; }
 # ran has produced no evidence either way.
 cannot_judge() { printf '[c6-guard] %s\n' "$*" >&2; printf '%s\n' "C6-GUARD-SKIP"; exit 2; }
 source "$ROOT/scripts/lib/claude-session.sh"
+# The plugin's MCP server starts with the session and dials the runner its
+# environment names; a port of this script's own keeps it off anybody's.
+# shellcheck source=../lib/gate-port.sh
+. "$ROOT/scripts/lib/gate-port.sh"
 
 
 command -v claude >/dev/null || fail "the claude CLI is not on PATH"

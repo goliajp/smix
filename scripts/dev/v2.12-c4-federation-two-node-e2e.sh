@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # v2.12-C4 federation two-node e2e: the scheduler machine drives TWO
-# live nodes — itself over `ssh localhost` (dedicated runner port, so it
-# coexists with any resident runner on the default port) and mini —
+# live nodes — itself over `ssh localhost` and mini, each on a runner
+# port asked of its own OS, so neither meets a resident runner —
 # end to end: localhost self-authorization -> source sync (mini) ->
 # config authority sync (mini) -> rebuild + freshness stamp (both) ->
 # readiness gate (both) -> sim prep (explicit UDID, §9#1 sims only) ->
@@ -13,8 +13,10 @@
 set -euo pipefail
 
 HOST="${SMIX_FED_NODE_HOST:-mini}"
-STUDIO_PORT="${SMIX_FED_STUDIO_PORT:-22097}"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+# shellcheck source=../lib/gate-port.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/gate-port.sh"
+STUDIO_PORT="${SMIX_FED_STUDIO_PORT:-$SMIX_RUNNER_PORT}"
 STUDIO_SIM="${SMIX_FED_STUDIO_SIM:-$E2E_IOS}"
 MINI_SIM="${SMIX_FED_MINI_SIM:-sim-simx-001}"
 REPO="workspace/goliajp/smix"   # remote, relative to $HOME
@@ -60,6 +62,9 @@ ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=accept-new loc
 log "guard: $HOST reachable"
 rssh true || cannot_judge "$HOST is not reachable over BatchMode ssh — this node is not available here"
 REMOTE_REPO="$(rssh "cd $REPO && pwd")" || fail "remote repo $REPO missing on $HOST"
+# The far node's runner port, asked of the node: its default is whoever
+# else runs smix there.
+gate_free_port_on NODE_PORT rssh || fail "could not ask $HOST for a free port"
 
 
 log "guard: no user build in flight ($HOST: cargo/xcodebuild; studio: cargo only — resident runner capsule is legitimate)"
@@ -84,7 +89,7 @@ UDID_M=""
 cleanup() {
   log "teardown: runners down + sims shutdown + artifacts + workdir"
   if [ -n "$UDID_M" ]; then
-    rssh "cd '$REMOTE_REPO' && target/release/smix runner down" || true
+    rssh "cd '$REMOTE_REPO' && target/release/smix runner down --device $UDID_M --runner-port $NODE_PORT" || true
     if [ "$WAS_BOOTED_REMOTE" != "yes" ]; then
       rssh "cd '$REMOTE_REPO' && target/release/smix sim shutdown $UDID_M" || true
     fi
@@ -167,9 +172,9 @@ UDID_M="$(printf '%s\n' "$SIM_LINES_M" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A
   || fail "no UDID in remote sim list line: $SIM_LINES_M"
 [ "$(simulator_state "$UDID_M" rssh)" = Booted ] && WAS_BOOTED_REMOTE=yes
 e2e_yield_if_held "$UDID_M" rssh "cd '$REMOTE_REPO' && target/release/smix"
-log "$HOST sim boot + runner up ($UDID_M, default port)"
+log "$HOST sim boot + runner up ($UDID_M, port $NODE_PORT)"
 rssh "cd '$REMOTE_REPO' && target/release/smix sim boot $UDID_M" || true
-rssh "cd '$REMOTE_REPO' && target/release/smix runner up $UDID_M --bundle com.apple.Preferences" \
+rssh "cd '$REMOTE_REPO' && target/release/smix runner up $UDID_M --bundle com.apple.Preferences --runner-port $NODE_PORT" \
   || fail "runner up did not reach ready on $HOST"
 
 # --- 7. drive the ignored Rust e2e test (the product-side leg) ---
@@ -180,16 +185,17 @@ nodes:
     host: localhost
     repo: $ROOT
     devices: [{ device: $UDID_S, platform: ios }]
+    runnerPort: $STUDIO_PORT
   - name: c4-mini
     host: $HOST
     repo: $REMOTE_REPO
     devices: [{ device: $UDID_M, platform: ios }]
+    runnerPort: $NODE_PORT
 YAML
 (
   cd "$ROOT"
   SMIX_FED_E2E_NODES="$WORK/nodes.yaml" \
   SMIX_FED_E2E_FLOWS="$FLOW_A,$FLOW_B" \
-  SMIX_FED_E2E_RUNNER_PORTS="c4-studio=$STUDIO_PORT" \
   SMIX_FED_E2E_PULL_DIR="$WORK/pull" \
     cargo test -p smix-cli --bin smix federation::tests::federation_e2e_two_nodes_merge_reports_and_recover_artifacts -- --ignored --exact --nocapture
 ) > "$WORK/cargo-test.log" 2>&1 || { cat "$WORK/cargo-test.log"; fail "ignored e2e test red — the two-node loop did not close"; }

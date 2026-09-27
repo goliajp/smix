@@ -50,6 +50,18 @@ s.close()')"
     done
 }
 
+# A free port on another machine, into the variable named by $1, asked of
+# that machine's OS through the command prefix that follows (`rssh`, or
+# `ssh host`). An exported port does not cross ssh, and the far machine's
+# default port is whoever else runs smix there.
+gate_free_port_on() {
+    local _into="$1" _port
+    shift
+    _port="$("$@" "python3 -c 'import socket; s = socket.socket(); s.bind((\"127.0.0.1\", 0)); print(s.getsockname()[1]); s.close()'")" || return 1
+    [[ "$_port" =~ ^[0-9]+$ ]] || return 1
+    eval "$_into=\$_port"
+}
+
 if [[ -z "${SMIX_RUNNER_PORT:-}" ]]; then
     gate_free_port SMIX_RUNNER_PORT
 else
