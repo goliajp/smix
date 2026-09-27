@@ -29,7 +29,7 @@ that is why.
 |---|---|---|---|
 | `tapOn` / `tap` | ✅ | ✅ | Selectors resolved via a11y tree; native tap dispatch; `fallback:` chains containing `ocrText` poll for `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) |
 | `doubleTapOn` / `doubleTap` | ✅ | ✅ | Resolved on the host and judged like `tapOn`: a double tap delivered to something else fails `TAP_MISSED`. iOS sends both touches in one synthesised event, 80 ms apart; Android two clicks 150 ms apart |
-| `repeatTap` / `tapOn: { repeat }` | ✅ | ✅ | Found once and held still, then every touch goes in one request, so the interval is the number you state. The first touch is judged like `tapOn` (a miss fails `TAP_MISSED`); the later ones are not, since the screen may change after the first |
+| `repeatTap` / `tapOn: { repeat }` | ✅ | ✅ | Found once and held still, then every touch goes in one request, so the interval is the number you state (on iOS no shorter than one touch takes to deliver, about 280 ms). The first touch is judged like `tapOn` (a miss fails `TAP_MISSED`); the later ones are not, since the screen may change after the first |
 | `longPressOn` / `longPress` | ✅ | ✅ | 500 ms by default (maestro's documented 0.5s); `{ duration: N }` sets it. Resolved on the host and judged like `tapOn` on both platforms |
 | `tapOn: { point: "X%,Y%" }` | ✅ | ✅ | Normalized [0, 1] coordinates; the escape hatch for screens with no a11y semantics. Not a verb of its own — there is no `tapByCoord` |
 

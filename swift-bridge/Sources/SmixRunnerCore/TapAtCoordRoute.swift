@@ -17,27 +17,32 @@ public enum TapAtCoordRoute {
     public let ny: Double
     /// How many touches to deliver. Absent or 1 is an ordinary tap.
     ///
-    /// A burst is one synthesise carrying several pointer paths, so the
-    /// gap between touches is the stated interval rather than a round
-    /// trip — which at ~400 ms each is what made a rapid-tap gesture
-    /// undriveable.
+    /// Each touch is its own synthesise, started at its offset on the
+    /// timeline, so the gap is the stated interval rather than a host
+    /// round trip — or the time one synthesise takes, when that is longer.
     public let times: Int
     /// Milliseconds between touches in a burst.
     public let intervalMs: Int
     /// Milliseconds each touch stays down.
     public let holdMs: Int
+    /// The touches are one double-tap gesture rather than separate taps:
+    /// delivered in one synthesise, closer together than separate
+    /// synthesises can be, which is what a double-tap recogniser needs.
+    public let doubleTap: Bool
 
     public init(
       nx: Double, ny: Double,
       times: Int = 1,
       intervalMs: Int = TouchTimeline.defaultIntervalMs,
-      holdMs: Int = TouchTimeline.defaultHoldMs
+      holdMs: Int = TouchTimeline.defaultHoldMs,
+      doubleTap: Bool = false
     ) {
       self.nx = nx
       self.ny = ny
       self.times = times
       self.intervalMs = intervalMs
       self.holdMs = holdMs
+      self.doubleTap = doubleTap
     }
   }
 
@@ -67,8 +72,10 @@ public enum TapAtCoordRoute {
     let intervalMs =
       (root["intervalMs"] as? NSNumber)?.intValue ?? TouchTimeline.defaultIntervalMs
     let holdMs = (root["holdMs"] as? NSNumber)?.intValue ?? TouchTimeline.defaultHoldMs
+    let doubleTap = (root["doubleTap"] as? Bool) ?? false
     return TapAtCoordRequest(
-      nx: nx, ny: ny, times: times, intervalMs: intervalMs, holdMs: holdMs)
+      nx: nx, ny: ny, times: times, intervalMs: intervalMs, holdMs: holdMs,
+      doubleTap: doubleTap)
   }
 
   /// Bounds on when the touch was actually down, measured around the

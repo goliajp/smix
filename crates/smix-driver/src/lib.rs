@@ -624,10 +624,11 @@ impl IosDriver {
     /// Tap a selector several times in a row.
     ///
     /// Found once — read and held still, as a tap is — then handed to the
-    /// runner as one synthesise carrying `times` touches spaced by
+    /// runner in one request carrying `times` touches spaced by
     /// `interval_ms`. The spacing is the number given, not the round trip:
-    /// ten separate taps cost ten ~400 ms synthesises, and a gesture gated
-    /// on a 500 ms window sat right on that boundary.
+    /// ten separate taps cost ten ~400 ms requests, and a gesture gated on
+    /// a 500 ms window sat right on that boundary. The iOS runner cannot
+    /// start a touch before the last was delivered, about 280 ms.
     ///
     /// The runner reads what is under the point just before the first
     /// touch, so that touch is judged as a tap is; after it the screen may
@@ -696,7 +697,8 @@ impl IosDriver {
     }
 
     /// Double-tap a selector: two touches in one synthesise on the tap
-    /// route, judged like a tap. Same as Maestro `doubleTapOn`.
+    /// route, judged like a tap. Same as Maestro `doubleTapOn`. A burst
+    /// of two separate taps would arrive too far apart to be one gesture.
     ///
     /// It went to `/double-tap`, an XCUI element action that answered
     /// `ok` and nothing about where the touch went, and by its own note
@@ -709,7 +711,7 @@ impl IosDriver {
         let (nx, ny, aimed, reader) = self.resolve_aimed(selector, include).await?;
         let landed = self
             .runner
-            .tap_at_norm_coord_aimed(nx, ny, 2, None, None, Some(reader))
+            .double_tap_gesture_aimed(nx, ny, Some(reader))
             .await
             .map_err(transport_to_failure)?;
         landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())

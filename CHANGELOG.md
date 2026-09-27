@@ -754,6 +754,17 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Fixed
 
+- **On iOS, every touch of a repeated tap arrives, at the interval
+  asked for.** `tapOn: { repeat, delay }` and `repeatTap` sent their
+  touches as one synthesised event with a pointer path each, and paths
+  in one event are separate fingers whose start offsets were not kept:
+  touches asked for 1000 ms apart reached the app 0.06-0.12 s apart,
+  and a Button counted one fewer than were sent — 2 gave 1, 10 gave 9.
+  Each touch is now delivered on its own at its scheduled time. One
+  delivery takes about 280 ms, so a shorter interval arrives as that.
+  `doubleTapOn` still sends its two touches in one event, which is what
+  makes them one double tap.
+
 - **An iOS step no longer fails as "sent and no answer came back" when
   the request never left.** The iOS runner's server closes a connection
   once it has answered, unless the request asked for keep-alive, and does

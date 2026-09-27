@@ -29,13 +29,14 @@ impl HttpRunnerClient {
 
     /// `POST /tap-at-norm-coord` with several touches at one point.
     ///
-    /// One request, one synthesise, `times` touches spaced by
-    /// `interval_ms` on the event timeline. Sending them one at a time
-    /// costs a round trip each — measured at ~400 ms on iOS 26.5 — and
-    /// leaves the spacing as whatever that round trip happened to be,
-    /// which is why a gesture gated on a 500 ms inter-tap window could
-    /// not be driven: a flow could not tell a slow harness from a
-    /// broken app.
+    /// One request, `times` touches spaced by `interval_ms`, timed by
+    /// the runner. Sending them one at a time costs a round trip each —
+    /// measured at ~400 ms on iOS 26.5 — and leaves the spacing as
+    /// whatever that round trip happened to be, which is why a gesture
+    /// gated on a 500 ms inter-tap window could not be driven: a flow
+    /// could not tell a slow harness from a broken app. On iOS a touch
+    /// cannot start before the one before it has been delivered, about
+    /// 280 ms, so a shorter interval arrives as that.
     ///
     /// `None` for either timing takes the runner's default.
     pub async fn tap_at_norm_coord_burst(
@@ -63,6 +64,34 @@ impl HttpRunnerClient {
         hold_ms: Option<u32>,
         aimed_by: Option<TreeReader>,
     ) -> Result<TapAtCoordResult, RunnerTransportError> {
+        self.tap_request(nx, ny, times, interval_ms, hold_ms, aimed_by, false)
+            .await
+    }
+
+    /// A double tap on the iOS runner's tap route: two touches in one
+    /// synthesise, close enough together for a double-tap recogniser,
+    /// which two separate taps are not.
+    pub async fn double_tap_gesture_aimed(
+        &self,
+        nx: f64,
+        ny: f64,
+        aimed_by: Option<TreeReader>,
+    ) -> Result<TapAtCoordResult, RunnerTransportError> {
+        self.tap_request(nx, ny, 2, None, None, aimed_by, true)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn tap_request(
+        &self,
+        nx: f64,
+        ny: f64,
+        times: u32,
+        interval_ms: Option<u32>,
+        hold_ms: Option<u32>,
+        aimed_by: Option<TreeReader>,
+        double_tap: bool,
+    ) -> Result<TapAtCoordResult, RunnerTransportError> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct Req {
@@ -79,6 +108,8 @@ impl HttpRunnerClient {
             interval_ms: Option<u32>,
             #[serde(skip_serializing_if = "Option::is_none")]
             hold_ms: Option<u32>,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            double_tap: bool,
         }
         #[derive(Deserialize)]
         struct Resp {
@@ -97,6 +128,7 @@ impl HttpRunnerClient {
                     times,
                     interval_ms,
                     hold_ms,
+                    double_tap,
                 },
                 None,
             )

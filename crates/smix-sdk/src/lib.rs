@@ -2087,8 +2087,9 @@ impl App {
 
     /// Tap a selector `times` times in a row.
     ///
-    /// One resolve and one synthesise, with the touches spaced by
-    /// `interval_ms` on the event timeline. `repeat` around `tapOn`
+    /// One resolve and one request, with the touches spaced by
+    /// `interval_ms` by the runner (on iOS no closer than one delivery,
+    /// about 280 ms). `repeat` around `tapOn`
     /// sends each tap as its own request, which at ~400 ms per
     /// synthesise makes a rapid-tap gesture undriveable — and leaves
     /// the interval as whatever the round trip cost, so a flow cannot

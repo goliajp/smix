@@ -52,5 +52,13 @@ final class TapAtCoordRouteTests: XCTestCase {
     XCTAssertEqual(req.times, 2)
     XCTAssertEqual(req.holdMs, 800)
     XCTAssertEqual(req.intervalMs, TouchTimeline.defaultIntervalMs)
+    XCTAssertFalse(req.doubleTap)
+  }
+
+  func test_decode_takesDoubleTap() throws {
+    let req = try TapAtCoordRoute.decode(
+      Data(#"{"nx":0.5,"ny":0.25,"times":2,"doubleTap":true}"#.utf8))
+    XCTAssertTrue(req.doubleTap)
+    XCTAssertEqual(req.times, 2)
   }
 }

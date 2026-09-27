@@ -1,9 +1,10 @@
 // The spacing of a burst, which is the whole point of having one.
 //
-// The value of sending N touches in one synthesise is not that it is
-// faster — though at ~400 ms per synthesise it is — but that the
-// interval becomes a stated number instead of whatever the round trip
-// happened to cost.
+// The value of sending N touches in one request is that the interval
+// becomes a stated number instead of whatever a host round trip
+// happened to cost. These are the offsets the runner schedules; on iOS
+// a touch cannot start before the one before it has been delivered, so
+// an interval shorter than one synthesise (about 280 ms) arrives as that.
 
 import XCTest
 
@@ -49,6 +50,7 @@ final class TouchTimelineTests: XCTestCase {
 
   /// The documented default cadence stays fast enough to be worth
   /// having — ten taps well inside the 4.28 s that ten round trips cost.
+  /// The schedule asked for, not what iOS delivers (see the header).
   func testDefaultCadenceBeatsTenRoundTrips() {
     let d = TouchTimeline.duration(
       times: 10, intervalMs: TouchTimeline.defaultIntervalMs,

@@ -241,10 +241,15 @@ press answers only that the event went in.
 
 ### `POST /tap-at-norm-coord`
 
-Body: `{ nx, ny, times?, intervalMs?, holdMs?, aimedBy? }` — a point as
-shares of the app frame, and optionally a burst (`times` touches
-`intervalMs` apart) or a held touch (`holdMs`). A tap, a double tap
-(`times: 2`) and a long press (`holdMs: duration`) are all this route.
+Body: `{ nx, ny, times?, intervalMs?, holdMs?, doubleTap?, aimedBy? }` —
+a point as shares of the app frame, and optionally a burst (`times`
+touches `intervalMs` apart) or a held touch (`holdMs`). A tap, a double
+tap (`times: 2, doubleTap: true`) and a long press (`holdMs: duration`)
+are all this route. On iOS the touches of a burst are delivered one at
+a time on their schedule, no closer than one delivery (about 280 ms);
+`doubleTap` sends both in one event instead, close enough together to be
+one gesture. The Android runner does not read `doubleTap` (its double
+tap is `/double-tap-at-norm-coord`).
 `aimedBy` is the tree the point was aimed from, `accessibility` or
 `semantics`; absent means `accessibility`.
 
