@@ -34,11 +34,22 @@ ANDROID = re.compile(
 )
 IOS = re.compile(
     r"SMIX_E2E_UDID|E2E_IOS|xcrun simctl|pick-dev-sim|--platform ios"
-    r"|xcodebuild|SMIX_E2E_IOS"
+    r"|xcodebuild|SMIX_E2E_IOS|_IOS\b"
+    # a simulator named by its UDID: the tier's own was written into one
+    # script as a default, and that script shared the iOS lane's simulator
+    # from the Android lane
+    r"|\b[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\b"
 )
 # `smix down` and the sweeps act on every device this machine has, so a
 # script that runs one would stop the other lane's runner mid-script.
-MACHINE = re.compile(r'\$SMIX"?\s+down\b|\bsmix down\b|smix-sweep|simx-sweep')
+# `lease list` / `reconcile` / `prune` settle what the machine's ledger
+# says about devices that left, once, for whichever smix command runs
+# next; a script that waits to see that notice is judging the machine, and
+# another lane's command can take it first.
+MACHINE = re.compile(
+    r'\$SMIX"?\s+down\b|\bsmix down\b|smix-sweep|simx-sweep'
+    r'|\blease (list|reconcile|prune)\b'
+)
 
 
 def code_of(src: str) -> str:
@@ -73,6 +84,9 @@ def selftest() -> int:
         ("adb only in a comment", '# adb would be wrong here\nSMIX_E2E_UDID=1', "ios"),
         ("a device word only in a comment", "# xcrun simctl boot is not ours to run\ntrue", "none"),
         ("smix down only in a comment", "# never smix down here\nadb -s e shell true", "android"),
+        ("an iOS leg reached by a UDID default", 'adb -s e shell true\nIOS="${X_IOS:-5D087114-ECB3-443C-8DDB-40EEF9CFB90C}"', "serial"),
+        ("an iOS alias variable", 'adb -s e shell true\nA="${SMIX_C5_IOS:-x}"', "serial"),
+        ("waits on the machine ledger's notice", 'adb -s e shell true\n"$SMIX" lease list', "serial"),
     ]
     fails = 0
     for label, src, want in cases:
