@@ -198,17 +198,19 @@ fi
 # version string was stale or a token could not write. A check that costs
 # a second belongs before the ones that cost an hour.
 
-# --- the seconds-long judgements, before anything expensive --------
+# --- what this script judges, and what it takes from CI --------------
 #
-# Moved here from between gate 40 and gate 55, where the profile found
-# them: napi loader (0s) sat behind six minutes, and fact scan,
-# llms.txt freshness, fence check and clippy (0-3s) behind thirteen.
-# The napi one is not hypothetical — it went red forty minutes into
-# both 6.4.0 and 6.5.0, over a version string embedded in a generated
-# file, and costs nothing to ask.
-#
-# They were placed correctly once, by hand, at 6.3.0. Nothing kept
-# them there; the ordering check does now.
+# CI runs every source judgement -- fmt, clippy, rustdoc, the workspace
+# tests, the runner tarballs, the kotlin build and the source gates -- on
+# this exact commit before anything here starts, and
+# `ci-is-green-on-this-commit` refuses unless every job of that run passed
+# and the worktree is clean. So the tree being published is byte for byte
+# the tree CI judged, and running those judgements again here proved the
+# same thing a second time: it was 94% of a three-hour run and changed no
+# verdict. What stays is what CI cannot see: the devices, this machine's
+# devicectl, Xcode and interpreter, the npm token, the napi loader this
+# machine generates, and the publish legs themselves. `cargo publish`
+# still compiles every crate from its package before it uploads.
 
 
 # --- CI is green on this commit ---------------------------------------
@@ -234,206 +236,10 @@ printf '%s\n' "$CI_GREEN_OUT" | sed 's/^/  /'
 RUN_ID="$(printf '%s\n' "$CI_GREEN_OUT" | tail -1)"
 HEAD_SHA="$(cd "$ROOT" && git rev-parse HEAD)"
 
-# --- fact scan --------------------------------------------------------
-# hygiene-scan asks "does it read as internal?"; fact-scan asks "is it
-# true?" — install coordinates vs the workspace version, tool-count
-# claims vs #[tool(] registrations, and noise inside the quoted strings
-# hygiene-scan structurally cannot see.
-log "fact scan"
-python3 "$ROOT/scripts/dev/fact-scan.py" > /tmp/smix-ship-facts.log 2>&1 \
-  || fail "fact-scan FAILED — a user-facing surface states something untrue (see /tmp/smix-ship-facts.log)"
-# renames, which the version bump covers.
-
-# --- llms.txt freshness ----------------------------------------------
-# llms.txt / llms-full.txt are a projection of VERB_TABLE + the Selector
-# enum + the workspace version. Gate them like the FFI bindings so the
-# AI-facing index can't drift from the sources it mirrors.
-log "llms.txt freshness"
-# Confirms the crates' API changes are the major break the 2.0.0 bump
-# claims. Runs when the tool is installed; a ship must have it. It
-# validates in-place breaks like SimctlError → DeviceControlError, not
-# The AI tier sits beside the resolver, not inside it. Nothing in the
-# type system says so, and the check that does say so was running in no
-# gate at all when this line was added.
-log "fence check"
-bash "$ROOT/scripts/dev/fence-check.sh" > /tmp/smix-ship-fence.log 2>&1 \
-  || fail "fence-check FAILED — the sense path reaches smix-ai-tier (see /tmp/smix-ship-fence.log)"
-
-python3 "$ROOT/scripts/dev/gen-llms.py" --check > /tmp/smix-ship-llms.log 2>&1 \
-  || fail "llms.txt/llms-full.txt are stale — run scripts/dev/gen-llms.py and commit (see /tmp/smix-ship-llms.log)"
-# --- cargo-semver-checks ----------------------------------------------
-
-# --- TS SDK tests ------------------------------------------------------
-# A second, and it needs node_modules rather than a Rust build — so it
-# belongs with the other judgements that can be paid for in seconds.
-# It sat after `cargo test --workspace` and the ordering gate said so.
-log "npm/smix-rn typecheck + vitest"
-( cd "$ROOT/npm/smix-rn" && bun run typecheck && bun run test ) \
-    > /tmp/smix-ship-ts-test.log 2>&1 \
-  || fail "TS SDK tests FAILED — see /tmp/smix-ship-ts-test.log"
-
-# --- source-only judgements -------------------------------------------
-# Everything below reads files. No build, no device, no network — which
-# is why it belongs here rather than after six minutes of compiling.
-#
-# It used to sit after the workspace tests. That was inside tolerance
-# until this release's tests pushed `cargo test --workspace` past five
-# minutes on its own, and the ordering gate said so: forty-six
-# second-level judgements waiting behind work that has nothing to do
-# with them. The answer is the same one 6.3.0 reached by hand — move
-# them to the front — and this time a gate will notice if they drift
-# back.
-# --- route conformance ------------------------------------------------
-# Derives the served-route list from both runner sources and sweeps every
-# shipped file for phantom endpoints. It caught 13 fictional routes in
-# review, then sat unwired while ship.sh ran everything except it.
-# --- clippy -----------------------------------------------------------
-# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
-# nothing ran clippy — so four lints sat in the tree, one of them a doc
-# comment detached from the type it described in a stone crate. Clean at
-# the time this was added; here so it stays that way.
-#
-# Here rather than after the release build, where it used to be: nothing
-# before it is a precondition — it reads source — and on an already-built
-# tree it costs three seconds. `cheap-gates-come-first` measured those
-# three seconds sitting behind eleven minutes of Gradle and device work,
-# which is what that gate exists to say. A lint error is now found before
-# anything has been compiled for it.
-# Beside clippy, and for the same reason: both read source and neither needs
-# anything compiled first. `preflight.sh` has had this check since it existed
-# and the ship did not, so every path that reached a release without going
-# through preflight reached it unformatted. v10 lost two CI rounds that way —
-# once after a field went into fifty struct literals, once after an `if let`
-# was collapsed by hand. The code was right both times; the round was gone.
-log "rustfmt"
-( cd "$ROOT" && cargo fmt --all --check ) > /tmp/smix-ship-fmt.log 2>&1 \
-  || fail "rustfmt FAILED — run \`cargo fmt --all\` (see /tmp/smix-ship-fmt.log)"
-
-log "route conformance"
-python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&1 \
-  || fail "route conformance FAILED — see /tmp/smix-ship-routes.log"
-
-# --- every verb reads a locale map ------------------------------------
-# `localizedText:` is rewritten to a Text selector by a pure function.
-# Three of twelve verbs called it; the rest handed the locale map to the
-# resolver, which matches nothing against it — the same element found by
-# `assertVisible` and not by `longPressOn`, measured on emulator-5554.
-log "every verb reads a locale map"
-python3 "$ROOT/scripts/dev/every-verb-reads-a-locale-map.py" > /tmp/smix-ship-locale.log 2>&1 \
-  || fail "every verb reads a locale map FAILED — see /tmp/smix-ship-locale.log"
-
-# --- guide claims + corpus ---------------------------------------------
-# The guides are the release's user-facing half, and this is the last
-# place before they reach anybody.
-log "guide corpus in step with the guides"
-python3 "$ROOT/scripts/dev/guide-corpus-sync.py" --check > /tmp/smix-ship-guide-corpus.log 2>&1 \
-  || fail "guide corpus is out of step with the guides — run scripts/dev/guide-corpus-sync.py (see /tmp/smix-ship-guide-corpus.log)"
-
-# --- android gate scan -------------------------------------------------
-# Re-derives the Android modules and checks each one's test tasks are run
-# by preflight, CI and this script. The app module's unit tests were
-# outside all three for the whole of v1 and v2, which is how a header
-# nobody read and a placeholder package both shipped.
-log "android gate scan"
-python3 "$ROOT/scripts/dev/android-gate-scan.py" > /tmp/smix-ship-android-gate.log 2>&1 \
-  || fail "android gate scan FAILED — an Android test task is outside the gates (see /tmp/smix-ship-android-gate.log)"
-
-# --- audit ledger ------------------------------------------------------
-
-
-
-# --- hygiene scan ------------------------------------------------------
-# Development noise and dead doc pointers in everything a reader outside
-# this repo can see. Its own docstring says it exits non-zero "so it can
-# gate a release" — and until now this script mentioned it only in the
-# two comments below, never calling it. preflight ran it, CI ran it, the
-# release did not.
-log "hygiene scan"
-python3 "$ROOT/scripts/dev/hygiene-scan.py" > /tmp/smix-ship-hygiene.log 2>&1 \
-  || fail "hygiene scan FAILED — shipped sources carry development noise or dead doc pointers (see /tmp/smix-ship-hygiene.log)"
-
-# --- publish dag ------------------------------------------------------
-# Before anything is built, ask whether the publish list below covers
-# the workspace. A crate that something depends on and is missing fails
-# at cargo publish, forty minutes in; a crate nothing depends on yet —
-# every crate, on the release that introduces it — is simply never
-# published, and the ship says COMPLETE. Seconds, so it runs early.
-log "publish dag"
-python3 "$ROOT/scripts/dev/publish-dag-is-complete.py" > /tmp/smix-ship-publish-dag.log 2>&1 \
-  || fail "publish dag FAILED — the crates.io list and the workspace disagree (see /tmp/smix-ship-publish-dag.log)"
-
-# --- actions pinned ----------------------------------------------------
-# What CI ran is part of what this release was tested by, and a moving
-# action tag means that cannot be stated. Seconds, so it runs here.
-log "actions pinned"
-python3 "$ROOT/scripts/dev/actions-are-pinned.py" > /tmp/smix-ship-actions.log 2>&1 \
-  || fail "actions pinned FAILED — a workflow names a moving ref (see /tmp/smix-ship-actions.log)"
-
-# --- job ceilings ------------------------------------------------------
-log "job ceilings"
-python3 "$ROOT/scripts/dev/jobs-have-a-ceiling.py" > /tmp/smix-ship-ceilings.log 2>&1 \
-  || fail "job ceilings FAILED — a CI job may run for six hours (see /tmp/smix-ship-ceilings.log)"
-
-# --- self-tests are wired ----------------------------------------------
-# v10's reconciliation gate, on recorded payloads and no device. It went
-# blind to its own wire for a whole checkpoint while this suite stayed
-# green — the payloads it was recorded from pre-dated an envelope the CLI
-# grew — so the suite now asserts the recorded shape too.
-log "the two-paths gate can still go red"
-python3 "$ROOT/scripts/dev/two-paths-agree.test.py" > /tmp/smix-ship-twopaths.log 2>&1 \
-  || fail "the two-paths gate no longer goes red (see /tmp/smix-ship-twopaths.log)"
-
-# Whether the fixture a device gate installs is the one this tree
-# builds. C7 spent a day measuring a probe that was not the one in this
-# checkout: the apk was there, the path check passed, and two verdicts
-# read as the probe being wrong about the screen (open-items O1).
-log "the fixture stamp can still go red"
-python3 "$ROOT/scripts/dev/fixture-apk-stamp.test.py" > /tmp/smix-ship-fixturestamp.log 2>&1 \
-  || fail "the fixture source stamp no longer goes red (see /tmp/smix-ship-fixturestamp.log)"
-
-log "the publish-dag gate can still go red"
-python3 "$ROOT/scripts/dev/publish-dag-is-complete.test.py" > /tmp/smix-ship-dagtest.log 2>&1 \
-  || fail "the publish-dag gate no longer goes red on a broken list (see /tmp/smix-ship-dagtest.log)"
-
-# Named one by one rather than looped: workflow-scan reads this file
-# for the gate it is looking for, and a name assembled from a loop
-# variable is a name it cannot find. A scan that cannot see an
-# invocation reports it missing, which is the right way round.
-log "today's gates can still go red"
-python3 "$ROOT/scripts/dev/actions-are-pinned.test.py" > /tmp/smix-ship-gatetests.log 2>&1 \
-  || fail "actions-are-pinned no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
-python3 "$ROOT/scripts/dev/jobs-have-a-ceiling.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
-  || fail "jobs-have-a-ceiling no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
-python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
-  || fail "a-selftest-nobody-runs no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
-python3 "$ROOT/scripts/dev/an-app-that-is-gone.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
-  || fail "an-app-that-is-gone no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
-bash "$ROOT/scripts/dev/device-hub-shows-a-boot.sh" --selftest >> /tmp/smix-ship-gatetests.log 2>&1 \
-  || fail "device-hub-shows-a-boot cannot tell an unread window from an unmoved one (see /tmp/smix-ship-gatetests.log)"
-
-log "every Simulator.app mention says which Xcode"
-python3 "$ROOT/scripts/dev/an-app-that-is-gone.py" > /tmp/smix-ship-app-gone.log 2>&1 \
-  || fail "a Simulator.app mention does not say which Xcode — see /tmp/smix-ship-app-gone.log"
-
-log "the publication verifier asks the right things"
-python3 "$ROOT/scripts/dev/verify-published-reads-registries.test.py" \
-  > /tmp/smix-ship-verifytest.log 2>&1 \
-  || fail "the publication verifier no longer asks the right things (see /tmp/smix-ship-verifytest.log)"
-
-log "a published crate can run its tests"
-python3 "$ROOT/scripts/dev/a-published-crate-can-run-its-tests.py" \
-  > /tmp/smix-ship-packagetests.log 2>&1 \
-  || fail "a crate's tests read files its package will not carry, undeclared (see /tmp/smix-ship-packagetests.log)"
-
-log "a verb does not assume a platform"
-python3 "$ROOT/scripts/dev/a-verb-does-not-assume-a-platform.py" \
-  > /tmp/smix-ship-verbplatform.log 2>&1 \
-  || fail "a runner verb reaches one platform without saying so (see /tmp/smix-ship-verbplatform.log)"
-
-log "a hand-copied table says a number"
-python3 "$ROOT/scripts/dev/a-hand-copied-table-says-a-number.py" \
-  > /tmp/smix-ship-verbcount.log 2>&1 \
-  || fail "a written verb-table count disagrees with the table (see /tmp/smix-ship-verbcount.log)"
+# Ship only, never CI: CI has no device hub to read.
+log "the device hub reader can still go red"
+bash "$ROOT/scripts/dev/device-hub-shows-a-boot.sh" --selftest > /tmp/smix-ship-device-hub-selftest.log 2>&1 \
+  || fail "device-hub-shows-a-boot cannot tell an unread window from an unmoved one (see /tmp/smix-ship-device-hub-selftest.log)"
 
 # Ship only, never CI: its input is the devicectl installed on this
 # machine, and the ubuntu job has none to ask.
@@ -444,11 +250,6 @@ python3 "$ROOT/scripts/dev/a-refusal-devicectl-outgrew.test.py" \
 python3 "$ROOT/scripts/dev/a-refusal-devicectl-outgrew.py" \
   > /tmp/smix-ship-devicectl-outgrew.log 2>&1 \
   || fail "a physical-device refusal says devicectl lacks a verb it has (see /tmp/smix-ship-devicectl-outgrew.log)"
-
-log "self-tests are wired"
-python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.py" > /tmp/smix-ship-selftests.log 2>&1 \
-  || fail "a self-test is invoked by nothing (see /tmp/smix-ship-selftests.log)"
-
 
 # Measured 482s on a cold cache and 0s on a warm one: it runs a napi
 # build. Kept first — where 6.6 put it, reading the warm number — it
@@ -461,270 +262,6 @@ log "napi loader"
 # unchanged — with only a count in the log there was nothing to compare.
 "$ROOT/scripts/dev/napi-dts-fresh.sh" --verbose > /tmp/smix-ship-napi-dts.log 2>&1 \
   || fail "napi loader (index.d.ts/index.js) is not what napi generates — see /tmp/smix-ship-napi-dts.log"
-
-
-# The corpus gate's verdict, driven with fabricated records. FLAKE is
-# not green, and that rule is otherwise only reachable by booting a sim.
-log "flake classifier + corpus verdict self-tests"
-python3 "$ROOT/scripts/dev/flake-classify.test.py" > /tmp/smix-ship-flake.log 2>&1 \
-  || fail "flake classifier self-test FAILED — see /tmp/smix-ship-flake.log"
-bash "$ROOT/scripts/release/corpus-gate.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
-  || fail "corpus-gate verdict self-test FAILED — see /tmp/smix-ship-flake.log"
-# The tier's own reading of an exit code: 0 drove, 2 could not judge,
-# anything else failed. It read the word SKIP out of a script's output
-# until this cycle, which a passing script's log can contain.
-bash "$ROOT/scripts/release/device-e2e-tier.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
-  || fail "device-e2e-tier verdict self-test FAILED — see /tmp/smix-ship-flake.log"
-# And how the verifier at the end of this ship reads a late registry —
-# checked here rather than discovered there, an hour and a half later.
-bash "$ROOT/scripts/release/verify-published.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
-  || fail "verify-published verdict self-test FAILED — see /tmp/smix-ship-flake.log"
-bash "$ROOT/scripts/dev/v3.0-c3-determinism.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
-  || fail "determinism verdict self-test FAILED — see /tmp/smix-ship-flake.log"
-
-# The last step of a real ship installs the release on this machine and
-# asks whether it landed. Prove here, before anything is published, that
-# the asking can still say no.
-log "this-machine-is-current self-test"
-bash "$ROOT/scripts/release/this-machine-is-current.sh" --selftest > /tmp/smix-ship-this-machine-selftest.log 2>&1 \
-  || fail "this-machine-is-current self-test FAILED — see /tmp/smix-ship-this-machine-selftest.log"
-
-# A flow excused from the gate must carry a measured rate and a
-# history, or "known unstable" is just a flow someone got tired of.
-# Twenty of twenty-one corpus flows name system-app identifiers that
-# differ by iOS version; the portable tier is what a CI runner can run.
-# The CI job must run the same script a person can, or reproducing a
-# CI failure means running something that was equivalent when written.
-# A gate that goes red because the machine was busy is one people stop
-# reading, and then stop running.
-# One script shutting down a device it was lent is how four others fail.
-# A gate naming a system app's resource ids has taken that app's
-# version as a contract; when one goes missing the failure lands
-# somewhere else entirely.
-log "android gates drive our own app"
-python3 "$ROOT/scripts/dev/android-subject-scan.py" > /tmp/smix-ship-android-subject.log 2>&1 \
-  || fail "android-subject scan FAILED — see /tmp/smix-ship-android-subject.log"
-
-# A device record written into a checkout is a record the next checkout
-# cannot read. That is how a runner came to be on the books and
-# invisible at the same time.
-log "device facts are machine-scoped"
-python3 "$ROOT/scripts/dev/device-facts-are-machine-scoped.py" > /tmp/smix-ship-device-scope.log 2>&1 \
-  || fail "device-facts-are-machine-scoped FAILED — see /tmp/smix-ship-device-scope.log"
-
-# A ledger written into a checkout is a ledger the next checkout cannot
-# read — which is how a runner came to be on the books and invisible.
-log "leases are machine-scoped"
-python3 "$ROOT/scripts/dev/leases-are-machine-scoped.py" > /tmp/smix-ship-lease-scope.log 2>&1 \
-  || fail "leases-are-machine-scoped FAILED — see /tmp/smix-ship-lease-scope.log"
-
-# A tree's old book is read and never obeyed. While the two disagree,
-# nothing acts — for ninety-one minutes on 2026-08-11 the machine ledger
-# called a live runner abandoned.
-log "no second ledger path"
-python3 "$ROOT/scripts/dev/no-second-ledger-path.py" > /tmp/smix-ship-ledger-path.log 2>&1 \
-  || fail "no-second-ledger-path FAILED — see /tmp/smix-ship-ledger-path.log"
-
-log "the all-gates runner can still go red"
-python3 "$ROOT/scripts/dev/all-gates.test.py" > /tmp/smix-ship-all-gates.log 2>&1 \
-  || fail "all-gates self-test FAILED — see /tmp/smix-ship-all-gates.log"
-log "every status read is the judged command's"
-python3 "$ROOT/scripts/dev/a-status-is-read-from-the-command.py" > /tmp/smix-ship-status.log 2>&1 \
-  || fail "a status is read from a filter rather than the command — see /tmp/smix-ship-status.log"
-python3 "$ROOT/scripts/dev/a-status-is-read-from-the-command.test.py" >> /tmp/smix-ship-status.log 2>&1 \
-  || fail "status gate self-test FAILED — see /tmp/smix-ship-status.log"
-log "every script drives this tree's smix"
-python3 "$ROOT/scripts/dev/a-script-drives-this-tree.py" > /tmp/smix-ship-this-tree.log 2>&1 \
-  || fail "a script drives the PATH's smix rather than this tree's — see /tmp/smix-ship-this-tree.log"
-log "the this-tree gate can still go red"
-python3 "$ROOT/scripts/dev/a-script-drives-this-tree.test.py" >> /tmp/smix-ship-this-tree.log 2>&1 \
-  || fail "this-tree gate self-test FAILED — see /tmp/smix-ship-this-tree.log"
-log "an e2e leaves the phones alone"
-python3 "$ROOT/scripts/dev/an-e2e-leaves-the-phones-alone.py" > /tmp/smix-ship-phones.log 2>&1 \
-  || fail "a script reaches a phone nobody named, or writes the real device registry — see /tmp/smix-ship-phones.log"
-log "the phones gate can still go red"
-python3 "$ROOT/scripts/dev/an-e2e-leaves-the-phones-alone.test.py" >> /tmp/smix-ship-phones.log 2>&1 \
-  || fail "phones gate self-test FAILED — see /tmp/smix-ship-phones.log"
-log "every device gate keeps the crash evidence"
-python3 "$ROOT/scripts/dev/a-device-gate-keeps-crash-evidence.py" > /tmp/smix-ship-crash-evidence.log 2>&1 \
-  || fail "a device gate drops what the device recorded — see /tmp/smix-ship-crash-evidence.log"
-python3 "$ROOT/scripts/dev/a-device-gate-keeps-crash-evidence.test.py" >> /tmp/smix-ship-crash-evidence.log 2>&1 \
-  || fail "crash-evidence gate self-test FAILED — see /tmp/smix-ship-crash-evidence.log"
-bash "$ROOT/scripts/lib/crash-evidence.sh" --selftest >> /tmp/smix-ship-crash-evidence.log 2>&1 \
-  || fail "crash-evidence collector self-test FAILED — see /tmp/smix-ship-crash-evidence.log"
-bash "$ROOT/scripts/lib/claude-session.sh" --selftest >> /tmp/smix-ship-crash-evidence.log 2>&1 \
-  || fail "claude-session reader self-test FAILED — see /tmp/smix-ship-crash-evidence.log"
-log "every flow run is judged by smix's own code"
-python3 "$ROOT/scripts/dev/a-run-is-judged-by-its-code.py" > /tmp/smix-ship-run-judged.log 2>&1 \
-  || fail "a flow run is judged by the script's rule, not smix's code — see /tmp/smix-ship-run-judged.log"
-python3 "$ROOT/scripts/dev/a-run-is-judged-by-its-code.test.py" >> /tmp/smix-ship-run-judged.log 2>&1 \
-  || fail "run-judging gate self-test FAILED — see /tmp/smix-ship-run-judged.log"
-log "the run wrapper can still go red"
-bash "$ROOT/scripts/lib/smix-run" --selftest > /tmp/smix-ship-run-wrapper.log 2>&1 \
-  || fail "smix-run self-test FAILED — see /tmp/smix-ship-run-wrapper.log"
-log "every class over our own enums names every variant"
-python3 "$ROOT/scripts/dev/a-classification-names-every-variant.py" > /tmp/smix-ship-classes.log 2>&1 \
-  || fail "a class is drawn with matches! over several variants — see /tmp/smix-ship-classes.log"
-python3 "$ROOT/scripts/dev/a-classification-names-every-variant.test.py" >> /tmp/smix-ship-classes.log 2>&1 \
-  || fail "classification gate self-test FAILED — see /tmp/smix-ship-classes.log"
-log "a key name is read in one place"
-python3 "$ROOT/scripts/dev/one-key-table.py" > /tmp/smix-ship-keys.log 2>&1 \
-  || fail "a key name is read outside KeyName::from_name — see /tmp/smix-ship-keys.log"
-python3 "$ROOT/scripts/dev/one-key-table.test.py" >> /tmp/smix-ship-keys.log 2>&1 \
-  || fail "key-table gate self-test FAILED — see /tmp/smix-ship-keys.log"
-
-# An element can be nameable in a flow and unnameable from the surface an
-# agent drives through, with nothing red. `point` was, for two majors.
-log "every selector form is declared on every surface"
-python3 "$ROOT/scripts/dev/selector-surface-scan.py" > /tmp/smix-ship-selector-surface.log 2>&1 \
-  || fail "selector-surface scan FAILED — a selector form is undeclared on a surface (see /tmp/smix-ship-selector-surface.log)"
-
-# /health says the server is answering and nothing about the app binding.
-# Two commands concluded a device was drivable from it, and one of them
-# was the command you reach for when it is not.
-log "every health_ok call site says whether it decides"
-python3 "$ROOT/scripts/dev/health-is-not-a-session-check.py" > /tmp/smix-ship-health-session.log 2>&1 \
-  || fail "health/session scan FAILED — a call site decides from /health alone (see /tmp/smix-ship-health-session.log)"
-
-# Asking whether a session works without naming an app answers about
-# whichever app the runner was bound to at startup. Harmless where smix
-# started the runner; expensive the first time it did not.
-log "every session probe says which app it asks about"
-python3 "$ROOT/scripts/dev/probes-name-the-app.py" > /tmp/smix-ship-probe-naming.log 2>&1 \
-  || fail "probe-naming scan FAILED — a probe asks about an unnamed app (see /tmp/smix-ship-probe-naming.log)"
-
-# A surface that quietly does its own tap-then-screenshot works, passes
-# every test, and takes the frame 237 ms later from a different layer
-# than the touch. Only a scan sees that.
-log "tap-then-frame is one path"
-python3 "$ROOT/scripts/dev/tap-then-capture-is-one-path.py" > /tmp/smix-ship-one-path.log 2>&1 \
-  || fail "one-path scan FAILED — the combined action grew a second implementation (see /tmp/smix-ship-one-path.log)"
-
-# A flag with no description on the surface is a sentence nobody wrote.
-# Twenty were blank when this was written, four of them found by a reader.
-log "every flag says what it does"
-python3 "$ROOT/scripts/dev/every-flag-says-what-it-does.py" > /tmp/smix-ship-flag-docs.log 2>&1 \
-  || fail "flag-description scan FAILED — a flag reaches the surface with nothing to read (see /tmp/smix-ship-flag-docs.log)"
-log "an-authorised-hatch-reaches-every-surface"
-python3 "$ROOT/scripts/dev/an-authorised-hatch-reaches-every-surface.py" > /tmp/smix-ship-an-authorised-hatch-reaches-every-surface.log 2>&1 \
-  || fail "an-authorised-hatch-reaches-every-surface FAILED — see /tmp/smix-ship-an-authorised-hatch-reaches-every-surface.log"
-log "a-tap-proves-aim-not-arrival"
-python3 "$ROOT/scripts/dev/a-tap-proves-aim-not-arrival.py" > /tmp/smix-ship-a-tap-proves-aim-not-arrival.log 2>&1 \
-  || fail "a-tap-proves-aim-not-arrival FAILED — see /tmp/smix-ship-a-tap-proves-aim-not-arrival.log"
-log "no-script-picks-a-device-by-accident"
-python3 "$ROOT/scripts/dev/no-script-picks-a-device-by-accident.py" > /tmp/smix-ship-no-script-picks-a-device-by-accident.log 2>&1 \
-  || fail "no-script-picks-a-device-by-accident FAILED — see /tmp/smix-ship-no-script-picks-a-device-by-accident.log"
-
-log "generated-artifacts-are-load-bearing"
-python3 "$ROOT/scripts/dev/generated-artifacts-are-load-bearing.py" > /tmp/smix-ship-generated-artifacts.log 2>&1 \
-  || fail "generated-artifacts-are-load-bearing FAILED — see /tmp/smix-ship-generated-artifacts.log"
-
-log "project-pointer-holds-no-facts"
-python3 "$ROOT/scripts/dev/project-pointer-holds-no-facts.py" > /tmp/smix-ship-project-pointer.log 2>&1 \
-  || fail "project-pointer-holds-no-facts FAILED — see /tmp/smix-ship-project-pointer.log"
-
-log "a retired sentence is off the surfaces"
-python3 "$ROOT/scripts/dev/retired-claims-scan.py" > /tmp/smix-ship-retired-claims.log 2>&1 \
-  || fail "retired-claims scan FAILED — see /tmp/smix-ship-retired-claims.log"
-
-log "teardown restores rather than imposes"
-python3 "$ROOT/scripts/dev/teardown-restores-scan.py" > /tmp/smix-ship-teardown.log 2>&1 \
-  || fail "teardown-restores scan FAILED — see /tmp/smix-ship-teardown.log"
-
-log "an act route says what ok means"
-python3 "$ROOT/scripts/dev/an-act-route-says-what-ok-means.py" > /tmp/smix-ship-ok-means.log 2>&1 \
-  || fail "an-act-route-says-what-ok-means FAILED — see /tmp/smix-ship-ok-means.log"
-python3 "$ROOT/scripts/dev/an-act-route-says-what-ok-means.test.py" > /tmp/smix-ship-ok-means-test.log 2>&1 \
-  || fail "an-act-route-says-what-ok-means self-test FAILED — see /tmp/smix-ship-ok-means-test.log"
-
-log "a yield is not a failure"
-python3 "$ROOT/scripts/dev/yield-is-not-failure-scan.py" > /tmp/smix-ship-yield.log 2>&1 \
-  || fail "yield-is-not-failure scan FAILED — see /tmp/smix-ship-yield.log"
-
-log "portable tier parity"
-python3 "$ROOT/scripts/dev/portable-tier-parity.py" > /tmp/smix-ship-tier-parity.log 2>&1 \
-  || fail "portable tier parity FAILED — see /tmp/smix-ship-tier-parity.log"
-
-log "corpus portability scan"
-python3 "$ROOT/scripts/dev/corpus-portability-scan.py" > /tmp/smix-ship-portability.log 2>&1 \
-  || fail "corpus portability scan FAILED — see /tmp/smix-ship-portability.log"
-
-log "known-unstable list scan"
-python3 "$ROOT/scripts/dev/known-unstable-scan.py" > /tmp/smix-ship-known-unstable.log 2>&1 \
-  || fail "known-unstable list scan FAILED — see /tmp/smix-ship-known-unstable.log"
-python3 "$ROOT/scripts/dev/known-unstable-scan.test.py" >> /tmp/smix-ship-known-unstable.log 2>&1 \
-  || fail "known-unstable scan self-test FAILED — see /tmp/smix-ship-known-unstable.log"
-
-
-# A fuzz lockfile that no longer satisfies the manifests above it is
-# not a lockfile: the next cargo command resolves something else and
-# writes it back. Four of them sat that way after kevy 5.3 -> 5.4.1
-# and nothing said so.
-log "fuzz lockfiles are usable"
-python3 "$ROOT/scripts/dev/fuzz-lockfiles-are-usable.py" > /tmp/smix-ship-fuzz-locks.log 2>&1 \
-  || fail "fuzz lockfiles are usable FAILED — see /tmp/smix-ship-fuzz-locks.log"
-
-log "the fuzz-lockfile gate can still go red"
-python3 "$ROOT/scripts/dev/fuzz-lockfiles-are-usable.test.py" > /tmp/smix-ship-fuzz-locks-selftest.log 2>&1 \
-  || fail "fuzz-lockfile gate self-test FAILED — see /tmp/smix-ship-fuzz-locks-selftest.log"
-
-# The device gates run an hour in. This one's judgement is a pure
-# function now, so the shape that made it crash rather than speak is
-# checked here, before anything is compiled.
-log "the A4 window verdict can still speak"
-python3 "$ROOT/scripts/dev/android-a4-verdict.test.py" > /tmp/smix-ship-a4-selftest.log 2>&1 \
-  || fail "A4 verdict self-test FAILED — see /tmp/smix-ship-a4-selftest.log"
-
-log "every verdict answers in sentences"
-python3 "$ROOT/scripts/dev/a-verdict-answers-in-sentences.py" > /tmp/smix-ship-verdict-sentences.log 2>&1 \
-  || fail "a verdict cannot report its own finding — see /tmp/smix-ship-verdict-sentences.log"
-
-
-log "the subject sweep can still go red"
-python3 "$ROOT/scripts/dev/a-gate-without-its-subject.test.py" > /tmp/smix-ship-gate-subject-selftest.log 2>&1 \
-  || fail "the subject sweep cannot go red — see /tmp/smix-ship-gate-subject-selftest.log"
-
-log "the verdict sweep can still go red"
-python3 "$ROOT/scripts/dev/a-verdict-answers-in-sentences.test.py" > /tmp/smix-ship-verdict-sweep-selftest.log 2>&1 \
-  || fail "verdict sweep self-test FAILED — see /tmp/smix-ship-verdict-sweep-selftest.log"
-
-log "preflight parity scan"
-python3 "$ROOT/scripts/dev/preflight-parity-scan.py" > /tmp/smix-ship-parity.log 2>&1 \
-  || fail "preflight parity scan FAILED — see /tmp/smix-ship-parity.log"
-
-log "the gate-port scan can still go red"
-python3 "$ROOT/scripts/dev/gate-port-scan.test.py" > /tmp/smix-ship-gate-port-test.log 2>&1 \
-  || fail "gate-port-scan no longer refuses a pinned port — in particular it may have gone back to reading only letters in an override's name, or to missing a `runner up` behind an environment prefix, which is how six gates came to pin a socket. See /tmp/smix-ship-gate-port-test.log"
-
-log "gate port scan"
-python3 "$ROOT/scripts/dev/gate-port-scan.py" > /tmp/smix-ship-gate-port.log 2>&1 \
-  || fail "gate port scan FAILED — see /tmp/smix-ship-gate-port.log"
-
-log "the publish-graph gate can still go red"
-python3 "$ROOT/scripts/dev/the-publish-graph-builds.test.py" > /tmp/smix-ship-publish-graph-test.log 2>&1 \
-  || fail "the-publish-graph-builds no longer goes red on broken input — in particular it may have gone back to accepting publishToMavenLocal, which is the easier path that missed this in 10.0.0. See /tmp/smix-ship-publish-graph-test.log"
-
-log "the publish graph builds"
-python3 "$ROOT/scripts/dev/the-publish-graph-builds.py" > /tmp/smix-ship-publish-graph.log 2>&1 \
-  || fail "the-publish-graph-builds FAILED — the real Maven tasks cannot build their task graph. The dry run would not have found this: it publishes to the local repo, which never creates a staging repository. See /tmp/smix-ship-publish-graph.log"
-
-log "fuzz targets compile"
-python3 "$ROOT/scripts/dev/fuzz-targets-compile.py" > /tmp/smix-ship-fuzz-compile.log 2>&1 \
-  || fail "fuzz-targets-compile FAILED — a fuzz crate no longer builds against the crate it fuzzes. See /tmp/smix-ship-fuzz-compile.log"
-
-log "every runner a gate starts comes down"
-python3 "$ROOT/scripts/dev/every-runner-a-gate-starts-comes-down.py" \
-  > /tmp/smix-ship-teardown.log 2>&1 \
-  || fail "every-runner-a-gate-starts-comes-down FAILED — a gate leaves a runner behind, or hides what its teardown said. See /tmp/smix-ship-teardown.log"
-
-log "route context scan"
-python3 "$ROOT/scripts/dev/route-context-scan.py" > /tmp/smix-ship-route-context.log 2>&1 \
-  || fail "route context scan FAILED — see /tmp/smix-ship-route-context.log"
-
-log "gate subject diversity"
-python3 "$ROOT/scripts/dev/gate-subject-diversity.py" > /tmp/smix-ship-subjects.log 2>&1 \
-  || fail "gate subject diversity FAILED — see /tmp/smix-ship-subjects.log"
-
 # --- devices first ---------------------------------------------------
 #
 # The release binary these gates drive, and then the gates. Ahead of
@@ -754,18 +291,6 @@ log "cargo build -p smix-cli --release (for corpus gate)"
 # through scripts/lib/e2e-binary.sh now, which honours SMIX_BIN.
 export SMIX_BIN="$ROOT/target/release/smix"
 
-# After the build, because it asks the CLI it names ($SMIX_BIN) whether
-# each command exists; before it, neither build was known to be current.
-log "mcp cli parity scan"
-python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.log 2>&1 \
-  || fail "mcp cli parity scan FAILED — see /tmp/smix-ship-mcp-parity.log"
-
-# Also after the build: the port scan's command list, against this CLI.
-log "runner commands match the cli"
-python3 "$ROOT/scripts/dev/runner-commands-match-the-cli.py" > /tmp/smix-ship-runner-commands.log 2>&1 \
-  || fail "runner commands match the cli FAILED — see /tmp/smix-ship-runner-commands.log"
-python3 "$ROOT/scripts/dev/runner-commands-match-the-cli.test.py" > /tmp/smix-ship-runner-commands-test.log 2>&1 \
-  || fail "the runner-commands gate can no longer go red — see /tmp/smix-ship-runner-commands-test.log"
 
 # --- android instrumentation (device) ----------------------------------
 # The :sdk assertion suite on a pinned emulator. Placed early — before
@@ -854,6 +379,7 @@ android_free_for_60s() {
 # seconds, fifteen free ones are fifteen minutes, and the log said "up to
 # 15m" either way. Measured 2026-08-30: it gave up after three minutes
 # and said it had waited fifteen.
+log "android: waiting for $ANDROID_DEVICE to stay free for a minute"
 if android_device_is_busy; then
   log "android: $ANDROID_DEVICE is held by another process — waiting for a clear minute, up to 15m"
 fi
@@ -990,49 +516,6 @@ v10_runner_down
 trap ship_profile_close EXIT
 
 
-# After the device gates, not before them. clippy compiles the
-# workspace and took seven minutes this run; the device gates take
-# seconds and answer a question no amount of linting can: is the
-# device there, is it ours, is anyone else on it. Third finding of
-# this shape from `cheap-gates-come-first`.
-log "clippy"
-( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
-  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
-
-# Beside clippy: a doc link to a private item or a type that is gone
-# builds and tests green, and only rustdoc with warnings denied says so.
-log "rustdoc"
-( cd "$ROOT" && RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace ) > /tmp/smix-ship-rustdoc.log 2>&1 \
-  || fail "rustdoc FAILED — see /tmp/smix-ship-rustdoc.log"
-
-# Moved down past the cheap judgements below it. This step runs three
-# host suites and pays for whatever the tree last invalidated: after
-# the kevy bump it took 25 minutes, and `cheap-gates-come-first`
-# found seven judgements of nought to one second each sitting behind
-# it. What they check does not change; when a reader finds out does.
-log "three readers agree"
-python3 "$ROOT/scripts/dev/three-readers-agree.py" > /tmp/smix-ship-three-readers.log 2>&1 \
-  || fail "three-readers-agree FAILED (see /tmp/smix-ship-three-readers.log)
-$(tail -6 /tmp/smix-ship-three-readers.log 2>/dev/null | sed 's/^/  /')
-
-  Two different findings wear this name: the three readers disagreeing
-  about a recorded report, and one of the three suites not running at
-  all. This line used to assert the first whichever it was."
-python3 "$ROOT/scripts/dev/three-readers-agree.py" --assert-ci-union >> /tmp/smix-ship-three-readers.log 2>&1 \
-  || fail "three-readers-agree --assert-ci-union FAILED — a reader is named by no CI job (see /tmp/smix-ship-three-readers.log)"
-
-# The mutation sweep runs every ship gate twice in a pristine copy, so
-# it costs minutes and grew when this release added two gates to the
-# ship. `cheap-gates-come-first` caught what that did to the ones
-# after it: eight judgements of nought to two seconds each, sitting
-# behind six minutes of work, any of which could have said no first.
-#
-# So the cheap ones go in front of it. Nothing about what they check
-# changes; what changes is when a reader finds out.
-log "no gate says yes with its subject gone"
-python3 "$ROOT/scripts/dev/a-gate-without-its-subject.py" > /tmp/smix-ship-gate-subject.log 2>&1 \
-  || fail "a gate passes without its subject — see /tmp/smix-ship-gate-subject.log"
-
 # --- workflow scan -----------------------------------------------------
 # The development contract survives a clone: charter and rule cards
 # tracked, hook scripts present and wired, guards tested, no GNU-only
@@ -1042,31 +525,6 @@ log "workflow scan"
 python3 "$ROOT/scripts/dev/workflow-scan.py" > /tmp/smix-ship-workflow.log 2>&1 \
   || fail "workflow scan FAILED — see /tmp/smix-ship-workflow.log"
 
-# --- Android unit tests + androidTest compile --------------------------
-# Compiles the generated Kotlin bindings AND runs the unit suites.
-# The bindings previously first compiled during `gradlew :sdk:publish` —
-# publish-time was the first compile, which is exactly how the
-# DriveError field/Throwable.message collision reached a release branch.
-#
-# The task name is bare rather than `:sdk:`-qualified because it used to
-# be qualified, and the app module's eight test files were consequently
-# run by nothing at all — including the ones written to cover the empty
-# set_target_bundle_id and the placeholder package in the view-id lookup.
-#
-# assembleDebugAndroidTest is the Android counterpart of the
-# `xcodebuild build-for-testing` step above: it compiles the runner body
-# that ships to users without starting a device.
-#
-# :app's connectedDebugAndroidTest is NOT here and will not be. It was
-# measured sitting at "Tests 0/1 completed" for three minutes forty
-# while /health answered 200: it does not fail, it never returns, and in
-# a release script that is a hang. :sdk's runs below, via the delegate.
-log "android unit tests + androidTest compile (sdk + app; compiles kotlin bindings)"
-( cd "$ROOT/android-runner" && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain ) \
-    > /tmp/smix-ship-kotlin-test.log 2>&1 \
-  || fail "Android unit tests / androidTest compile FAILED — see /tmp/smix-ship-kotlin-test.log"
-
-
 # --- swift-bridge unit tests ------------------------------------------
 # NOT bypassable. This suite sat outside the gate long enough for a test
 # asserting a two-release-old contract to fail unnoticed for 15+ releases.
@@ -1075,113 +533,6 @@ log "swift-bridge unit tests"
 ( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
   || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
 
-# --- SmixRunner UITest compile ----------------------------------------
-# `swift test` covers the SwiftPM library targets, not SmixRunnerUITests —
-# the XCUITest body that ships in the runner sources and is what actually
-# drives a device. It went uncompiled by any gate. build-for-testing on a
-# generic simulator destination compiles it without booting a simulator.
-log "SmixRunner UITest build"
-( cd "$ROOT/swift-bridge" && xcodebuild build-for-testing \
-    -scheme SmixRunner -destination 'generic/platform=iOS Simulator' ) \
-    > /tmp/smix-ship-uitest-build.log 2>&1 \
-  || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
-
-# The runner tarballs are compared against the trees they were built
-# from, and that comparison lived inside `cargo test --workspace` — which
-# is where it was found, twice in one cycle, at thirteen and thirty-one
-# minutes. Both times the fix was one command and the cost was the wait.
-#
-# Buried inside an expensive check it is also invisible to
-# `cheap-gates-come-first`: that gate reads a profile of named gates, and
-# a judgement with no name of its own cannot be said to be in the wrong
-# place. Naming it is what makes its position a choice somebody made.
-#
-# Measured at 64s on a warm tree, against ~40 minutes for the suite it
-# used to hide in.
-log "runner tarballs match their sources"
-( cd "$ROOT" && cargo test -p smix-runner-sources ) > /tmp/smix-ship-tarball.log 2>&1 \
-  || fail "runner tarballs are stale — run scripts/release/build-runner-tarball.sh and build-android-runner-tarball.sh (see /tmp/smix-ship-tarball.log)"
-
-# --- the device gates, ahead of the workspace suite ------------------
-#
-# These sat after `cargo test --workspace`, which is ninety-six
-# minutes. `cheap-gates-come-first` put it plainly: three judgements
-# of nought to three seconds each, behind a hundred and eleven minutes
-# of work. And the cost of being late here is not only the wait --
-# every device red this release (an emulator nobody had registered, a
-# consumer holding it, a focus budget equal to its own arrival time)
-# was reachable in seconds and was found after two hours.
-#
-# A device that is absent, held, or unregistered should say so before
-# anything is compiled for it.
-
-# --- rust workspace tests ---------------------------------------------
-# The workspace suite (830+ tests) had NO gate: ship.sh ran smoke + swift
-# + lints while `cargo test` was left to whoever remembered. That is how
-# /tap shipped a response body the wire crate deserialized to all-None
-# without one red test. Non-bypassable, like the swift suite above.
-log "cargo test --workspace"
-# The exit code, not just the fact of one. A suite that fails names a
-# test; a `cargo` cut down by a signal names nothing, and the log's last
-# line is a passing test either way. Dry-run twenty-one ended with 76
-# binaries green, no `failures:` block anywhere in 1240 lines, and this
-# line saying the tests failed -- which is the one thing that had not
-# happened. 128+N is a signal; 101 is a real red.
-( cd "$ROOT" && cargo test --workspace ) > /tmp/smix-ship-cargo-test.log 2>&1
-CARGO_TEST_RC=$?
-if [ "$CARGO_TEST_RC" -ne 0 ]; then
-  if grep -q "^failures:" /tmp/smix-ship-cargo-test.log; then
-    fail "cargo test FAILED (exit $CARGO_TEST_RC) — see /tmp/smix-ship-cargo-test.log
-$(grep -A6 '^failures:' /tmp/smix-ship-cargo-test.log | head -12 | sed 's/^/  /')"
-  fi
-  fail "cargo test ended with exit $CARGO_TEST_RC and no test failed.
-  Nothing in /tmp/smix-ship-cargo-test.log says a test went red, so this is
-  the run being cut short rather than the tree being broken — a signal
-  (128+N), a killed child, or something taking the build out from under it.
-  Last lines:
-$(tail -4 /tmp/smix-ship-cargo-test.log | sed 's/^/    /')"
-fi
-
-# --- judgements that need a build ------------------------------------
-# These three are not seconds-long source reads. Two compile the adapter
-# to ask the compiled table what it says, and the workflow scan takes a
-# minute and a half on its own. Kept at the front they made the
-# fail-fast block cost seven minutes, and the ordering gate reported the
-# genuinely cheap judgements that followed them — correctly. Here the
-# adapter is already built, so the two cost nothing, and nothing cheap
-# waits behind them.
-
-# --- every cell is declared -------------------------------------------
-# The verb-by-form table has to agree with the code rather than with
-# itself: a slot handed out and not listed is one the tests walk past,
-# and a cell claiming a dispatch runtime.rs does not perform is the
-# shape of the defect the table exists for.
-log "every cell is declared"
-python3 "$ROOT/scripts/dev/every-cell-is-declared.py" > /tmp/smix-ship-cells.log 2>&1 \
-  || fail "every cell is declared FAILED — see /tmp/smix-ship-cells.log"
-
-# --- selector matrix in the guide -------------------------------------
-# The guide's verb-by-form table is generated from the one the code
-# decides by. It said "any selector position accepts `ocrText:`"
-# directly above the list of the four verbs that read it — a sentence
-# and a list disagreeing in the same paragraph, both written by hand.
-log "selector matrix in the guide"
-python3 "$ROOT/scripts/dev/gen-selector-matrix.py" --check > /tmp/smix-ship-matrix.log 2>&1 \
-  || fail "the guide's selector matrix is not what the table says — see /tmp/smix-ship-matrix.log"
-
-# Twenty corpus flows against one system app is one subject walked
-# twenty ways, and a defect that only shows on an ordinary app was
-# invisible to every device gate at once — which is how a consumer
-# found `/tree` returning only the SystemUI windows while everything
-# here was green. This asks whether the gates below are pointed at more
-# than the platform's own app; it does not ask whether they pass.
-# A route that drives the app and does not read `App-Bundle-Id` uses
-# whichever app the runner booted with, in silence. Three did.
-# A gate any bystander process can turn red judges nothing.
-# preflight promises to run what CI runs. Nothing checked, and two
-# steps had no local counterpart at all.
-# The plugin adds initiative, not capability. Nothing checked that
-# direction, and two MCP tools had no CLI behind them.
 # --- corpus gate (real sim) -------------------------------------------
 # Runs the bootstrap corpus end-to-end on a simulator. Device selection
 # is explicit env first, else this repo's own booted dev sim.
