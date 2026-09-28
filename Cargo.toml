@@ -121,3 +121,10 @@ debug = true  # criterion needs symbols for stack introspection
 # the largest single thing on these machines — 104 GB in smix alone — and the
 # debug info is most of it.
 debug = 1
+# On macOS the default ("unpacked") leaves every object file in deps/ for the
+# debugger to find, and nothing ever removes them: one edit and rebuild of
+# smix-driver's tests left 1,325 more, and the directory reached 1.36 million
+# entries. Each test binary's first exec then waited 17-30 s while the system
+# walked that directory. "packed" keeps file and line in a .dSYM beside the
+# binary and leaves no objects behind.
+split-debuginfo = "packed"
