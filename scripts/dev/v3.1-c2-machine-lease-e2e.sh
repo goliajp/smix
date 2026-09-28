@@ -101,22 +101,45 @@ step "4. every checkout on this machine, one answer"
 # after reporting a pass, leaving a booted simulator to the trap.
 TREES="$( { find "$HOME" -maxdepth 4 -type d -name .smix 2>/dev/null || true; } | sed 's|/.smix$||' | head -8)"
 TREES="$(printf '%s\n%s\n' "$ROOT" "$TREES" | sort -u)"
-FIRST=""
-SAME=yes
+# Read from a frozen copy of the machine's ledgers, not the live ones:
+# other sessions boot and lease devices on this machine while the script
+# runs, and four reads a few seconds apart then disagree because the
+# machine changed, not because the checkout does. A holder's liveness can
+# still change under the copy, so every other checkout's read sits between
+# two reads from this one; if those two differ, the round saw a change and
+# says nothing about checkouts.
+MACHINE="${SMIX_MACHINE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/smix}"
+FROZEN="$(mktemp -d)"
+cp -R "$MACHINE/." "$FROZEN/" 2>/dev/null || true
+read_in() { (cd "$1" && SMIX_MACHINE_DIR="$FROZEN" "$SMIX" lease list 2>/dev/null | sort | shasum | awk '{print $1}'); }
 SEEN=0
+DISAGREE=""
+UNSTABLE=""
 while read -r w; do
     [ -n "$w" ] && [ -d "$w" ] || continue
-    got="$(cd "$w" && "$SMIX" lease list 2>/dev/null | sort | shasum | awk '{print $1}')"
-    echo "  $(basename "$w"): $got"
     SEEN=$((SEEN + 1))
-    if [ -z "$FIRST" ]; then FIRST="$got"; elif [ "$got" != "$FIRST" ]; then SAME=no; fi
+    [ "$w" = "$ROOT" ] && continue
+    judged=no
+    for round in 1 2 3; do
+        before="$(read_in "$ROOT")"; theirs="$(read_in "$w")"; after="$(read_in "$ROOT")"
+        [ "$before" = "$after" ] || continue
+        judged=yes
+        echo "  $(basename "$w"): $theirs (this checkout: $before)"
+        [ "$theirs" = "$before" ] || DISAGREE="$DISAGREE $(basename "$w")"
+        break
+    done
+    [ "$judged" = yes ] || UNSTABLE="$UNSTABLE $(basename "$w")"
 done <<< "$TREES"
+rm -rf "$FROZEN"
 if [ "$SEEN" -lt 2 ]; then
     bad "only $SEEN checkout found — one tree agreeing with itself proves nothing"
-elif [ "$SAME" = yes ]; then
-    ok "all $SEEN checkouts read the same ledgers"
+elif [ -n "$DISAGREE" ]; then
+    bad "checkouts disagree about what this machine holds:$DISAGREE"
+elif [ -n "$UNSTABLE" ]; then
+    echo "  the ledgers changed under every round for:$UNSTABLE — cannot judge them"
+    echo "C2-MACHINE-LEASE-SKIP"; exit 2
 else
-    bad "checkouts disagree about what this machine holds"
+    ok "all $SEEN checkouts read the same ledgers"
 fi
 
 step "5. the device this script booted is on the books"
