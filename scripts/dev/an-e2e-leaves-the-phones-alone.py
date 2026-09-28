@@ -159,8 +159,10 @@ LISTING_NOT_A_STATE = {
     ("scripts/release/corpus-gate.sh", 'SIM_RUNTIME="$(xcrun simctl list devices'):
         "reads the device's runtime for the log, not whether it is up",
 }
-# A loop that runs every e2e script is a place nobody names a device.
-SUITE_LOOP = re.compile(r"\bfor\s+\w+\s+in\s+.*\*-e2e\.sh")
+# A loop that runs every e2e script is a place nobody names a device. The
+# device tier takes the list from e2e-lanes.py (which lanes can run side by
+# side) rather than from a glob of its own, and that list is every script.
+SUITE_LOOP = re.compile(r"\bfor\s+\w+\s+in\s+.*\*-e2e\.sh|scripts/dev/e2e-lanes\.py(?!\s+--selftest)")
 CLEARED = re.compile(
     r"\bunset\b.*\bSMIX_E2E_PHYSICAL_ANDROID\b.*\bSMIX_E2E_PHYSICAL_IOS\b"
 )
