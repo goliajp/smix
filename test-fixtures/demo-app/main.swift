@@ -334,6 +334,50 @@ struct ScrollStageView: View {
   }
 }
 
+// A sign-in form in the shape of a consumer's: a ScrollView that lets a
+// drag take the keyboard down, and an email field whose return key is
+// Next, so return moves focus instead of ending editing. On it, a tap
+// outside the keyboard does nothing and only a drag from the form into
+// the keyboard closes it.
+struct SignInFormView: View {
+  private enum Field { case email, password }
+  @State private var email = ""
+  @State private var password = ""
+  // Pulled to refresh: a drag that dismisses the keyboard must not also
+  // refresh the screen it was made on.
+  @State private var refreshes = 0
+  @FocusState private var focus: Field?
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        Text("sign in").font(.title2)
+        Text("refreshes \(refreshes)")
+          .accessibilityIdentifier("signin-refreshes")
+        TextField("email", text: $email)
+          .textFieldStyle(.roundedBorder)
+          .textInputAutocapitalization(.never)
+          .submitLabel(.next)
+          .focused($focus, equals: .email)
+          .onSubmit { focus = .password }
+          .accessibilityIdentifier("signin-email")
+        TextField("password", text: $password)
+          .textFieldStyle(.roundedBorder)
+          .submitLabel(.go)
+          .focused($focus, equals: .password)
+          .accessibilityIdentifier("signin-password")
+        Color.clear.frame(height: 600)
+      }
+      .padding()
+    }
+    .scrollDismissesKeyboard(.interactively)
+    .refreshable { refreshes += 1 }
+    .accessibilityIdentifier("signin-scroll")
+    .navigationTitle("sign in")
+    .navigationBarTitleDisplayMode(.inline)
+  }
+}
+
 struct ContentView: View {
   @State private var typed = ""
   @State private var submitted = ""
@@ -355,6 +399,7 @@ struct ContentView: View {
   // Presses the icon-only button received.
   @State private var iconPauses = 0
   @State private var scrollShown = false
+  @State private var signInShown = false
 
   var body: some View {
     // NavigationStack, and the back button it provides, rather than a
@@ -389,6 +434,11 @@ struct ContentView: View {
               .accessibilityIdentifier("fixture-open-uikit-alert")
             Text("deleted \(uikitAlert.deleted)")
               .accessibilityIdentifier("fixture-uikit-alert-count")
+            // In this row rather than one of its own, for the same reason
+            // as "Open scroll" below: rows are what the corpus counts.
+            Button("Sign in") { signInShown = true }
+              .buttonStyle(.borderless)
+              .accessibilityIdentifier("fixture-open-signin")
           }
 
           // Empty until Submit is pressed, so an assertion on it
@@ -472,6 +522,7 @@ struct ContentView: View {
       .accessibilityIdentifier("fixture-list")
       .navigationTitle("smix fixture")
       .navigationDestination(isPresented: $scrollShown) { ScrollStageView() }
+      .navigationDestination(isPresented: $signInShown) { SignInFormView() }
     }
   }
 }

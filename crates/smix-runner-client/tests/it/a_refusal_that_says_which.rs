@@ -19,7 +19,7 @@ async fn a_named_refusal_keeps_what_the_runner_saw() {
     wiremock::Mock::given(wiremock::matchers::method("POST"))
         .and(wiremock::matchers::path("/hide-keyboard"))
         .respond_with(wiremock::ResponseTemplate::new(200).set_body_string(
-            r#"{"ok":false,"error":"keyboard_did_not_close","saw":"tried key:Return, tap-above, swipe-down; focus: input-password"}"#,
+            r#"{"ok":false,"error":"keyboard_did_not_close","saw":"tried key:Return, drag-into-keyboard, tap-just-above-keyboard; focus: input-password"}"#,
         ))
         .mount(&server)
         .await;
@@ -36,7 +36,7 @@ async fn a_named_refusal_keeps_what_the_runner_saw() {
         "the caller cannot act on a refusal that will not say which one — {said}"
     );
     assert!(
-        said.contains("swipe-down") && said.contains("input-password"),
+        said.contains("drag-into-keyboard") && said.contains("input-password"),
         "and what the runner saw is the half they act on — {said}"
     );
     assert!(

@@ -2,10 +2,11 @@ import FlyingFox
 import Foundation
 
 // POST /hide-keyboard {} → 200 {ok:<bool>}.
-// Mirrors BackRoute / ForegroundRoute envelope shape. Runner-side handler
-// queries XCUIApplication.shared.keyboards.firstMatch and calls swipeDown()
-// when the keyboard is on screen (XCUITest portable; no private API). The
-// route owns request decoding + response serialization only.
+// Mirrors BackRoute / ForegroundRoute envelope shape. The runner-side
+// handler tries the keyboard's own keys, a drag of the focused field's
+// scroll view into the keyboard (KeyboardDismissDrag), and touches outside
+// it, checking after each whether the keyboard is gone. The route owns
+// request decoding + response serialization only.
 //
 // Empty body or `{}` JSON object both decode to HideKeyboardRequest. Hide-
 // keyboard is bound-app frontmost-keyboard scope — no bundleId / no selector
