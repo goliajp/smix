@@ -208,9 +208,11 @@ fi
 # the tree CI judged, and running those judgements again here proved the
 # same thing a second time: it was 94% of a three-hour run and changed no
 # verdict. What stays is what CI cannot see: the devices, this machine's
-# devicectl, Xcode and interpreter, the npm token, the napi loader this
-# machine generates, and the publish legs themselves. `cargo publish`
-# still compiles every crate from its package before it uploads.
+# devicectl, Xcode and interpreter, the npm token, cargo-semver-checks
+# against what crates.io holds, and the publish legs themselves. The
+# napi loader, like the addons and the CLI binaries, is taken from CI's
+# run. `cargo publish` still compiles every crate from its package
+# before it uploads.
 
 
 # --- CI is green on this commit ---------------------------------------
@@ -251,17 +253,8 @@ python3 "$ROOT/scripts/dev/a-refusal-devicectl-outgrew.py" \
   > /tmp/smix-ship-devicectl-outgrew.log 2>&1 \
   || fail "a physical-device refusal says devicectl lacks a verb it has (see /tmp/smix-ship-devicectl-outgrew.log)"
 
-# Measured 482s on a cold cache and 0s on a warm one: it runs a napi
-# build. Kept first — where 6.6 put it, reading the warm number — it
-# pushed every seconds-long judgement eight minutes down the run, and
-# the ordering gate said so. A build belongs with the builds.
-log "napi loader"
-# --verbose, because the quiet form reports a line COUNT. "104 lines
-# differ" cannot be read after the fact, and this gate went red once
-# during 6.4.0's ship and clean on the next hand-run with the tree
-# unchanged — with only a count in the log there was nothing to compare.
-"$ROOT/scripts/dev/napi-dts-fresh.sh" --verbose > /tmp/smix-ship-napi-dts.log 2>&1 \
-  || fail "napi loader (index.d.ts/index.js) is not what napi generates — see /tmp/smix-ship-napi-dts.log"
+# The napi loader (index.js / index.d.ts) is taken from CI's run on this
+# commit at publish time, not regenerated here: see the publish block.
 # --- devices first ---------------------------------------------------
 #
 # The release binary these gates drive, and then the gates. Ahead of
@@ -374,148 +367,6 @@ android_free_for_60s() {
   done
   return 0
 }
-# A deadline, not a number of attempts. Counting attempts made the budget
-# depend on which branch each one took: fifteen busy attempts are 150
-# seconds, fifteen free ones are fifteen minutes, and the log said "up to
-# 15m" either way. Measured 2026-08-30: it gave up after three minutes
-# and said it had waited fifteen.
-log "android: waiting for $ANDROID_DEVICE to stay free for a minute"
-if android_device_is_busy; then
-  log "android: $ANDROID_DEVICE is held by another process — waiting for a clear minute, up to 15m"
-fi
-android_wait_until=$(( SECONDS + 900 ))
-while [ "$SECONDS" -lt "$android_wait_until" ]; do
-  android_free_for_60s && break
-done
-android_device_is_busy \
-  && log "android: $ANDROID_DEVICE still held after 15m — letting the gates judge it" \
-  || log "android: $ANDROID_DEVICE has been free for a minute"
-
-log "android instrumentation (device)"
-bash "$ROOT/scripts/release/android-instrumentation-gate.sh" \
-  || fail "android instrumentation gate FAILED — see the verdict above. To give it an emulator it may \
-drive, start one through the ledger: smix sim boot sim-smix-android-01 (an emulator started by hand \
-writes no ledger, and the picker is right to refuse it)"
-
-# --- android behaviour (device) ----------------------------------------
-# Three assertions that each go red when their fix is reverted: the
-# key-events flag actually changing the driver's path, every driving
-# request carrying the app under test, and the qualified view-id
-# spelling being what found the node. All three shipped broken once
-# without failing anything.
-#
-# Adjacent to the instrumentation gate because they share the emulator:
-# a missing device should fail once, in one place, early.
-log "android behaviour (device)"
-SMIX_BIN="$ROOT/target/release/smix" \
-  bash "$ROOT/scripts/release/android-behaviour-gate.sh" \
-  || fail "android behaviour gate FAILED — see the verdict above"
-
-
-# --- v10's device gates ------------------------------------------------
-# The probe's four, run where they can go red for someone other than the
-# person who wrote them. Written during v10 and wired here in the same
-# release: a gate that only ever ran by hand stops running the day its
-# author stops typing it, and nothing says so.
-#
-# They need the fixture with `debugImplementation("jp.golia.smix:smix-probe")`
-# installed on the emulator; each says which line is missing when it is not.
-V10_DEVICE="$ANDROID_DEVICE"
-
-# These five need a runner and none of them starts one. They passed for
-# weeks because a runner happened to be up on 22095 from a hand-run, and
-# the first ship without one said the two readers disagreed -- when what
-# had happened is that one of them was never asked. A gate whose
-# precondition nobody owns is a gate that reports on the wrong thing.
-#
-# The port comes from the OS for the reason written at gate-port-scan:
-# a literal is a socket somebody else can be holding.
-# `runner up` refuses a port another runner holds. It says nothing about
-# a device somebody else is already driving -- and this emulator is the
-# one the dogfood consumer runs its suites on. Bringing a second
-# instrumentation up on it would end their run mid-flow, which is not a
-# thing a release of ours gets to do. Seen 2026-08-29: a consumer batch
-# was on this serial while the ship was still four hours from needing it.
-#
-# So: wait for it to go quiet, then say who has it rather than taking it.
-if [[ -z "${SMIX_V10_ANDROID_PORT:-}" ]]; then
-  V10_PORT="$(python3 -c 'import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()')"
-  # `adb` has to still be able to see it. This emulator is managed by
-  # another session and went away and came back twice during dry-run
-  # nineteen; the third time it was gone for the one minute this leg
-  # needed, and `runner up` refused with `adb has no ready device` --
-  # after the instrumentation gate had passed 4/4 and the behaviour gate
-  # 14/14 on it, minutes earlier. Waiting for the device to be free is
-  # not the same as waiting for it to be there.
-  for _ in $(seq 1 60); do
-    adb devices 2>/dev/null | grep -qE "^${V10_DEVICE}[[:space:]]+device" && break
-    sleep 5
-  done
-  adb devices 2>/dev/null | grep -qE "^${V10_DEVICE}[[:space:]]+device" \
-    || fail "v10: adb still does not list $V10_DEVICE as ready after 5m.
-    This is about the emulator being attached, not about the runner.
-    Attached now: $(adb devices 2>/dev/null | tail -n +2 | tr '\n' ' ')"
-
-  log "v10: runner up on $V10_DEVICE:$V10_PORT"
-  SMIX_RUNNER_PORT="$V10_PORT" "$ROOT/target/release/smix" runner up "$V10_DEVICE" \
-    --platform android --runner-port "$V10_PORT" > /tmp/smix-ship-v10-runner.log 2>&1 \
-    || fail "v10: runner up failed on $V10_DEVICE (see /tmp/smix-ship-v10-runner.log)"
-  V10_RUNNER_OURS=1
-else
-  V10_PORT="$SMIX_V10_ANDROID_PORT"
-  V10_RUNNER_OURS=0
-fi
-
-v10_runner_down() {
-  [[ "${V10_RUNNER_OURS:-0}" == "1" ]] || return 0
-  SMIX_RUNNER_PORT="$V10_PORT" "$ROOT/target/release/smix" runner down \
-    --platform android --device "$V10_DEVICE" >> /tmp/smix-ship-v10-runner.log 2>&1 || true
-  V10_RUNNER_OURS=0
-}
-# ship_profile_close already owns EXIT (line ~73). Replacing it would have
-# silently dropped the profile written at the end of every run, so this
-# chains rather than overwrites.
-trap 'v10_runner_down; ship_profile_close' EXIT
-
-log "v10: two perception paths agree"
-python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
-  --port "$V10_PORT" --min-both 16 --min-bounds-compared 16 --focus compose_input \
-  || fail "two-paths-agree FAILED — the semantics and accessibility readers disagree"
-
-# The same reader, on the screen that has a View hosted inside Compose.
-#
-# It drove one screen for two majors and passed the whole time, while the
-# probe could not see into an `AndroidView` at all — the claim was right
-# and its subject never appeared. A consumer found that for us.
-log "v10.2: the two paths agree where Compose hosts a View"
-python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
-  --port "$V10_PORT" --activity .InteropActivity --min-both 8 \
-  --min-bounds-compared 8 --prove-differences-exhibited --focus fixture_interop_input \
-  || fail "two-paths-agree FAILED on the interop screen"
-
-log "v10: the three that went red"
-python3 "$ROOT/scripts/dev/the-three-that-went-red.py" --device "$V10_DEVICE" \
-  --port "$V10_PORT" \
-  || fail "the-three-that-went-red FAILED — a 6.4.0 root cause is unguarded again"
-
-log "v10: a wait that does not end early"
-python3 "$ROOT/scripts/dev/a-wait-that-does-not-end-early.py" --device "$V10_DEVICE" \
-  --port "$V10_PORT" \
-  || fail "a-wait-that-does-not-end-early FAILED"
-
-log "v10: a semantics action is not a touch"
-python3 "$ROOT/scripts/dev/a-semantics-action-is-not-a-touch.py" --device "$V10_DEVICE" \
-  --port "$V10_PORT" \
-  || fail "a-semantics-action-is-not-a-touch FAILED — the probe's action surface grew a touch substitute"
-
-v10_runner_down
-trap ship_profile_close EXIT
-
-
 # --- workflow scan -----------------------------------------------------
 # The development contract survives a clone: charter and rule cards
 # tracked, hook scripts present and wired, guards tested, no GNU-only
@@ -533,6 +384,17 @@ log "swift-bridge unit tests"
 ( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
   || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
 
+# --- ffi bindings -----------------------------------------------------
+# The Swift and Kotlin bindings are committed next to binary blobs, and
+# nothing regenerated them: the build scripts Package.swift and
+# build.gradle.kts name did not exist. Clean at the time this was added; here
+# so the boundary cannot drift away from the crate again.
+log "ffi bindings"
+# --against-source here and nowhere else: a commit on develop may leave
+# the libraries behind the tree, a release may not. The ship does not
+# rebuild them itself — what is published has to be a commit CI has seen.
+"$ROOT/scripts/dev/ffi-bindings-fresh.sh" --against-source > /tmp/smix-ship-ffi-bindings.log 2>&1 \
+  || fail "FFI bindings or libraries are not what this tree builds — see /tmp/smix-ship-ffi-bindings.log; run scripts/sdk/regenerate-bindings.sh, commit, and release that commit"
 # --- corpus gate (real sim) -------------------------------------------
 # Runs the bootstrap corpus end-to-end on a simulator. Device selection
 # is explicit env first, else this repo's own booted dev sim.
@@ -548,28 +410,311 @@ fi
 [[ -n "$SMIX_CORPUS_SIM" ]] \
   || fail "corpus gate needs SMIX_CORPUS_SIM or a booted dev sim"
 
-# v10's iOS gate, on the sim the corpus already picked — a control behind a
-# modal is still in the tree and a touch aimed at it is swallowed, and smix
-# used to report that as a success.
-log "v10: a tap that cannot land says so"
-bash "$ROOT/scripts/dev/a-tap-that-cannot-land-says-so.sh" "$SMIX_CORPUS_SIM" \
-  "${SMIX_V10_IOS_PORT:-}" \
-  || fail "a-tap-that-cannot-land-says-so FAILED — a tap nothing could receive was reported as one that landed"
+# --- the two device chains, side by side ------------------------------
+# The Android emulator and the iOS simulator share nothing: no device, no
+# runner, no port. Run in turn they cost the sum of the two; run side by
+# side they cost the longer. Each chain logs to a file of its own so the
+# two do not interleave, brings down what it started when it ends -- red
+# or green -- and closes its own last profile line: a background subshell
+# does not inherit this script's EXIT trap.
+android_chain() {
+  SHIP_LAST=""
+  # A deadline, not a number of attempts. Counting attempts made the budget
+  # depend on which branch each one took: fifteen busy attempts are 150
+  # seconds, fifteen free ones are fifteen minutes, and the log said "up to
+  # 15m" either way. Measured 2026-08-30: it gave up after three minutes
+  # and said it had waited fifteen.
+  log "android: waiting for $ANDROID_DEVICE to stay free for a minute"
+  if android_device_is_busy; then
+    log "android: $ANDROID_DEVICE is held by another process — waiting for a clear minute, up to 15m"
+  fi
+  android_wait_until=$(( SECONDS + 900 ))
+  while [ "$SECONDS" -lt "$android_wait_until" ]; do
+    android_free_for_60s && break
+  done
+  android_device_is_busy \
+    && log "android: $ANDROID_DEVICE still held after 15m — letting the gates judge it" \
+    || log "android: $ANDROID_DEVICE has been free for a minute"
 
-# The same shape one layer up. A request naming an app that is not on the
-# device used to hang XCUITest's `.activate()` on the main actor until the
-# watchdog killed the runner; the corpus then reported `runner unreachable`
-# about twenty-three flows that never got to run.
-log "v10: a foreground that cannot happen says so"
-bash "$ROOT/scripts/dev/a-foreground-that-cannot-happen-says-so.sh" "$SMIX_CORPUS_SIM" \
-  || fail "a-foreground-that-cannot-happen-says-so FAILED — either the refusal did not name the missing app, or the runner did not survive it"
+  log "android instrumentation (device)"
+  bash "$ROOT/scripts/release/android-instrumentation-gate.sh" \
+    || fail "android instrumentation gate FAILED — see the verdict above. To give it an emulator it may \
+  drive, start one through the ledger: smix sim boot sim-smix-android-01 (an emulator started by hand \
+  writes no ledger, and the picker is right to refuse it)"
 
-log "corpus gate on $SMIX_CORPUS_SIM"
-SMIX_CORPUS_SIM="$SMIX_CORPUS_SIM" \
-SMIX_BIN="$ROOT/target/release/smix" \
-  "$ROOT/scripts/release/corpus-gate.sh" \
-    > /tmp/smix-ship-corpus.log 2>&1 \
-  || fail "corpus gate FAILED — see /tmp/smix-ship-corpus.log"
+  # --- android behaviour (device) ----------------------------------------
+  # Three assertions that each go red when their fix is reverted: the
+  # key-events flag actually changing the driver's path, every driving
+  # request carrying the app under test, and the qualified view-id
+  # spelling being what found the node. All three shipped broken once
+  # without failing anything.
+  #
+  # Adjacent to the instrumentation gate because they share the emulator:
+  # a missing device should fail once, in one place, early.
+  log "android behaviour (device)"
+  SMIX_BIN="$ROOT/target/release/smix" \
+    bash "$ROOT/scripts/release/android-behaviour-gate.sh" \
+    || fail "android behaviour gate FAILED — see the verdict above"
+
+
+  # --- v10's device gates ------------------------------------------------
+  # The probe's four, run where they can go red for someone other than the
+  # person who wrote them. Written during v10 and wired here in the same
+  # release: a gate that only ever ran by hand stops running the day its
+  # author stops typing it, and nothing says so.
+  #
+  # They need the fixture with `debugImplementation("jp.golia.smix:smix-probe")`
+  # installed on the emulator; each says which line is missing when it is not.
+  V10_DEVICE="$ANDROID_DEVICE"
+
+  # These five need a runner and none of them starts one. They passed for
+  # weeks because a runner happened to be up on 22095 from a hand-run, and
+  # the first ship without one said the two readers disagreed -- when what
+  # had happened is that one of them was never asked. A gate whose
+  # precondition nobody owns is a gate that reports on the wrong thing.
+  #
+  # The port comes from the OS for the reason written at gate-port-scan:
+  # a literal is a socket somebody else can be holding.
+  # `runner up` refuses a port another runner holds. It says nothing about
+  # a device somebody else is already driving -- and this emulator is the
+  # one the dogfood consumer runs its suites on. Bringing a second
+  # instrumentation up on it would end their run mid-flow, which is not a
+  # thing a release of ours gets to do. Seen 2026-08-29: a consumer batch
+  # was on this serial while the ship was still four hours from needing it.
+  #
+  # So: wait for it to go quiet, then say who has it rather than taking it.
+  if [[ -z "${SMIX_V10_ANDROID_PORT:-}" ]]; then
+    V10_PORT="$(python3 -c 'import socket
+  s = socket.socket()
+  s.bind(("127.0.0.1", 0))
+  print(s.getsockname()[1])
+  s.close()')"
+    # `adb` has to still be able to see it. This emulator is managed by
+    # another session and went away and came back twice during dry-run
+    # nineteen; the third time it was gone for the one minute this leg
+    # needed, and `runner up` refused with `adb has no ready device` --
+    # after the instrumentation gate had passed 4/4 and the behaviour gate
+    # 14/14 on it, minutes earlier. Waiting for the device to be free is
+    # not the same as waiting for it to be there.
+    for _ in $(seq 1 60); do
+      adb devices 2>/dev/null | grep -qE "^${V10_DEVICE}[[:space:]]+device" && break
+      sleep 5
+    done
+    adb devices 2>/dev/null | grep -qE "^${V10_DEVICE}[[:space:]]+device" \
+      || fail "v10: adb still does not list $V10_DEVICE as ready after 5m.
+      This is about the emulator being attached, not about the runner.
+      Attached now: $(adb devices 2>/dev/null | tail -n +2 | tr '\n' ' ')"
+
+    log "v10: runner up on $V10_DEVICE:$V10_PORT"
+    SMIX_RUNNER_PORT="$V10_PORT" "$ROOT/target/release/smix" runner up "$V10_DEVICE" \
+      --platform android --runner-port "$V10_PORT" > /tmp/smix-ship-v10-runner.log 2>&1 \
+      || fail "v10: runner up failed on $V10_DEVICE (see /tmp/smix-ship-v10-runner.log)"
+    V10_RUNNER_OURS=1
+  else
+    V10_PORT="$SMIX_V10_ANDROID_PORT"
+    V10_RUNNER_OURS=0
+  fi
+
+  v10_runner_down() {
+    [[ "${V10_RUNNER_OURS:-0}" == "1" ]] || return 0
+    SMIX_RUNNER_PORT="$V10_PORT" "$ROOT/target/release/smix" runner down \
+      --platform android --device "$V10_DEVICE" >> /tmp/smix-ship-v10-runner.log 2>&1 || true
+    V10_RUNNER_OURS=0
+  }
+  # ship_profile_close already owns EXIT (line ~73). Replacing it would have
+  # silently dropped the profile written at the end of every run, so this
+  # chains rather than overwrites.
+  trap 'v10_runner_down; ship_profile_close' EXIT
+
+  log "v10: two perception paths agree"
+  python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
+    --port "$V10_PORT" --min-both 16 --min-bounds-compared 16 --focus compose_input \
+    || fail "two-paths-agree FAILED — the semantics and accessibility readers disagree"
+
+  # The same reader, on the screen that has a View hosted inside Compose.
+  #
+  # It drove one screen for two majors and passed the whole time, while the
+  # probe could not see into an `AndroidView` at all — the claim was right
+  # and its subject never appeared. A consumer found that for us.
+  log "v10.2: the two paths agree where Compose hosts a View"
+  python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
+    --port "$V10_PORT" --activity .InteropActivity --min-both 8 \
+    --min-bounds-compared 8 --prove-differences-exhibited --focus fixture_interop_input \
+    || fail "two-paths-agree FAILED on the interop screen"
+
+  log "v10: the three that went red"
+  python3 "$ROOT/scripts/dev/the-three-that-went-red.py" --device "$V10_DEVICE" \
+    --port "$V10_PORT" \
+    || fail "the-three-that-went-red FAILED — a 6.4.0 root cause is unguarded again"
+
+  log "v10: a wait that does not end early"
+  python3 "$ROOT/scripts/dev/a-wait-that-does-not-end-early.py" --device "$V10_DEVICE" \
+    --port "$V10_PORT" \
+    || fail "a-wait-that-does-not-end-early FAILED"
+
+  log "v10: a semantics action is not a touch"
+  python3 "$ROOT/scripts/dev/a-semantics-action-is-not-a-touch.py" --device "$V10_DEVICE" \
+    --port "$V10_PORT" \
+    || fail "a-semantics-action-is-not-a-touch FAILED — the probe's action surface grew a touch substitute"
+
+  v10_runner_down
+  trap - EXIT
+  ship_profile_close
+}
+
+ios_chain() {
+  SHIP_LAST=""
+  trap ship_profile_close EXIT
+  # v10's iOS gate, on the sim the corpus already picked — a control behind a
+  # modal is still in the tree and a touch aimed at it is swallowed, and smix
+  # used to report that as a success.
+  log "v10: a tap that cannot land says so"
+  bash "$ROOT/scripts/dev/a-tap-that-cannot-land-says-so.sh" "$SMIX_CORPUS_SIM" \
+    "${SMIX_V10_IOS_PORT:-}" \
+    || fail "a-tap-that-cannot-land-says-so FAILED — a tap nothing could receive was reported as one that landed"
+
+  # The same shape one layer up. A request naming an app that is not on the
+  # device used to hang XCUITest's `.activate()` on the main actor until the
+  # watchdog killed the runner; the corpus then reported `runner unreachable`
+  # about twenty-three flows that never got to run.
+  log "v10: a foreground that cannot happen says so"
+  bash "$ROOT/scripts/dev/a-foreground-that-cannot-happen-says-so.sh" "$SMIX_CORPUS_SIM" \
+    || fail "a-foreground-that-cannot-happen-says-so FAILED — either the refusal did not name the missing app, or the runner did not survive it"
+
+  log "corpus gate on $SMIX_CORPUS_SIM"
+  SMIX_CORPUS_SIM="$SMIX_CORPUS_SIM" \
+  SMIX_BIN="$ROOT/target/release/smix" \
+    "$ROOT/scripts/release/corpus-gate.sh" \
+      > /tmp/smix-ship-corpus.log 2>&1 \
+    || fail "corpus gate FAILED — see /tmp/smix-ship-corpus.log"
+
+  trap - EXIT
+  ship_profile_close
+}
+
+# --- cargo-semver-checks, beside the device chains ---------------------
+# Asks crates.io what it holds, so it stays here rather than in CI: on
+# develop between releases it would judge every commit against the last
+# published version before the version has been raised. It needs no
+# device, so it runs beside the chains, as a background task on the
+# efficiency cores (taskpolicy -b) — the device gates are the ones that
+# go red when the machine is loaded, and this must not be what loads it.
+semver_lane() {
+  SHIP_LAST=""
+  trap ship_profile_close EXIT
+  #
+  # A crate with no published baseline is EXCLUDED, not tolerated. The
+  # comment here used to say the tool was "blind to brand-new crates" —
+  # it is not. It stops:
+  #
+  #     error: failed to retrieve index of crate versions from registry
+  #     Caused by: smix-ai-tier not found in registry (crates.io)
+  #
+  # and exits 1, which this step reads as a failed gate. Nobody had run it
+  # with a new crate in the workspace, so the sentence went unchallenged
+  # until the ship it would have blocked.
+  #
+  # Which crates those are is asked, not listed: a hand-kept list of
+  # exceptions is the thing that goes stale. The skipped set is logged,
+  # because a gate that quietly checks three fewer crates reads exactly
+  # like one that checked them all.
+  if command -v cargo-semver-checks >/dev/null 2>&1; then
+    log "cargo-semver-checks"
+    # Some crates cannot be checked at all, and the tool ABORTS THE WHOLE
+    # RUN rather than skipping them. Two shapes seen here:
+    #
+    #   error: ... smix-ai-tier not found in registry (crates.io)
+    #   error: failed to build rustdoc for crate smix-mcp v1.0.27
+    #        (its 1.0.27 baseline was bin-only; it gained a lib in v2)
+    #
+    # The comment here used to call the tool "blind to brand-new crates".
+    # It is not blind, it stops — and nobody had run it with a new crate
+    # in the workspace, so the sentence stood until the ship it would have
+    # blocked.
+    #
+    # Rather than keep a list of exceptions (the thing that goes stale) or
+    # guess the reason from metadata (the current version's targets do not
+    # predict the baseline's), run it and let its own error name the crate
+    # it cannot handle, exclude that one, and go again. Every exclusion is
+    # logged with the reason the tool gave, because a gate that quietly
+    # checks fewer crates reads exactly like one that checked them all.
+    SEMVER_EXCLUDE=()
+    SEMVER_SKIPPED=()
+    SEMVER_LOG=/tmp/smix-ship-semver.log
+    SEMVER_ATTEMPTS=0
+    SEMVER_MAX=$(cd "$ROOT" && cargo metadata --no-deps --format-version 1 |
+        python3 -c 'import json,sys; print(len(json.load(sys.stdin)["packages"]))')
+    while :; do
+        SEMVER_ATTEMPTS=$((SEMVER_ATTEMPTS + 1))
+        # `${arr[@]+"${arr[@]}"}` — bash 3.2 (macOS) errors on `"${arr[@]}"`
+        # when the array is empty under `set -u`; this expands to nothing
+        # when unset and to the array's quoted elements otherwise.
+        if ( cd "$ROOT" && taskpolicy -b nice -n 19 cargo semver-checks check-release --workspace \
+                ${SEMVER_EXCLUDE[@]+"${SEMVER_EXCLUDE[@]}"} ) > "$SEMVER_LOG" 2>&1; then
+            break
+        fi
+        if [ "$SEMVER_ATTEMPTS" -gt "$SEMVER_MAX" ]; then
+            fail "cargo-semver-checks kept failing after $SEMVER_ATTEMPTS attempts — see $SEMVER_LOG"
+        fi
+        # Both patterns are taken from real output, not guessed: the
+        # registry one is a `Caused by:` continuation line, indented and
+        # with no colon before the name.
+        UNCHECKABLE="$(sed -n 's/.*failed to build rustdoc for crate \([^ ]*\) .*/\1/p;
+                               s/^[[:space:]]*\([a-z0-9._-]*\) not found in registry.*/\1/p' \
+                           "$SEMVER_LOG" | head -1)"
+        if [ -z "$UNCHECKABLE" ]; then
+            fail "cargo-semver-checks FAILED — see $SEMVER_LOG"
+        fi
+        # The reason, taken now. Each attempt truncates $SEMVER_LOG, so by
+        # the time the loop succeeds the refusal that caused an exclusion
+        # is gone and only the name survives. The comment above promised
+        # the reason was logged; it was not, and an exclusion without one
+        # reads as a decision somebody made rather than a tool that
+        # stopped.
+        SEMVER_WHY="$(grep -m1 -E 'not found in registry|failed to build rustdoc' "$SEMVER_LOG" \
+                      | sed 's/^[[:space:]]*//' | cut -c1-120)"
+        SEMVER_EXCLUDE+=(--exclude "$UNCHECKABLE")
+        SEMVER_SKIPPED+=("$UNCHECKABLE (${SEMVER_WHY:-no reason line found})")
+    done
+    # Report coverage from the run's own output, not from the exclusion
+    # count. The tool also skips crates silently — anything with
+    # `publish = false` or no library target — so "4 excluded" would have
+    # read as "26 checked" when 21 were. The number that matters is how
+    # many it actually looked at.
+    SEMVER_CHECKED=$(grep -c '^ *Checking ' "$SEMVER_LOG" || true)
+    SEMVER_TOTAL=$(cd "$ROOT" && cargo metadata --no-deps --format-version 1 |
+        python3 -c 'import json,sys; print(len(json.load(sys.stdin)["packages"]))')
+    note "semver-checks: $SEMVER_CHECKED of $SEMVER_TOTAL crates checked"
+    if [ ${#SEMVER_SKIPPED[@]} -gt 0 ]; then
+        note "semver-checks: excluded by name after the tool refused them: ${SEMVER_SKIPPED[*]}"
+    fi
+  else
+    fail "cargo-semver-checks not installed — cargo install cargo-semver-checks (required for a 2.0.0 ship)"
+  fi
+  trap - EXIT
+  ship_profile_close
+}
+
+# The step before this line is still open in the profile; close it here
+# so neither chain's time is charged to it.
+ship_profile_close
+SHIP_LAST=""
+note "device chains: android on $ANDROID_DEVICE, ios on $SMIX_CORPUS_SIM, and cargo-semver-checks — side by side"
+android_chain > /tmp/smix-ship-android-chain.log 2>&1 & ANDROID_CHAIN_PID=$!
+ios_chain > /tmp/smix-ship-ios-chain.log 2>&1 & IOS_CHAIN_PID=$!
+semver_lane > /tmp/smix-ship-semver-lane.log 2>&1 & SEMVER_LANE_PID=$!
+wait "$ANDROID_CHAIN_PID" && ANDROID_CHAIN_RC=0 || ANDROID_CHAIN_RC=$?
+wait "$IOS_CHAIN_PID" && IOS_CHAIN_RC=0 || IOS_CHAIN_RC=$?
+wait "$SEMVER_LANE_PID" && SEMVER_LANE_RC=0 || SEMVER_LANE_RC=$?
+cat /tmp/smix-ship-android-chain.log /tmp/smix-ship-ios-chain.log /tmp/smix-ship-semver-lane.log
+[ "$ANDROID_CHAIN_RC" = 0 ] \
+  || fail "the android device chain FAILED (exit $ANDROID_CHAIN_RC) — see /tmp/smix-ship-android-chain.log"
+[ "$IOS_CHAIN_RC" = 0 ] \
+  || fail "the ios device chain FAILED (exit $IOS_CHAIN_RC) — see /tmp/smix-ship-ios-chain.log"
+[ "$SEMVER_LANE_RC" = 0 ] \
+  || fail "cargo-semver-checks FAILED (exit $SEMVER_LANE_RC) — see /tmp/smix-ship-semver-lane.log and /tmp/smix-ship-semver.log"
+SHIP_TPREV="$(date +%s)"
+
 
 # --- the checkpoint evidence, run by someone other than its author ----
 # Every `*-e2e.sh` is a checkpoint's proof, and until this line none of
@@ -592,114 +737,8 @@ SMIX_BIN="$ROOT/target/release/smix" \
     > /tmp/smix-ship-e2e-tier.log 2>&1 \
   || fail "device e2e tier FAILED — see /tmp/smix-ship-e2e-tier.log"
 
-# --- ffi bindings -----------------------------------------------------
-# The Swift and Kotlin bindings are committed next to binary blobs, and
-# nothing regenerated them: the build scripts Package.swift and
-# build.gradle.kts name did not exist. Clean at the time this was added; here
-# so the boundary cannot drift away from the crate again.
-log "ffi bindings"
-# --against-source here and nowhere else: a commit on develop may leave
-# the libraries behind the tree, a release may not. The ship does not
-# rebuild them itself — what is published has to be a commit CI has seen.
-"$ROOT/scripts/dev/ffi-bindings-fresh.sh" --against-source > /tmp/smix-ship-ffi-bindings.log 2>&1 \
-  || fail "FFI bindings or libraries are not what this tree builds — see /tmp/smix-ship-ffi-bindings.log; run scripts/sdk/regenerate-bindings.sh, commit, and release that commit"
-# --- fuzz smoke -------------------------------------------------------
-# 15 fuzz targets existed with nothing running them; two had bit-rotted
-# to the point of not compiling. A short budget per target keeps them
-# honest — longer soaks stay manual.
-log "fuzz smoke"
-"$ROOT/scripts/dev/fuzz-smoke.sh" > /tmp/smix-ship-fuzz.log 2>&1 \
-  || fail "fuzz smoke FAILED — see /tmp/smix-ship-fuzz.log"
-#
-# A crate with no published baseline is EXCLUDED, not tolerated. The
-# comment here used to say the tool was "blind to brand-new crates" —
-# it is not. It stops:
-#
-#     error: failed to retrieve index of crate versions from registry
-#     Caused by: smix-ai-tier not found in registry (crates.io)
-#
-# and exits 1, which this step reads as a failed gate. Nobody had run it
-# with a new crate in the workspace, so the sentence went unchallenged
-# until the ship it would have blocked.
-#
-# Which crates those are is asked, not listed: a hand-kept list of
-# exceptions is the thing that goes stale. The skipped set is logged,
-# because a gate that quietly checks three fewer crates reads exactly
-# like one that checked them all.
-if command -v cargo-semver-checks >/dev/null 2>&1; then
-  log "cargo-semver-checks"
-  # Some crates cannot be checked at all, and the tool ABORTS THE WHOLE
-  # RUN rather than skipping them. Two shapes seen here:
-  #
-  #   error: ... smix-ai-tier not found in registry (crates.io)
-  #   error: failed to build rustdoc for crate smix-mcp v1.0.27
-  #        (its 1.0.27 baseline was bin-only; it gained a lib in v2)
-  #
-  # The comment here used to call the tool "blind to brand-new crates".
-  # It is not blind, it stops — and nobody had run it with a new crate
-  # in the workspace, so the sentence stood until the ship it would have
-  # blocked.
-  #
-  # Rather than keep a list of exceptions (the thing that goes stale) or
-  # guess the reason from metadata (the current version's targets do not
-  # predict the baseline's), run it and let its own error name the crate
-  # it cannot handle, exclude that one, and go again. Every exclusion is
-  # logged with the reason the tool gave, because a gate that quietly
-  # checks fewer crates reads exactly like one that checked them all.
-  SEMVER_EXCLUDE=()
-  SEMVER_SKIPPED=()
-  SEMVER_LOG=/tmp/smix-ship-semver.log
-  SEMVER_ATTEMPTS=0
-  SEMVER_MAX=$(cd "$ROOT" && cargo metadata --no-deps --format-version 1 |
-      python3 -c 'import json,sys; print(len(json.load(sys.stdin)["packages"]))')
-  while :; do
-      SEMVER_ATTEMPTS=$((SEMVER_ATTEMPTS + 1))
-      # `${arr[@]+"${arr[@]}"}` — bash 3.2 (macOS) errors on `"${arr[@]}"`
-      # when the array is empty under `set -u`; this expands to nothing
-      # when unset and to the array's quoted elements otherwise.
-      if ( cd "$ROOT" && cargo semver-checks check-release --workspace \
-              ${SEMVER_EXCLUDE[@]+"${SEMVER_EXCLUDE[@]}"} ) > "$SEMVER_LOG" 2>&1; then
-          break
-      fi
-      if [ "$SEMVER_ATTEMPTS" -gt "$SEMVER_MAX" ]; then
-          fail "cargo-semver-checks kept failing after $SEMVER_ATTEMPTS attempts — see $SEMVER_LOG"
-      fi
-      # Both patterns are taken from real output, not guessed: the
-      # registry one is a `Caused by:` continuation line, indented and
-      # with no colon before the name.
-      UNCHECKABLE="$(sed -n 's/.*failed to build rustdoc for crate \([^ ]*\) .*/\1/p;
-                             s/^[[:space:]]*\([a-z0-9._-]*\) not found in registry.*/\1/p' \
-                         "$SEMVER_LOG" | head -1)"
-      if [ -z "$UNCHECKABLE" ]; then
-          fail "cargo-semver-checks FAILED — see $SEMVER_LOG"
-      fi
-      # The reason, taken now. Each attempt truncates $SEMVER_LOG, so by
-      # the time the loop succeeds the refusal that caused an exclusion
-      # is gone and only the name survives. The comment above promised
-      # the reason was logged; it was not, and an exclusion without one
-      # reads as a decision somebody made rather than a tool that
-      # stopped.
-      SEMVER_WHY="$(grep -m1 -E 'not found in registry|failed to build rustdoc' "$SEMVER_LOG" \
-                    | sed 's/^[[:space:]]*//' | cut -c1-120)"
-      SEMVER_EXCLUDE+=(--exclude "$UNCHECKABLE")
-      SEMVER_SKIPPED+=("$UNCHECKABLE (${SEMVER_WHY:-no reason line found})")
-  done
-  # Report coverage from the run's own output, not from the exclusion
-  # count. The tool also skips crates silently — anything with
-  # `publish = false` or no library target — so "4 excluded" would have
-  # read as "26 checked" when 21 were. The number that matters is how
-  # many it actually looked at.
-  SEMVER_CHECKED=$(grep -c '^ *Checking ' "$SEMVER_LOG" || true)
-  SEMVER_TOTAL=$(cd "$ROOT" && cargo metadata --no-deps --format-version 1 |
-      python3 -c 'import json,sys; print(len(json.load(sys.stdin)["packages"]))')
-  note "semver-checks: $SEMVER_CHECKED of $SEMVER_TOTAL crates checked"
-  if [ ${#SEMVER_SKIPPED[@]} -gt 0 ]; then
-      note "semver-checks: excluded by name after the tool refused them: ${SEMVER_SKIPPED[*]}"
-  fi
-else
-  fail "cargo-semver-checks not installed — cargo install cargo-semver-checks (required for a 2.0.0 ship)"
-fi
-
+# fuzz smoke runs in CI (ci.yml `fuzz-smoke`) on this commit, and
+# ci-green above requires it; cargo-semver-checks ran beside the chains.
 
 # `smix-lease` sits before `smix-simctl` and `smix-adapter-maestro`,
 # which now depend on it: the machine root — where this machine keeps
@@ -857,10 +896,16 @@ ART_DIR="$(mktemp -d)"
 gh run download "$RUN_ID" --repo goliajp/smix --dir "$ART_DIR" \
   --pattern 'smix-node-*' || fail "gh run download of napi prebuilds failed"
 
-# Generate the platform-agnostic loader (index.js / index.d.ts) once. This
-# also produces the host's own .node, which we overwrite from the artifacts
-# so all three come from the same reproducible CI build.
-( cd "$NODE_DIR" && bunx napi build --platform --release ) || fail "napi loader build"
+# The platform-agnostic loader (index.js / index.d.ts) comes from the same
+# CI run as the three addons (`smix-node-loader`, uploaded by ts-sdk), so
+# the loader and what it loads are one build of one commit. It used to be
+# regenerated here by a release build of smix-node — 482 s cold — and
+# diffed against itself.
+for f in index.js index.d.ts; do
+  src="$(find "$ART_DIR" -path '*smix-node-loader*' -name "$f" | head -1)"
+  [ -s "$src" ] || fail "the napi loader $f is not in CI run $RUN_ID's smix-node-loader artifact"
+  cp "$src" "$NODE_DIR/$f" || fail "stage the napi loader $f"
+done
 ( cd "$NODE_DIR" && bunx napi create-npm-dirs ) || fail "napi create-npm-dirs"
 
 # Place each downloaded .node into its per-triple subpackage. The platform

@@ -205,8 +205,8 @@ def _dispatched_cells(table: str) -> set:
     import subprocess
 
     r = subprocess.run(
-        ["cargo", "test", "-p", "smix-adapter-maestro", "--test",
-         "every_cell_is_a_decision", "--", "--nocapture", "print_the_table"],
+        ["cargo", "test", "-p", "smix-adapter-maestro", "--test", "it", "--",
+         "--nocapture", "--exact", "every_cell_is_a_decision::print_the_table"],
         cwd=ROOT, capture_output=True, text=True,
     )
     cells = {f"{a}:{b}" for a, b in re.findall(r"CELL (\S+):(\S+) DISPATCHED", r.stdout)}
@@ -216,7 +216,7 @@ def _dispatched_cells(table: str) -> set:
         print("every-cell-is-declared: FAIL")
         print(
             "  - the table would not answer: `cargo test -p smix-adapter-maestro "
-            "--test every_cell_is_a_decision print_the_table` printed no CELL "
+            "--test it every_cell_is_a_decision::print_the_table` printed no CELL "
             "lines, so there was nothing to check the runtime against.\n"
             f"      {tail}"
         )

@@ -113,7 +113,7 @@ def main(suites):
     # is a copy that can rot without a word.
     runnable = {
         "rust": ["cargo", "test", "-q", "-p", "smix-adapter-maestro",
-                 "--test", "a_report_a_test_framework_can_read"],
+                 "--test", "it", "a_report_a_test_framework_can_read::"],
         "swift": ["swift", "test", "--package-path", "swift-bridge",
                   "--filter", "AFlowFromATest"],
         "kotlin": [str(ROOT / "android-runner/gradlew"), "-p",
@@ -137,6 +137,13 @@ def main(suites):
             problems.append(
                 f"the {who} reader's suite did not pass — it is one of the "
                 f"three and cannot be excused. What it said:\n      {tail}"
+            )
+        elif who == "rust" and not re.search(r"test result: ok\. [1-9]\d* passed", r.stdout):
+            # The rust suite is picked out by a name filter; a filter that
+            # matches nothing passes with zero tests run.
+            problems.append(
+                "the rust reader's suite ran no tests — the name filter "
+                "no longer matches the module that exercises it"
             )
 
     if problems:
