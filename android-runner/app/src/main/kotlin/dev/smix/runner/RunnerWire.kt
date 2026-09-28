@@ -504,6 +504,17 @@ object RunnerWire {
         .put("held", held)
         .toString()
 
+    /// The route's own limit ran out before it could read the field back.
+    /// Not a field with text left in it and not a field it could not find:
+    /// `saw` says which stage it stopped before and what each one took.
+    fun clearTextSpentBody(ok: Boolean, method: String, deletes: Int, saw: String): String = JSONObject()
+        .put("ok", ok)
+        .put("status", "route_limit_spent")
+        .put("method", method)
+        .put("deletes", deletes)
+        .put("saw", saw)
+        .toString()
+
     fun foregroundBody(ok: Boolean, bundleId: String, saw: String): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "not_in_foreground")

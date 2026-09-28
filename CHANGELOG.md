@@ -42,6 +42,30 @@ All notable changes to the `smix` workspace are documented here. The format foll
   timeout with another cause on the setting. The failure still mentions
   the setting when it is on, and how to delete it, as a fact about the
   simulator rather than as the reason; the timeout is reported as before.
+- **An Android route that polls answers before the host stops waiting.**
+  A poll gives up only after a look begun past its budget still says "not
+  yet", and on a loaded emulator one look has taken seconds, so a route
+  could keep working after the host had given up and reported a step that
+  "may have acted" — `clearText` on an emulator under load did. The host now
+  waits one look (4 s) longer past each poll a route makes. The routes that
+  poll — `/clear-text`, `/hide-keyboard`, `/back`, `/tap-by-id`,
+  `/foreground`, `/set-orientation` — keep to that same limit themselves:
+  no step starts once it is spent, and the delete keys `clearText` sends go
+  in batches so each batch is one such step. A `clearText` that ran out
+  answers `route_limit_spent` with the step it stopped before and how long
+  each step took, where it used to time out with nothing. `inputText` no
+  longer starts typing a piece of the text whose read-back no longer fits in
+  its budget.
+- **A `clearText` that fails says why.** The runner's reason — the field
+  kept text, no field had focus, the route ran out of time — reaches the
+  error instead of a bare "refused".
+
+### Added
+
+- The Android runner logs one line per request to the device log, tag
+  `smix-route`: the route, its HTTP status, how long it took, and for a
+  route with a time limit, the limit and each step's time
+  (`adb logcat -s smix-route`).
 
 ## [11.0.0] — 2026-09-28
 
