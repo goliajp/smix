@@ -253,17 +253,36 @@ pub async fn ask_with_attachments(
         };
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(driver_error(
             format!(
-                "ai-tier: the claude CLI exited {}: {stderr}",
-                output.status.code().unwrap_or(-1)
+                "ai-tier: the claude CLI exited {}: {}",
+                output.status.code().unwrap_or(-1),
+                why_it_failed(&output.stderr, &output.stdout)
             ),
             None,
         ));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// What a failed CLI said about itself. The claude CLI reports a usage
+/// limit on stdout and leaves stderr empty, so stderr alone can lose the
+/// reason; the tail of stdout stands in when stderr has nothing.
+fn why_it_failed(stderr: &[u8], stdout: &[u8]) -> String {
+    const TAIL: usize = 800;
+    let pick = |b: &[u8]| String::from_utf8_lossy(b).trim().to_string();
+    let said = match pick(stderr) {
+        e if !e.is_empty() => e,
+        _ => pick(stdout),
+    };
+    if said.is_empty() {
+        return "no output on stdout or stderr".into();
+    }
+    match said.char_indices().rev().nth(TAIL - 1) {
+        Some((i, _)) => format!("…{}", &said[i..]),
+        None => said,
+    }
 }
 
 fn driver_error(message: String, hint: Option<String>) -> ExpectationFailure {

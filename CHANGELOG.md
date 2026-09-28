@@ -754,6 +754,12 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Fixed
 
+- **An AI-tier step whose `claude` CLI fails says why.** The error quoted
+  the CLI's stderr only, and the CLI reports a usage limit on stdout with
+  stderr empty — so the step failed with `the claude CLI exited 1: ` and
+  nothing after the colon. The tail of stdout is quoted when stderr is
+  empty, and a CLI that printed nothing is said to have printed nothing.
+
 - **A runner record smix cannot read is named as unreadable, not taken
   for no record.** When `runner up` finds its port already serving and
   cites the checkout's old runner record as evidence, a store that would

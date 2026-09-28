@@ -60,7 +60,7 @@ if ! grep -qiE 'sim-guard|explicit UDID|blocked|denied|not permitted' "$WORK/blo
   # session that could not start produces the same empty transcript as a
   # guard that did not fire, and only one of those is a defect.
   if claude_session_unrunnable "$WORK/blocked.txt" "$WORK/blocked.err"; then
-    fail "the claude session could not start — the guard was never given a chance to fire"
+    cannot_judge "the claude session could not start — the guard was never given a chance to fire: $(grep -hiE "$CLAUDE_SESSION_UNRUNNABLE" "$WORK/blocked.txt" "$WORK/blocked.err" | head -1)"
   fi
   head -25 "$WORK/blocked.txt" >&2
   fail "no refusal reached the session — the guard did not fire"
