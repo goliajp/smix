@@ -40,11 +40,14 @@ ROOT = (
 )
 
 # A test reaching above its crate root. Both notations this repository
-# uses: the compile-time include and the runtime path join.
-REACHES = re.compile(
-    r'include_str!\("\.\./\.\./\.\.|include_bytes!\("\.\./\.\./\.\.'
-    r'|CARGO_MANIFEST_DIR"\)\)\s*\.join\("\.\."'
-)
+# uses: the compile-time include, whose path is relative to the file it is
+# written in, and the runtime join from the manifest directory. The include
+# is resolved against its file rather than matched by a count of `..`: a
+# fixed count is right for one depth only, and a test one directory deeper
+# (or shallower) either escapes unseen or is counted for a path that stays
+# inside the package.
+INCLUDE = re.compile(r'include_(?:str|bytes)!\(\s*"([^"]+)"')
+MANIFEST_JOIN_UP = re.compile(r'CARGO_MANIFEST_DIR"\)\)\s*\.join\("\.\.')
 
 # Crates whose test suites are known to reach outside the package, with
 # the reason. Being on this list is not permission to be careless — it
@@ -53,8 +56,10 @@ REACHES = re.compile(
 REACHES_ON_PURPOSE = {
     "smix-adapter-maestro": "pins verb-table assertions to the corpus and the guides",
     "smix-cli": "pins CLI help assertions to the guides that document them",
+    "smix-driver": "checks the SDK's failure sites go through the same door as the driver's",
     "smix-error": "pins failure-shape assertions to the Swift and Kotlin runners",
     "smix-mcp": "pins tool-surface assertions to the plugin manifest",
+    "smix-runner-sources": "checks the embedded runner tarballs against the sources they were built from",
     "smix-runner-wire": "pins route-shape assertions to the Swift route sources",
     "smix-sdk": "pins one assertion to the shared corpus",
     "smix-store": "pins ledger assertions to the runner's own writes",
@@ -88,7 +93,12 @@ def reaches(root: str, crate: str) -> int:
                 body = open(os.path.join(dirpath, name), encoding="utf-8").read()
             except (OSError, UnicodeDecodeError):
                 continue
-            total += len(REACHES.findall(body))
+            crate_dir = os.path.realpath(os.path.join(root, "crates", crate))
+            for rel in INCLUDE.findall(body):
+                target = os.path.realpath(os.path.join(dirpath, rel))
+                if os.path.commonpath([crate_dir, target]) != crate_dir:
+                    total += 1
+            total += len(MANIFEST_JOIN_UP.findall(body))
     return total
 
 

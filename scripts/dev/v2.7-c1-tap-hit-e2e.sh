@@ -14,7 +14,7 @@
 # system app, and require both a clean exit and the absence of
 # TAP_MISSED in the output. The verdict function's negative side (a
 # moved target, an overlay swallowing the touch) is unit tested in
-# smix-driver/tests/tap_hit_verdict.rs; what needs a device is the
+# smix-driver/tests/it/tap_hit_verdict.rs; what needs a device is the
 # ordering, which no unit test can see.
 set -euo pipefail
 

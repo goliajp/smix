@@ -1,0 +1,5 @@
+mod a_contract_file_says_what_the_app_owes;
+mod a_test_says_what_it_covers;
+mod it_reconciles_a_tree;
+mod it_survives_real_features;
+mod who_claimed_what;
