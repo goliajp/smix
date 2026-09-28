@@ -57,8 +57,14 @@ CHEAP_SECONDS = 5
 # saying so. Five minutes is the point where a failed ship stops being a
 # re-run and starts being an afternoon.
 PATIENCE_SECONDS = 300
-# A profile with almost nothing in it is not a profile.
-MIN_GATES = 20
+# How many steps ship.sh must be read as logging on every run for the
+# reading to be believable. Far below what it finds today and far above
+# zero: a reader that stopped matching would otherwise ask the profile for
+# nothing and agree with an empty one.
+MIN_ALWAYS = 8
+# How many of those must be judgements rather than builds, devices or
+# exemptions — the comparison has to have had something to compare.
+MIN_JUDGED = 3
 
 
 def machine_dir() -> str:
@@ -191,6 +197,89 @@ def dependent_steps(ship_src):
     return out
 
 
+OPENER = re.compile(r"^(if|case|while|for|until)\b")
+CLOSER = re.compile(r"^(fi|esac|done)\b")
+FUNC_DEF = re.compile(r"^(\s*)([A-Za-z_][A-Za-z0-9_]*)\(\)\s*\{\s*$")
+LOG_LINE = re.compile(r'^\s*log "(.+?)"')
+
+
+def always_logged(ship_src):
+    """The steps ship.sh logs on every run, up to this gate.
+
+    A fixed floor on the profile's length ("at least twenty gates") is a
+    number copied from one version of the ship; when the ship stopped
+    re-running what CI had already judged, the floor outlived what it
+    measured. So the floor is read from the ship: a `log` line that is
+    not inside an if / case / loop runs every time, and so does one in a
+    function the ship calls at the top level — the device chains run as
+    such functions, side by side. Each of those names must be in the
+    profile, which is a stronger check than a count: it notices the one
+    step whose line was never written.
+    """
+    lines = ship_src.splitlines()
+    stop = next(
+        (i for i, ln in enumerate(lines) if 'log "the ordering gate can still go red"' in ln),
+        len(lines),
+    )
+    funcs, top = {}, []
+    i = 0
+    while i < stop:
+        m = FUNC_DEF.match(lines[i])
+        if m and m.group(1) == "":
+            name, body = m.group(2), []
+            i += 1
+            while i < len(lines) and not re.match(r"^\}\s*$", lines[i]):
+                body.append(lines[i])
+                i += 1
+            funcs[name] = body
+        else:
+            top.append(lines[i])
+        i += 1
+
+    def unconditional(block):
+        """(logged names, called words) at depth 0 of a block."""
+        depth, names, words, skip_indent = 0, [], [], None
+        for ln in block:
+            if skip_indent is not None:
+                if re.match(rf"^{skip_indent}\}}\s*$", ln):
+                    skip_indent = None
+                continue
+            m = FUNC_DEF.match(ln)
+            if m:
+                skip_indent = m.group(1)
+                continue
+            t = ln.strip()
+            if not t or t.startswith("#"):
+                continue
+            if CLOSER.match(t):
+                depth = max(0, depth - 1)
+                continue
+            if OPENER.match(t):
+                if not re.search(r"\b(fi|done|esac)\s*;?\s*$", t):
+                    depth += 1
+                continue
+            if depth == 0:
+                lm = LOG_LINE.match(ln)
+                if lm:
+                    names.append(lm.group(1))
+                w = re.match(r"^(?:[A-Z_]+=\S*\s+)*([A-Za-z_][A-Za-z0-9_]*)\b", t)
+                if w:
+                    words.append(w.group(1))
+        return names, words
+
+    names, words = unconditional(top)
+    for w in dict.fromkeys(words):
+        if w in funcs:
+            names += unconditional(funcs[w])[0]
+    return list(dict.fromkeys(names))
+
+
+def step_pattern(name):
+    """A logged name as the profile will hold it: `$VAR` is whatever it held."""
+    parts = re.split(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?", name)
+    return re.compile("^" + ".+".join(re.escape(p) for p in parts) + "$")
+
+
 # Steps that can only run after the release has gone out.
 #
 # Publishing itself is no longer here: those lines are logged with `note`
@@ -241,16 +330,8 @@ def main() -> int:
         except ValueError:
             continue
 
-    if len(rows) < MIN_GATES:
-        print("cheap-gates-come-first: FAIL")
-        print(
-            f"  - the profile has {len(rows)} gate(s), fewer than {MIN_GATES}. "
-            f"Either the ship stopped early or the profile is not being written — "
-            f"and an ordering check over three lines agrees with everything."
-        )
-        return 1
-
     problems = []
+    unrecorded = []
 
     # The exemptions are checked from the other side: a name here that
     # ship.sh no longer logs is excusing nothing, and would go on
@@ -288,6 +369,27 @@ def main() -> int:
                 f"something built or booted, fewer than {MIN_DEPENDENT}. The "
                 f"reader has stopped matching, and every device gate is back in "
                 f"a budget it cannot be moved out of."
+            )
+
+        always = always_logged(ship_src)
+        if len(always) < MIN_ALWAYS:
+            problems.append(
+                f"only {len(always)} of ship.sh's steps read as logged on every "
+                f"run, fewer than {MIN_ALWAYS}. The reader has stopped matching, "
+                f"and a profile missing its steps would go unnoticed."
+            )
+        missing = [
+            n for n in always
+            if not any(step_pattern(n).match(name) for _, name in rows)
+        ]
+        if missing:
+            # Not load: a step that was never written is not a slow one, so
+            # this stays red on a machine with no cost history too.
+            unrecorded.append(
+                f"the profile lacks {len(missing)} step(s) ship.sh logs on every "
+                f"run: {', '.join(missing[:6])}{' …' if len(missing) > 6 else ''}. "
+                f"Either the ship stopped early or the profile is not being written — "
+                f"and an ordering check over what was never recorded agrees with everything."
             )
 
         after_publish = after_publish_steps(ship_src)
@@ -351,6 +453,12 @@ def main() -> int:
 
     write_costs(COST_HISTORY, updated)
 
+    if unrecorded:
+        print("cheap-gates-come-first: FAIL")
+        for p in unrecorded + problems:
+            print(f"  - {p}")
+        return 1
+
     if problems:
         if baseline_is_new:
             # Nothing to compare against yet, so every one of these
@@ -378,7 +486,7 @@ def main() -> int:
     # The comparison has to have run. Exemptions could grow to cover the
     # whole profile, or the condition could stop being asked, and either
     # way the sentence below would go on saying nothing is waiting.
-    if judged < MIN_GATES:
+    if judged < MIN_JUDGED:
         print("cheap-gates-come-first: FAIL")
         print(
             f"  - only {judged} of {len(rows)} rows were compared against the "
