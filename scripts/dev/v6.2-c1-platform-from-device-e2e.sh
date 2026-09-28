@@ -22,7 +22,7 @@ source "$ROOT/scripts/lib/e2e-devices.sh"
 source "$ROOT/scripts/lib/e2e-binary.sh"
 WORK="$(mktemp -d)"
 
-IOS_ALIAS="${SMIX_C1_IOS:-smix-ios}"
+IOS_ALIAS="${SMIX_C1_IOS:-$E2E_IOS}"
 AND_ALIAS="${SMIX_C1_ANDROID:-smix-android}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"

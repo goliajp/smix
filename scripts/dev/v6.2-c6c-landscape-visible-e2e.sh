@@ -9,7 +9,7 @@
 # judges against the snapshot's own root frame. This drives the real
 # landscape stage and requires all three visible=true.
 #
-# iOS only. Boots the registered smix-ios sim, and tears down only what it
+# iOS only. Boots the suite's iOS sim (E2E_IOS), and tears down only what it
 # started (including the xcodebuild pinned to its own udid).
 set -euo pipefail
 
@@ -18,7 +18,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/scripts/lib/e2e-devices.sh"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${SMIX_C6C_IOS:-smix-ios}"
+ALIAS="${SMIX_C6C_IOS:-$E2E_IOS}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
 PORT="$SMIX_RUNNER_PORT"
