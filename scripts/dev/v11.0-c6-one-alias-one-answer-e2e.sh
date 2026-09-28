@@ -22,8 +22,8 @@ source "$ROOT/scripts/lib/e2e-binary.sh"
 # shellcheck source=../lib/e2e-devices.sh
 source "$ROOT/scripts/lib/e2e-devices.sh"
 
-A="986DA42B-E0B0-4CCE-8E94-3510C85E8044"  # sim-smix-04
-B="89980B43-EF26-446A-A897-848C1AD3A872"  # sim-smix-03
+A="$E2E_IOS_THIRD"   # sim-smix-04
+B="$E2E_IOS_SECOND"  # sim-smix-03
 
 log()  { printf '[one-alias] %s\n' "$*" >&2; }
 fail() { printf '[one-alias] FAIL: %s\n' "$*" >&2; exit 1; }

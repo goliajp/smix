@@ -12,7 +12,8 @@
 # E2E_ANDROID_SECOND is the other smix AVD, for the scripts whose subject
 # is two emulators. E2E_ANDROID_THIRD stands in for somebody else's
 # emulator (v6.1-c5 starts a read-only instance of it); nothing drives it,
-# so it is never the one a release has running. E2E_IOS_SECOND is the iOS counterpart: `sim-smix-03`,
+# so it is never the one a release has running. E2E_IOS_SECOND is the iOS counterpart: `sim-smix-03` (E2E_IOS_THIRD is
+# `sim-smix-04`, for a script whose subject is two unregistered simulators),
 # by UDID because it is not registered — registering it would write to
 # this machine's device registry, which consumers' rows share.
 E2E_ANDROID="${SMIX_E2E_ANDROID:-sim-smix-android-01}"
@@ -22,7 +23,8 @@ E2E_ANDROID_THIRD="${SMIX_E2E_ANDROID_THIRD:-sim-smix-android-03}"
 # scripts on a second time (the others are API 33).
 E2E_ANDROID_36="${SMIX_E2E_ANDROID_36:-sim-smix-android-36}"
 E2E_IOS="${SMIX_E2E_IOS:-sim-smix-02}"
-E2E_IOS_SECOND="${SMIX_E2E_IOS_SECOND:-89980B43-EF26-446A-A897-848C1AD3A872}"
+E2E_IOS_SECOND="${SMIX_E2E_IOS_SECOND:-C1774CF6-8E56-463E-AD53-9CFF5930B2DE}"
+E2E_IOS_THIRD="${SMIX_E2E_IOS_THIRD:-CA88A8A3-8371-4527-A1A8-437F2E7C9A53}"
 
 # ---- physical devices: never by default -------------------------------
 #
