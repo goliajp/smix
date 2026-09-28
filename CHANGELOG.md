@@ -2,6 +2,20 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **A keyboard wait that runs out no longer blames the keyboard
+  minimization setting.** 11.0.0 said that with
+  `com.apple.keyboard.preferences AutomaticMinimizationEnabled` on "a
+  focused field shows no keyboard and this wait cannot succeed". On iOS 27
+  a focused field shows the keyboard with it on — after relaunching the
+  app and after rebooting the simulator — so the sentence could put a
+  timeout with another cause on the setting. The failure still mentions
+  the setting when it is on, and how to delete it, as a fact about the
+  simulator rather than as the reason; the timeout is reported as before.
+
 ## [11.0.0] — 2026-09-28
 
 Most flows need no change. Five things can make one behave differently:

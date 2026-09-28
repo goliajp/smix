@@ -2911,8 +2911,9 @@ impl App {
     }
 
     /// Adds the simulator's keyboard-minimization setting to a keyboard
-    /// wait that ran out, when that setting is why. Asked only here, on
-    /// the failure path: one `simctl spawn` per failed keyboard wait.
+    /// wait that ran out, when that setting is on — as a fact beside the
+    /// verdict, not as its cause. Asked only here, on the failure path:
+    /// one `simctl spawn` per failed keyboard wait.
     ///
     /// A setting that could not be read leaves the failure as it was —
     /// the wait's own verdict stands, and the read is a note on it.

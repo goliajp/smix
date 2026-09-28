@@ -1,7 +1,8 @@
-//! A wait for the keyboard that times out on a simulator set to keep its
-//! keyboard minimized is not about the app. The failure says which
-//! setting, what it does, and how to put it back — and says nothing when
-//! the setting is off, unread, or the wait was for something else.
+//! A wait for the keyboard that times out on a simulator with
+//! `AutomaticMinimizationEnabled` on carries that fact and the way to turn
+//! it off — as a fact about the device, not as the cause of the timeout:
+//! on iOS 27 a keyboard still appears with it on. It says nothing when the
+//! setting is off, unread, or the wait was for something else.
 
 use smix_sdk::{Role, Selector, keyboard_minimized_note};
 
@@ -28,6 +29,26 @@ fn a_keyboard_wait_on_a_minimizing_simulator_names_the_setting() {
         note.contains("UDID-1"),
         "addressed to this simulator: {note}"
     );
+}
+
+#[test]
+fn the_setting_is_reported_as_a_fact_not_as_the_cause() {
+    let note = keyboard_minimized_note(&keyboard(), Some(true), "UDID-1").expect("setting on");
+    assert!(
+        note.contains("not as the cause"),
+        "says what it is not: {note}"
+    );
+    for claim in [
+        "cannot succeed",
+        "shows no keyboard",
+        "shows no software keyboard",
+        "keeps its software keyboard minimized",
+    ] {
+        assert!(
+            !note.contains(claim),
+            "asserts a cause measurement does not support ({claim:?}): {note}"
+        );
+    }
 }
 
 #[test]
