@@ -87,7 +87,8 @@ fn the_two_keyboard_refusals_point_opposite_ways() {
     let did_not_close = transport_to_failure(RunnerTransportError::RefusedNaming {
         endpoint: "/hide-keyboard".into(),
         kind: "keyboard_did_not_close".into(),
-        saw: "tried key:Return, tap-above, swipe-down; focus: input-password".into(),
+        saw: "tried key:Return, drag-into-keyboard, tap-just-above-keyboard; focus: input-password"
+            .into(),
     });
     let unknown = transport_to_failure(RunnerTransportError::RefusedNaming {
         endpoint: "/hide-keyboard".into(),

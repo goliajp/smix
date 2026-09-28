@@ -19,7 +19,8 @@
 //! - `POST /scroll {selector, direction, include?}` — scroll-until-visible
 //! - `POST /swipe-once {direction}` — single swipe gesture (no probe loop)
 //! - `POST /foreground {bundleId}` — bring app to foreground
-//! - `POST /hide-keyboard` — swipe-down to dismiss keyboard
+//! - `POST /hide-keyboard` — take the keyboard down: its own keys, a drag of the
+//!   focused field's scroll view into it, touches outside it
 //! - `POST /back` — back gesture
 //! - `POST /record/start` — begin recording AX notifications
 //! - `GET /record/poll` — drain recorded events

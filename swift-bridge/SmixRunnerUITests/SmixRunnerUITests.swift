@@ -2285,20 +2285,14 @@ final class SmixRunnerUITests: XCTestCase {
         }
         return outcome ?? false
       },
-      // POST /hide-keyboard handler. Queries the runner-bound `app`'s
-      // `keyboards.firstMatch`; if the keyboard is on screen, calls
-      // `swipeDown()` to dismiss. Idempotent — keyboard already absent
-      // is a no-op success. `firstMatch` + `.swipeDown()` is XCUITest
-      // standard portable API (no private symbols). Typical use: an
-      // explicit `hideKeyboard` step between a text-input fill and a
-      // subsequent tap, when the on-screen keyboard would otherwise
-      // mask the next target.
+      // POST /hide-keyboard handler. Idempotent — keyboard already absent
+      // is a no-op success. Typical use: an explicit `hideKeyboard` step
+      // between a text-input fill and a subsequent tap, when the on-screen
+      // keyboard would otherwise mask the next target.
       hideKeyboardHandler: { deadline in
         let app = await resolveApp()  // Per-request target-app rebind.
-        // Software-keyboard handling is core capability and has to be
-        // robust: swipeDown alone sometimes fails to dismiss an RN
-        // TextInput keyboard. Hence a multi-strategy chain that verifies
-        // the keyboard is actually dismissed after each strategy.
+        // No one gesture dismisses every keyboard, so a chain of strategies
+        // that checks after each whether the keyboard is actually gone.
         // Every strategy records itself, so a failure can say what was
         // attempted rather than only that something was.
         var tried: [String] = []
@@ -2342,7 +2336,37 @@ final class SmixRunnerUITests: XCTestCase {
               if keyboardGone() { return .dismissed }
             }
           }
-          // Strategy 2: touch outside the keyboard, just above its own top
+          // Strategy 2: drag the focused field's scroll view down into the
+          // keyboard. A form whose scroll view dismisses the keyboard by drag
+          // (SwiftUI `.scrollDismissesKeyboard(.interactively)`) ignores a
+          // touch outside the keyboard, and on a form a touch can land on the
+          // other field; a drag only scrolls the content, so it comes before
+          // the touches. Only where a scroll view holds the field — anywhere
+          // else a drag has nothing to dismiss and could move something.
+          if spent() { return stopped() }
+          let focusedField = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "hasKeyboardFocus == true"))
+            .firstMatch
+          if focusedField.exists {
+            let scrollers = (app.scrollViews.allElementsBoundByIndex
+              + app.tables.allElementsBoundByIndex
+              + app.collectionViews.allElementsBoundByIndex).map(\.frame)
+            if let plan = KeyboardDismissDrag.plan(
+              focused: focusedField.frame, scrollers: scrollers,
+              keyboard: app.keyboards.firstMatch.frame, app: app.frame)
+            {
+              tried.append("drag-into-keyboard")
+              let from = app.coordinate(withNormalizedOffset:
+                CGVector(dx: plan.start.x, dy: plan.start.y))
+              let to = app.coordinate(withNormalizedOffset:
+                CGVector(dx: plan.end.x, dy: plan.end.y))
+              // Fast: a slow drag lets the keyboard spring back.
+              from.press(forDuration: 0.05, thenDragTo: to,
+                         withVelocity: .fast, thenHoldForDuration: 0)
+              if keyboardGone() { return .dismissed }
+            }
+          }
+          // Strategy 3: touch outside the keyboard, just above its own top
           // edge. RN's Keyboard.dismiss responds to an outside touch, and
           // this used to aim at a flat 15% of the app frame — which on a
           // login form is where the OTHER field is, so the touch moved
@@ -2359,18 +2383,16 @@ final class SmixRunnerUITests: XCTestCase {
               if keyboardGone() { return .dismissed }
             }
           }
-          // Strategy 3: the old fixed point, kept because a keyboard whose
+          // Strategy 4: the old fixed point, kept because a keyboard whose
           // frame reads as empty leaves nothing else to aim at.
           if spent() { return stopped() }
           tried.append("tap-at-15-percent")
           let above = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
           above.tap()
           if keyboardGone() { return .dismissed }
-          // Strategy 4: swipeDown (fallback)
-          if spent() { return stopped() }
-          tried.append("swipe-down")
-          app.keyboards.firstMatch.swipeDown()
-          if keyboardGone() { return .dismissed }
+          // No swipe on the keyboard itself: a drag that starts on the keys
+          // is slide typing. Measured 2026-09-28, one put "gu" into an empty
+          // field and left the keyboard up.
           // Name what still holds the keyboard up, because "it did not
           // close" and "this field is still first responder" send the
           // caller to different places.
