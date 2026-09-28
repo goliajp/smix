@@ -21,6 +21,7 @@ import Foundation
 import SmixRunnerCore
 import ObjectiveC
 import UIKit
+import XCTest
 
 /// alloc helper. Swift does not allow calling `AnyClass.alloc()` directly
 /// (deprecated since Swift 5.x), so fetch the `alloc` IMP through the ObjC
@@ -287,21 +288,71 @@ func smixUIOrientation(_ o: StampOrientation) -> UIInterfaceOrientation {
   }
 }
 
+/// The app's size and which way it is turned, read together.
+///
+/// The frame says the app is wide, not whether it was turned left or
+/// right; converting a point from the frame alone put every touch in one
+/// of the two landscapes in the opposite corner of the screen.
+struct SmixLayout {
+  let size: CGSize
+  let orientation: StampOrientation
+  /// Where the orientation came from: "app", "device" or "frame".
+  let source: String
+}
+
+func smixStamp(_ o: UIInterfaceOrientation) -> StampOrientation? {
+  switch o {
+  case .portrait: return .portrait
+  case .portraitUpsideDown: return .portraitUpsideDown
+  case .landscapeLeft: return .landscapeLeft
+  case .landscapeRight: return .landscapeRight
+  default: return nil
+  }
+}
+
+/// Read where `app.frame` is read — XCUIApplication is main-thread only.
+///
+/// The app's own interface orientation comes from a private XCTest
+/// property, looked up by name so a release that drops it falls back to
+/// the device rather than failing to load.
+func smixLayout(of app: XCUIApplication) -> SmixLayout {
+  let size = app.frame.size
+  var reported: StampOrientation?
+  if app.responds(to: NSSelectorFromString("interfaceOrientation")),
+    let raw = app.value(forKey: "interfaceOrientation") as? Int,
+    let o = UIInterfaceOrientation(rawValue: raw)
+  {
+    reported = smixStamp(o)
+  }
+  let device: StampOrientation?
+  switch XCUIDevice.shared.orientation {
+  case .portrait: device = .portrait
+  case .portraitUpsideDown: device = .portraitUpsideDown
+  // The device turned left shows the interface turned right.
+  case .landscapeLeft: device = .landscapeRight
+  case .landscapeRight: device = .landscapeLeft
+  default: device = nil
+  }
+  let orientation = layoutOrientation(appFrame: size, reported: reported, device: device)
+  let source =
+    reported != nil ? "app" : (size.width > size.height && device != nil && device != .portrait && device != .portraitUpsideDown ? "device" : "frame")
+  return SmixLayout(size: size, orientation: orientation, source: source)
+}
+
 /// The stamp and the point to deliver, for a point in the app's space.
 ///
 /// Every synthesised touch in this file goes through here, so a strategy
 /// cannot be in force for taps and not for swipes — which is the shape
 /// of a fix that passes its own test and leaves half the surface broken.
 func smixDelivery(
-  of point: CGPoint, appFrame: CGSize
+  of point: CGPoint, layout: SmixLayout
 ) -> (orientation: UIInterfaceOrientation, point: CGPoint) {
-  let stamp = eventStamp(forAppFrame: appFrame, strategy: smixEventStampStrategy)
+  let stamp = eventStamp(forAppFrame: layout.size, strategy: smixEventStampStrategy)
   guard smixEventStampStrategy == .convertPointToDeviceSpace else {
     return (smixUIOrientation(stamp), point)
   }
-  // The layout's own handedness, not the stamp's: this strategy keeps
-  // the stamp portrait on purpose and moves the point instead, so the
-  // rotation has to be read off the frame.
-  let layout = eventStamp(forAppFrame: appFrame, strategy: .deriveFromAppFrame)
-  return (smixUIOrientation(stamp), pointInDeviceSpace(point, appFrame: appFrame, interface: layout))
+  return (
+    smixUIOrientation(stamp),
+    pointInDeviceSpace(point, appFrame: layout.size, interface: layout.orientation)
+  )
 }
