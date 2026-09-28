@@ -722,7 +722,7 @@ private func findAndTapSystemPopupButton(
           let bId = bn.id.isEmpty ? "b-\(i)" : bn.id
           if bId == buttonId {
             let center = CGPoint(x: bn.frame.midX, y: bn.frame.midY)
-            let popupDelivery = smixDelivery(of: center, appFrame: app.frame.size)
+            let popupDelivery = smixDelivery(of: center, layout: smixLayout(of: app))
             guard let record = SmixEventRecord(orientation: popupDelivery.orientation),
                   record.addPointerTouchEvent(at: popupDelivery.point) else {
               return .notFound
@@ -1458,7 +1458,7 @@ final class SmixRunnerUITests: XCTestCase {
               x: elementFrame.origin.x + elementFrame.size.width / 2,
               y: elementFrame.origin.y + elementFrame.size.height / 2
             )
-            let rnDelivery = smixDelivery(of: center, appFrame: app.frame.size)
+            let rnDelivery = smixDelivery(of: center, layout: smixLayout(of: app))
             guard let record = SmixEventRecord(orientation: rnDelivery.orientation),
                   record.addPointerTouchEvent(at: rnDelivery.point) else {
               return SmixRunnerServer.TapOutcome.notFound
@@ -2150,7 +2150,7 @@ final class SmixRunnerUITests: XCTestCase {
               x: frame.origin.x + frame.size.width / 2,
               y: frame.origin.y + frame.size.height / 2
             )
-            let delivery = smixDelivery(of: center, appFrame: app.frame.size)
+            let delivery = smixDelivery(of: center, layout: smixLayout(of: app))
             if let record = SmixEventRecord(orientation: delivery.orientation),
                record.addPointerTouchEvent(at: delivery.point) {
               let sema = DispatchSemaphore(value: 0)
@@ -2420,20 +2420,18 @@ final class SmixRunnerUITests: XCTestCase {
         // on the main thread.
         var px: CGFloat = 0
         var py: CGFloat = 0
-        var appW: CGFloat = 0
-        var appH: CGFloat = 0
+        var tapLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame")
         let setupOk = smixGuarded("tap-at-norm-coord-setup") {
           let frame = app.frame
           px = frame.origin.x + frame.size.width * CGFloat(nx)
           py = frame.origin.y + frame.size.height * CGFloat(ny)
-          appW = frame.size.width
-          appH = frame.size.height
+          tapLayout = smixLayout(of: app)
           return true
         }
         guard setupOk == true else { return (ok: false, chain: [], press: nil) }
 
         let delivery = smixDelivery(
-          of: CGPoint(x: px, y: py), appFrame: CGSize(width: appW, height: appH))
+          of: CGPoint(x: px, y: py), layout: tapLayout)
         // Separate taps are one record per touch, each one finger down
         // and up. Several paths in one record are several fingers, and
         // measured on iOS 27 their start offsets were not honoured: taps
@@ -2541,7 +2539,7 @@ final class SmixRunnerUITests: XCTestCase {
         // stays nil).
         var cx: CGFloat = 0
         var cy: CGFloat = 0
-        var byIdAppFrame = CGSize.zero
+        var byIdLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame")
         let setupOk: Bool? = smixGuarded("tap-by-id-setup") {
           // Resolve by a11y identifier. Try button-typed first (fast path),
           // then fall back to descendants-any when the id sits on a non-Button
@@ -2645,11 +2643,11 @@ final class SmixRunnerUITests: XCTestCase {
           let f = snap.frame
           cx = f.origin.x + f.size.width * 0.5
           cy = f.origin.y + f.size.height * 0.5
-          byIdAppFrame = app.frame.size
+          byIdLayout = smixLayout(of: app)
           return true
         }
         guard setupOk == true else { return false }
-        let byIdDelivery = smixDelivery(of: CGPoint(x: cx, y: cy), appFrame: byIdAppFrame)
+        let byIdDelivery = smixDelivery(of: CGPoint(x: cx, y: cy), layout: byIdLayout)
         guard let record = SmixEventRecord(orientation: byIdDelivery.orientation) else {
           FileHandle.standardError.write(
             Data("smix-runner: tap-by-id: XCSynthesizedEventRecord unavailable\n".utf8))
@@ -2758,24 +2756,22 @@ final class SmixRunnerUITests: XCTestCase {
         var fromPy: CGFloat = 0
         var toPx: CGFloat = 0
         var toPy: CGFloat = 0
-        var swipeAppW: CGFloat = 0
-        var swipeAppH: CGFloat = 0
+        var swipeLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame")
         let setupOk = smixGuarded("swipe-at-norm-coord-setup") {
           let frame = app.frame
           fromPx = frame.origin.x + frame.size.width * CGFloat(fromNx)
           fromPy = frame.origin.y + frame.size.height * CGFloat(fromNy)
           toPx = frame.origin.x + frame.size.width * CGFloat(toNx)
           toPy = frame.origin.y + frame.size.height * CGFloat(toNy)
-          swipeAppW = frame.size.width
-          swipeAppH = frame.size.height
+          swipeLayout = smixLayout(of: app)
           return true
         }
         guard setupOk == true else { return false }
 
         let swipeFrom = smixDelivery(
-          of: CGPoint(x: fromPx, y: fromPy), appFrame: CGSize(width: swipeAppW, height: swipeAppH))
+          of: CGPoint(x: fromPx, y: fromPy), layout: swipeLayout)
         let swipeTo = smixDelivery(
-          of: CGPoint(x: toPx, y: toPy), appFrame: CGSize(width: swipeAppW, height: swipeAppH))
+          of: CGPoint(x: toPx, y: toPy), layout: swipeLayout)
         guard let record = SmixEventRecord(orientation: swipeFrom.orientation) else {
           FileHandle.standardError.write(
             Data("smix-runner: swipe-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
@@ -3302,6 +3298,7 @@ final class SmixRunnerUITests: XCTestCase {
         var appFrame = CGRect.zero
         var rootFrame = CGRect.zero
         var interface = "unknown"
+        var csLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame")
         var resolved = CGPoint.zero
         _ = smixGuarded("coordinate-space") {
           let frame = app.frame
@@ -3313,6 +3310,7 @@ final class SmixRunnerUITests: XCTestCase {
             rootFrame = snapshot.frame
           }
           interface = describeDeviceOrientation(XCUIDevice.shared.orientation)
+          csLayout = smixLayout(of: app)
           return true
         }
         return (
@@ -3320,7 +3318,7 @@ final class SmixRunnerUITests: XCTestCase {
           snapshotRootFrame: rootFrame,
           deviceOrientation: interface,
           eventRecordOrientation: describeInterfaceOrientation(
-            smixDelivery(of: .zero, appFrame: appFrame.size).orientation),
+            smixDelivery(of: .zero, layout: csLayout).orientation),
           stampStrategy: smixEventStampStrategy.rawValue,
           resolvedPoint: resolved
         )

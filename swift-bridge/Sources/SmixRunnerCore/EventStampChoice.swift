@@ -86,6 +86,26 @@ public func eventStamp(
   }
 }
 
+/// How the app is laid out, from what can be read of it.
+///
+/// `reported` is the app's own interface orientation when the runner can
+/// read it; `device` is the device's orientation, named as the interface
+/// would name it. The frame alone says the app is wide, not which way it
+/// was turned.
+public func layoutOrientation(
+  appFrame: CGSize, reported: StampOrientation?, device: StampOrientation?
+) -> StampOrientation {
+  if let reported { return reported }
+  guard appFrame.width > appFrame.height else { return .portrait }
+  switch device {
+  case .landscapeLeft?, .landscapeRight?: return device!
+  // An app that supports one landscape stays in it while the device is
+  // held some other way, so a device that says nothing about landscape
+  // keeps the reading the runner has always made.
+  default: return .landscapeRight
+  }
+}
+
 /// A point in the app's coordinate space, expressed in the device's.
 ///
 /// A rotation, not a swap. Swapping x and y mirrors the screen about

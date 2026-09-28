@@ -234,6 +234,65 @@ enum LandscapeStage {
   }
 }
 
+// A screen that turns with the device, for the two landscape
+// orientations: a frame only says the app is wide, not which way it was
+// turned, so a tap converted from the frame alone lands mirrored in one
+// of them. The target sits in the top-leading corner — a mirrored tap on
+// a centred target still hits it — and the last touch the app received
+// is shown in its own coordinates, so a miss says where it went.
+final class RotatingProbe: ObservableObject {
+  @Published var presses = 0
+  @Published var lastTouch = "none"
+}
+
+struct RotatingView: View {
+  @ObservedObject var probe: RotatingProbe
+  let onExit: () -> Void
+
+  var body: some View {
+    ZStack(alignment: .topLeading) {
+      Color(white: 0.93).ignoresSafeArea()
+      VStack(spacing: 12) {
+        Text("presses \(probe.presses)").accessibilityIdentifier("rotating-presses")
+        Text(probe.lastTouch).accessibilityIdentifier("rotating-last-touch")
+        Button("exit", action: onExit).accessibilityIdentifier("rotating-exit")
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      Button(action: { probe.presses += 1 }) {
+        Text("press")
+          .frame(width: 160, height: 64)
+          .background(Color.blue.opacity(0.25))
+      }
+      .accessibilityIdentifier("rotating-press")
+      .padding(.leading, 72)
+      .padding(.top, 24)
+    }
+    .simultaneousGesture(
+      SpatialTapGesture(coordinateSpace: .global).onEnded { tap in
+        probe.lastTouch = "\(Int(tap.location.x)),\(Int(tap.location.y))"
+      })
+  }
+}
+
+final class RotatingHost: UIHostingController<RotatingView> {
+  override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .allButUpsideDown }
+  override var shouldAutorotate: Bool { true }
+}
+
+enum RotatingStage {
+  static let probe = RotatingProbe()
+
+  static func present() {
+    guard let root = LandscapeStage.presenter else { return }
+    probe.presses = 0
+    probe.lastTouch = "none"
+    let host = RotatingHost(
+      rootView: RotatingView(probe: probe, onExit: { root.dismiss(animated: false) }))
+    host.modalPresentationStyle = .fullScreen
+    root.present(host, animated: false)
+  }
+}
+
 // A UIKit alert, the kind React Native's `Alert.alert` raises on iOS —
 // not SwiftUI's `.alert`, which the alert above is. A consumer's confirm
 // of exactly this kind was reported as tapped and not pressed; the
@@ -437,6 +496,8 @@ struct ContentView: View {
           Button("Open landscape") { LandscapeStage.present(landscape: true) }
             .accessibilityIdentifier("landscape-enter")
 
+          Button("Open rotating") { RotatingStage.present() }
+            .accessibilityIdentifier("rotating-enter")
           Button("Open portrait counter") { LandscapeStage.present(landscape: false) }
             .accessibilityIdentifier("portrait-enter")
 
