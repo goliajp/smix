@@ -13,8 +13,9 @@ on:
     # runs stay on the smoke tier (in the gates job below).
     - cron: "0 8 * * *"
 
+# the nightly schedule gets its own group so it never cancels a push run
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
