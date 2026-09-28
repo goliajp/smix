@@ -145,6 +145,8 @@ api36_list_check() {
 
 # shellcheck source=../lib/e2e-devices.sh
 . "$ROOT/scripts/lib/e2e-devices.sh"
+# shellcheck source=../lib/android-runner-log.sh
+. "$ROOT/scripts/lib/android-runner-log.sh"
 
 if [ "${1:-}" = "--selftest" ]; then
   fails=0
@@ -293,16 +295,31 @@ if [ -n "$problem" ]; then
   exit 1
 fi
 
-# run_one <script> <leg-label> — run one script, log it, print `<name> <state>`.
+# The shared emulator's serial while it is up, else nothing.
+android_serial() {
+  local serial
+  serial="$("$SMIX" sim resolve "$E2E_ANDROID" 2>/dev/null | tail -1)" || return 0
+  adb devices 2>/dev/null | grep -qE "^${serial}[[:space:]]+device" && echo "$serial"
+  return 0
+}
+
+# run_one <script> <leg-label> [<android-serial>] — run one script, log it,
+# print `<name> <state>`. With a serial, a script that failed also keeps
+# what the Android runner logged while it ran, beside its own log.
 run_one() {
-  local e2e="$1" leg="$2" name out rc state log
+  local e2e="$1" leg="$2" serial="${3:-}" name out rc state log since="" n
   name="$(basename "$e2e" .sh)"
   log="/tmp/device-e2e-$name${leg:+-api36}.log"
   echo "device-e2e-tier: [$name]${leg:+ ($leg)} running..." >&2
+  [ -n "$serial" ] && since="$(android_device_now "$serial" || true)"
   out="$(bash "$e2e" 2>&1)" && rc=0 || rc=$?
   printf '%s\n' "$out" > "$log"
   state="$(e2e_state "$rc")"
   echo "device-e2e-tier: [$name]${leg:+ ($leg)} $state" >&2
+  if [ "$state" = fail ] && [ -n "$serial" ]; then
+    n="$(collect_android_runner_log "$serial" "$since" "${log%.log}-runner.log" || true)"
+    echo "device-e2e-tier: [$name]${leg:+ ($leg)} the Android runner's log ($n route line(s)): ${log%.log}-runner.log" >&2
+  fi
   echo "$name $state"
 }
 
@@ -311,10 +328,14 @@ run_one() {
 # at the first failure that turns out to be the device no longer able to
 # show anything: every script after it would fail about its own step.
 run_lane() {
-  local lane="$1" list="$2" e2e line problem
+  local lane="$1" list="$2" e2e line problem serial
   while read -r e2e <&3; do
     [ -z "$e2e" ] && continue
-    line="$(run_one "$e2e" "" </dev/null)"
+    serial=""
+    if [ "$lane" = android ] || [ "$lane" = serial ]; then
+      serial="$(android_serial)"
+    fi
+    line="$(run_one "$e2e" "" "$serial" </dev/null)"
     echo "$line"
     if { [ "$lane" = android ] || [ "$lane" = serial ]; } && [ "${line##* }" = fail ]; then
       problem="$(android_problem)"
@@ -425,7 +446,7 @@ results36=""
 while read -r name <&3; do
   [ -z "$name" ] && continue
   line="$(SMIX_E2E_ANDROID="$API36_AVD" SMIX_ANDROID_SERIAL="$api36_serial" SMIX_C8_PLATFORMS=android \
-    run_one "$ROOT/scripts/dev/$name.sh" "API 36" </dev/null)"
+    run_one "$ROOT/scripts/dev/$name.sh" "API 36" "$api36_serial" </dev/null)"
   results36="$results36$line"$'\n'
 done 3<<< "$API36_E2E"
 n_ran="$(printf '%s' "$results36" | grep -c .)"

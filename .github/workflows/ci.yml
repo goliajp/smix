@@ -454,6 +454,14 @@ jobs:
         run: python3 scripts/dev/a-device-gate-keeps-crash-evidence.test.py
       - name: the crash-evidence collector's self-test
         run: bash scripts/lib/crash-evidence.sh --selftest
+      # A gate that drives the Android runner keeps what the runner logged
+      # when it goes red: each route, its answer and where its time went.
+      - name: every Android device gate keeps the runner's log
+        run: python3 scripts/dev/a-device-gate-keeps-the-runner-log.py
+      - name: the runner-log gate can still go red
+        run: python3 scripts/dev/a-device-gate-keeps-the-runner-log.test.py
+      - name: the runner-log collector's self-test
+        run: bash scripts/lib/android-runner-log.sh --selftest
       # A plugin e2e whose claude session the service stopped partway saw
       # nothing about the plugin, and says it cannot judge.
       - name: the claude-session reader's self-test
