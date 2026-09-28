@@ -61,6 +61,7 @@ pub const BURST_HOLD_MS: u32 = 50;
 
 /// How a route's longest wait is known.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Longest {
     /// A fixed number of milliseconds on this platform.
     Ms(u64),
@@ -70,7 +71,11 @@ pub enum Longest {
 }
 
 /// One route on either runner. `None` where that runner has no such route.
+///
+/// Non-exhaustive: the table is this crate's, and a field added to it is
+/// not a change a caller should have to follow.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub struct Route {
     pub path: &'static str,
     pub ios: Option<Longest>,
