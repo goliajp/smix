@@ -1151,13 +1151,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         selector: &Selector,
         what: &str,
     ) -> Result<(smix_sdk::Rect, smix_sdk::Rect), RunError> {
-        let deadline = std::time::Instant::now() + IMPLICIT_WAIT;
+        let budget = smix_driver::poll::Budget::new(IMPLICIT_WAIT);
         loop {
+            let look = budget.look();
             let tree = self.app.tree().await?;
             if let Some(node) = smix_selector_resolver::resolve_selector(&tree, selector) {
                 return Ok((tree.bounds, node.bounds));
             }
-            if std::time::Instant::now() >= deadline {
+            if budget.spent_by(look) {
                 return Err(RunError::Sdk(ExpectationFailure::new(
                     FailureInit {
                         code: Some(FailureCode::ElementNotFound),
@@ -1731,6 +1732,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         // parsing prose for a decision.
         const REFUSED_RETRY: Duration = Duration::from_millis(100);
         let deadline = std::time::Instant::now() + Duration::from_millis(ceiling_ms);
+        let budget = smix_driver::poll::Budget::new(Duration::from_millis(ceiling_ms));
 
         let mut previous = loop {
             match self.app.capture_frame().await {
@@ -1745,6 +1747,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
         };
         loop {
+            let look = budget.look();
             let next = match self.app.capture_frame().await {
                 Ok(frame) => frame,
                 Err(e) if e.code == FailureCode::CaptureBackpressure => {
@@ -1759,7 +1762,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             if smix_sdk::quiescence::frames_still(&previous, &next, &self.quiescence)? {
                 return Ok(Stillness::Settled);
             }
-            if std::time::Instant::now() >= deadline {
+            if budget.spent_by(look) {
                 return Ok(Stillness::StillMoving);
             }
             previous = next;
@@ -3568,7 +3571,6 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         selector: &Selector,
         timeout: Duration,
     ) -> Result<(), RunError> {
-        use std::time::Instant;
         use tokio::time::sleep;
         const POLL: Duration = Duration::from_millis(250);
 
@@ -3588,8 +3590,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             return Ok(());
         }
 
-        let start = Instant::now();
+        let budget = smix_driver::poll::Budget::new(timeout);
         loop {
+            let look = budget.look();
             // Fallback chain: try each sub-selector; return on first hit.
             if let Selector::Fallback { fallback } = selector {
                 // Try tree-based sub-selectors first (cheaper). OcrText
@@ -3630,7 +3633,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 }
             }
 
-            if start.elapsed() >= timeout {
+            if budget.spent_by(look) {
                 // Compose per-layer trace for the Fallback case;
                 // singleton trace for standalone OcrText.
                 let trace = if let Selector::Fallback { fallback } = selector {
@@ -3881,12 +3884,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         sel: &Selector,
         budget: Duration,
     ) -> Result<Option<(f64, f64)>, RunError> {
-        let deadline = std::time::Instant::now() + budget;
+        let budget = smix_driver::poll::Budget::new(budget);
         loop {
+            let look = budget.look();
             if let Some(point) = self.point_for_unreadable_once(sel).await? {
                 return Ok(Some(point));
             }
-            if std::time::Instant::now() >= deadline {
+            if budget.spent_by(look) {
                 return Ok(None);
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -4008,12 +4012,12 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 // No OCR anywhere: budget = 0 ⇒ single pass.
                 Duration::from_millis(0)
             };
-            use std::time::Instant;
             use tokio::time::sleep;
             const POLL: Duration = Duration::from_millis(250);
-            let start = Instant::now();
+            let budget = smix_driver::poll::Budget::new(poll_budget);
             let mut trace: Vec<String> = Vec::with_capacity(fallback.len());
             loop {
+                let look = budget.look();
                 trace.clear();
                 for (i, sub) in fallback.iter().enumerate() {
                     let layer = format!("L{}", i + 1);
@@ -4042,7 +4046,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         }
                     }
                 }
-                if start.elapsed() >= poll_budget {
+                if budget.spent_by(look) {
                     break;
                 }
                 sleep(POLL).await;

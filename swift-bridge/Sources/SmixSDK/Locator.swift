@@ -8,6 +8,7 @@
 
 import Foundation
 import SmixCoreFFIBindings
+import SmixRunnerCore
 #if canImport(CoreGraphics)
 import CoreGraphics
 #endif
@@ -59,15 +60,17 @@ public actor Locator {
 
     /// Expect the resolver to find exactly `n` matches within `timeout`.
     public func toHaveCount(_ n: Int, timeout: Duration = .seconds(5)) async throws {
-        let deadline = Date().addingTimeInterval(timeout.seconds)
+        let budget = PollBudget(limit: timeout.seconds)
         var lastTree = try await app.snapshotForLocator()
         var lastCount = 0
-        while Date() < deadline {
+        while true {
+            let began = budget.look()
             let matchCount = try await app.matchCount(for: selector)
             lastCount = matchCount
             if matchCount == n {
                 return
             }
+            if budget.spent(by: began) { break }
             try await Task.sleep(for: Self.pollTick)
             lastTree = try await app.snapshotForLocator()
         }
@@ -103,15 +106,17 @@ public actor Locator {
         timeout: Duration,
         predicate: (A11yNode, String?) -> Bool
     ) async throws {
-        let deadline = Date().addingTimeInterval(timeout.seconds)
+        let budget = PollBudget(limit: timeout.seconds)
         var lastTree = try await app.snapshotForLocator()
 
-        while Date() < deadline {
+        while true {
+            let began = budget.look()
             lastTree = try await app.snapshotForLocator()
             let firstMatch = try await app.firstMatchId(for: selector, tree: lastTree)
             if predicate(lastTree, firstMatch) {
                 return
             }
+            if budget.spent(by: began) { break }
             try await Task.sleep(for: Self.pollTick)
         }
 

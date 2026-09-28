@@ -2033,9 +2033,10 @@ final class SmixRunnerUITests: XCTestCase {
             // 250ms only 1 of 11 runs came back clean, against 10 of 10
             // here. Whatever the mechanism is, it is not "observation
             // pressure" in a way that a slower cadence relieves.
-            let deadline = Date().addingTimeInterval(2.0)
-            while Date() < deadline {
+            let budget = PollBudget(limit: 2.0)
+            while true {
               Thread.sleep(forTimeInterval: 0.05)
+              let began = budget.look()
               let bar = app.navigationBars.firstMatch
               let reading: NavigationSettle.Reading
               if !bar.exists {
@@ -2075,10 +2076,10 @@ final class SmixRunnerUITests: XCTestCase {
                 // and say so, so the correlation is visible.
                 Thread.sleep(forTimeInterval: 0.5)
                 return (true, .noIdentity, record())
-              case .notYet: continue
+              case .notYet:
+                if budget.spent(by: began) { return (false, .gaveUp, record()) }
               }
             }
-            return (false, .gaveUp, record())
           }
 
           // Strategy 1: navigation bar back button
@@ -2323,11 +2324,13 @@ final class SmixRunnerUITests: XCTestCase {
           func keyboardGone() -> Bool {
             var until = Date().addingTimeInterval(1.0)
             if let deadline, deadline < until { until = deadline }
-            while Date() < until {
+            let budget = PollBudget(limit: until.timeIntervalSinceNow)
+            while true {
               Thread.sleep(forTimeInterval: 0.05)
+              let began = budget.look()
               if !app.keyboards.firstMatch.exists { return true }
+              if budget.spent(by: began) { return false }
             }
-            return false
           }
           // Strategy 1: tap Return/Done/Continue/Search/Go key on keyboard
           for keyName in ["Return", "Done", "Continue", "Search", "Go", "Next", "Enter"] {
@@ -3089,12 +3092,15 @@ final class SmixRunnerUITests: XCTestCase {
           if let deadlineMs = req.waitForForegroundMs, deadlineMs > 0 {
             let waitStart = Date()
             let pollIntervalNs: UInt64 = 250_000_000  // 250 ms
-            while UInt64(Date().timeIntervalSince(waitStart) * 1000) < deadlineMs {
+            let budget = PollBudget(limit: Double(deadlineMs) / 1000, start: waitStart)
+            while true {
+              let began = budget.look()
               let state = await SmixRunnerServer.onMain { entry.app.state }
               if state == .runningForeground {
                 reachedForeground = true
                 break
               }
+              if budget.spent(by: began) { break }
               try? await Task.sleep(nanoseconds: pollIntervalNs)
             }
             waitedMs = UInt64(Date().timeIntervalSince(waitStart) * 1000)
@@ -3133,9 +3139,10 @@ final class SmixRunnerUITests: XCTestCase {
             // the ignore set dynamically instead of asking each
             // consumer to configure their own bundle id away.
             let effectiveIgnore = probeConfig.ignore.union([entry.bundleId])
-            let interactiveStart = Date()
             let interactivePollNs: UInt64 = 500_000_000  // 500 ms
-            while UInt64(Date().timeIntervalSince(interactiveStart) * 1000) < interactiveDeadlineMs {
+            let budget = PollBudget(limit: Double(interactiveDeadlineMs) / 1000)
+            while true {
+              let began = budget.look()
               let observed: [String] = await SmixRunnerServer.onMain {
                 // Enumerating via
                 // `descendants(matching:).element(boundBy: i)` does NOT
@@ -3178,6 +3185,7 @@ final class SmixRunnerUITests: XCTestCase {
                 interactiveNamedIds = Array(observed.prefix(8))
                 break
               }
+              if budget.spent(by: began) { break }
               try? await Task.sleep(nanoseconds: interactivePollNs)
             }
           }

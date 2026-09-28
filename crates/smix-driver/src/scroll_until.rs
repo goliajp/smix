@@ -20,7 +20,6 @@ use smix_screen::{ScreenFacts, screen_facts};
 use smix_selector::{Selector, describe_selector};
 use smix_selector_resolver::{ResolverContext, resolve_selector_compiled};
 use std::time::Duration;
-use tokio::time::Instant;
 
 use crate::{Driver, OCR_RECOGNITION_LEVEL, base_text_or_id, ocr_locales};
 
@@ -127,11 +126,12 @@ pub(crate) async fn run<E: Eyes>(
     direction: SwipeDirection,
     until: &ScrollUntil,
 ) -> Result<(), ExpectationFailure> {
-    let deadline = Instant::now() + until.timeout;
+    let budget = crate::poll::Budget::new(until.timeout);
     let mut swipes = 0u32;
     let mut recentered = 0u32;
     let mut previous: Option<NormBox> = None;
     loop {
+        let began = budget.look();
         let look = eyes.look().await?;
         // In place, but not where it was a moment ago: the content is
         // still gliding. A swipe leaves a list moving, and a tap sent
@@ -155,7 +155,7 @@ pub(crate) async fn run<E: Eyes>(
             },
         };
         previous = look.seen;
-        if Instant::now() >= deadline {
+        if budget.spent_by(began) {
             return Err(not_reached(
                 selector,
                 direction,
@@ -323,6 +323,48 @@ mod tests {
             self.swipes += 1;
             Ok(())
         }
+    }
+
+    /// A first look that takes longer than the whole budget.
+    struct SlowFirst {
+        seen: NormBox,
+        looks: u32,
+    }
+
+    #[async_trait]
+    impl Eyes for SlowFirst {
+        async fn look(&mut self) -> Result<Look, ExpectationFailure> {
+            self.looks += 1;
+            if self.looks == 1 {
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+            }
+            Ok(Look {
+                seen: Some(self.seen),
+                visible: ScreenFacts::default(),
+            })
+        }
+        async fn swipe(&mut self, _: SwipeDirection) -> Result<(), ExpectationFailure> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_look_begun_inside_the_budget_is_not_the_last_word() {
+        // The target is wholly in from the start. The first look finds it
+        // but takes longer than the budget; one sighting is not yet "held
+        // still", and timing out there reported a target that the next
+        // look would have found in place.
+        let mut eyes = SlowFirst {
+            seen: nb(0.4, 0.1),
+            looks: 0,
+        };
+        let until = ScrollUntil {
+            timeout: Duration::from_secs(1),
+            ..ScrollUntil::default()
+        };
+        let r = run(&mut eyes, &sel(), SwipeDirection::Down, &until).await;
+        assert!(r.is_ok(), "{r:?}");
+        assert_eq!(eyes.looks, 2);
     }
 
     fn sel() -> Selector {

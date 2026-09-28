@@ -754,6 +754,18 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Fixed
 
+- **No wait gives up on a look that began before its time was up.**
+  Every wait that polls — `tapOn`'s wait for its target to hold still and
+  to be found, `extendedWaitUntil`, `assertVisible`/`assertNotVisible`
+  and their OCR forms, `scrollUntilVisible`, the fallback chains,
+  `smix wait-for`, `smix sim wake`, and in the runners the back key, keyboard
+  dismissal, field clearing and typing read-back, focus, rotation,
+  foreground and launch waits, and the Swift SDK's `Locator` — checked
+  the clock after each look. A look that began inside the budget and
+  returned after it, as one read of a busy device can take seconds, was
+  taken as the final "not yet" about a screen that had already changed.
+  A wait now ends only once a look begun after its budget still says no;
+  it can overrun its budget by that one look.
 - **Android `/back` no longer answers `gaveUp` about a screen that went
   back while it was looking.** One look at every window takes about two
   seconds on a loaded emulator, measured. A look begun before the key

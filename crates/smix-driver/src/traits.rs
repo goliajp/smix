@@ -174,12 +174,13 @@ pub trait Driver: Send + Sync {
         selector: &Selector,
         timeout: Duration,
     ) -> Result<(), ExpectationFailure> {
-        let start = std::time::Instant::now();
+        let budget = crate::poll::Budget::new(timeout);
         loop {
+            let look = budget.look();
             if !self.find(selector, None).await? {
                 return Ok(());
             }
-            if start.elapsed() >= timeout {
+            if budget.spent_by(look) {
                 return Err(ExpectationFailure::new(smix_error::FailureInit {
                     code: Some(smix_error::FailureCode::AssertionFailed),
                     message: format!(

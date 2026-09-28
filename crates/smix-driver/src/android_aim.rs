@@ -98,9 +98,9 @@ pub(super) async fn resolve_aimed(
     selector: &Selector,
     include: Option<IncludeScope>,
 ) -> Result<crate::Aimed, ExpectationFailure> {
-    let start = std::time::Instant::now();
-    let timeout = Duration::from_millis(5000);
+    let budget = crate::poll::Budget::new(Duration::from_millis(5000));
     loop {
+        let look = budget.look();
         let perceived = driver.perceive(include).await?;
         let read_by = std::sync::Mutex::new(perceived.source);
         let tree = perceived.root;
@@ -111,7 +111,7 @@ pub(super) async fn resolve_aimed(
                 // Read by the same rule as every re-reading below: a target
                 // that shows nowhere is not on screen yet.
                 let Some(first) = crate::aim_in(&tree, selector)? else {
-                    if start.elapsed() > timeout {
+                    if budget.spent_by(look) {
                         return Err(crate::element_not_found(&tree, selector));
                     }
                     tokio::time::sleep(Duration::from_millis(250)).await;
@@ -140,7 +140,7 @@ pub(super) async fn resolve_aimed(
                 ));
             }
             Err(HostResolveError::NotFound) => {
-                if start.elapsed() > timeout {
+                if budget.spent_by(look) {
                     return Err(crate::element_not_found(&tree, selector));
                 }
                 tokio::time::sleep(Duration::from_millis(250)).await;

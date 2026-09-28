@@ -159,3 +159,34 @@ fn edges_within_a_point_agree_and_a_point_apart_do_not() {
     assert!(frames_agree(&a, &(44.0, 180.5, 992.0, 140.0), 1.0));
     assert!(!frames_agree(&a, &(44.0, 181.0, 992.0, 140.0), 1.0));
 }
+
+#[tokio::test]
+async fn a_slow_reading_begun_before_the_limit_is_not_the_last_word() {
+    // One reading of the screen has taken two seconds on a loaded device.
+    // Begun inside the budget it reports where the target was then, and
+    // returns after the limit. Timing out on it gave `kept moving` about a
+    // target that the next reading would have found still.
+    let calls = std::cell::Cell::new(0u32);
+    let reread = || {
+        calls.set(calls.get() + 1);
+        let n = calls.get();
+        async move {
+            if n == 1 {
+                tokio::time::sleep(Duration::from_millis(120)).await;
+                Ok(Reading::At(aim(400.0)))
+            } else {
+                Ok(Reading::At(aim(400.0)))
+            }
+        }
+    };
+    let got = until_aim_settles(
+        aim(900.0),
+        reread,
+        1.0,
+        Duration::from_millis(1),
+        Duration::from_millis(50),
+    )
+    .await
+    .expect("a reading begun after the limit found it still");
+    assert_eq!(got.2.expect("aimed").frame.1, 400.0);
+}
