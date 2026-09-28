@@ -88,6 +88,7 @@ PROBE_ID="search_action_bar"
 WORK="${TMPDIR:-/tmp}/smix-android-behaviour"
 WIRE="$WORK/wire.jsonl"
 mkdir -p "$WORK"
+rm -f "$WORK/runner-log.txt"
 
 PROXY_PID=""
 cleanup() {
@@ -98,8 +99,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# shellcheck source=/dev/null
+. "$REPO_ROOT/scripts/lib/android-runner-log.sh"
+RUNNER_LOG_SINCE=""
+
 die() {
   echo "android behaviour gate: $1" >&2
+  # What the runner logged while this gate drove it: each route, its
+  # answer and where its time went. Only once a device was chosen.
+  if [[ -n "$RUNNER_LOG_SINCE" ]]; then
+    local n
+    n="$(collect_android_runner_log "$SERIAL" "$RUNNER_LOG_SINCE" "$WORK/runner-log.txt")"
+    echo "android behaviour gate: the runner's log ($n route line(s)): $WORK/runner-log.txt" >&2
+  fi
   exit 1
 }
 
@@ -138,6 +150,8 @@ if [[ ! "$SERIAL" =~ ^emulator-[0-9]+$ ]]; then
 fi
 
 echo "android behaviour gate: $APP on $SERIAL (timeout ${TIMEOUT_S}s)"
+RUNNER_LOG_SINCE="$(android_device_now "$SERIAL")"
+[[ -n "$RUNNER_LOG_SINCE" ]] || die "could not read $SERIAL's clock, which the runner's log is read by"
 
 # --- bring up ------------------------------------------------------------
 #

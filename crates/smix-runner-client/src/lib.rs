@@ -723,6 +723,10 @@ struct ClearTextRes {
     status: Option<String>,
     #[serde(default)]
     method: Option<String>,
+    #[serde(default)]
+    saw: Option<String>,
+    #[serde(default)]
+    held: Option<i64>,
 }
 
 impl HttpRunnerClient {
@@ -1698,8 +1702,26 @@ impl HttpRunnerClient {
             .ok
             .unwrap_or_else(|| res.status.as_deref() == Some("ok"));
         if !cleared {
-            return Err(RunnerTransportError::Refused {
-                endpoint: "/clear-text".to_string(),
+            // A runner that names why — the field kept text, no field had
+            // focus, the route ran out of its own time — is passed through;
+            // one that names nothing, or says "ok" while `ok` is false, is
+            // refused without a reason it did not give.
+            return Err(match res.status.filter(|s| s != "ok") {
+                Some(kind) => RunnerTransportError::RefusedNaming {
+                    endpoint: "/clear-text".to_string(),
+                    saw: res.saw.unwrap_or_else(|| {
+                        format!(
+                            "method={} held={}",
+                            res.method.as_deref().unwrap_or("unknown"),
+                            res.held
+                                .map_or_else(|| "unknown".to_string(), |h| h.to_string())
+                        )
+                    }),
+                    kind,
+                },
+                None => RunnerTransportError::Refused {
+                    endpoint: "/clear-text".to_string(),
+                },
             });
         }
         Ok(res.method.unwrap_or_else(|| "unknown".to_string()))
@@ -2578,6 +2600,37 @@ mod clear_text_verdict_tests {
             ok,
             status: status.map(str::to_string),
             method: Some("set-text".into()),
+            saw: None,
+            held: None,
+        }
+    }
+
+    #[test]
+    fn a_route_that_ran_out_of_time_says_where() {
+        // The runner stops a clear once its own limit is spent rather than
+        // let the host give up on it; the answer names the stage and what
+        // each took, and a plain "ok:false" would throw that away.
+        let mut r = res(Some(false), Some("route_limit_spent"));
+        r.saw = Some("stopped before readback, its limit spent; focus=6003 idle=500 tookMs=19004 limitMs=19000".into());
+        match HttpRunnerClient::clear_text_verdict(r) {
+            Err(RunnerTransportError::RefusedNaming { kind, saw, .. }) => {
+                assert_eq!(kind, "route_limit_spent");
+                assert!(saw.contains("stopped before readback"), "{saw}");
+            }
+            other => panic!("expected the reason named, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_field_left_holding_text_says_how_much() {
+        let mut r = res(Some(false), Some("field_not_empty"));
+        r.held = Some(4);
+        match HttpRunnerClient::clear_text_verdict(r) {
+            Err(RunnerTransportError::RefusedNaming { kind, saw, .. }) => {
+                assert_eq!(kind, "field_not_empty");
+                assert!(saw.contains("4"), "{saw}");
+            }
+            other => panic!("expected the reason named, got {other:?}"),
         }
     }
 

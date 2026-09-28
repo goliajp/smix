@@ -32,6 +32,16 @@ pub const XCUI_APP_CALL_MS: u64 = 30_000;
 /// same step's other queries ran at their usual speed.
 pub const XCUI_STALL_MS: u64 = 36_000;
 
+/// One look on the Android runner — a read of the windows, a focus query —
+/// that began before its poll's budget ran out and finished after it.
+/// Measured on emulator-5554: a full tree read at load 11.5 took at most
+/// 178 ms over 60 reads (2026-09-29); one read of every window on a loaded
+/// emulator took about 2 s (the measurement the runner's `Poll` records).
+/// Doubled from the slow one, as the other rates here are. Counted once
+/// per poll a route can reach: each poll's last look is the one that can
+/// run past it.
+pub const ANDROID_LOOK_MS: u64 = 4_000;
+
 /// How long the iOS runner's HTTP server lets any handler run before it
 /// answers 500 in the handler's place. It is not a second clock: the host
 /// decides how long to wait, and this only has to outlast every such wait.
@@ -71,6 +81,9 @@ pub struct Route {
     /// The iOS handler queries XCUITest, so one stall ([`XCUI_STALL_MS`])
     /// is added to it.
     pub ios_queries_xcui: bool,
+    /// How many polls the Android handler can reach; each adds one
+    /// [`ANDROID_LOOK_MS`] to its waits.
+    pub android_looks: u64,
 }
 
 use Longest::{FromRequest as Req, Ms};
@@ -87,6 +100,15 @@ const fn r(
         android,
         ios_resolves_app,
         ios_queries_xcui: ios.is_some() && !BOOKKEEPING.contains_path(path),
+        android_looks: 0,
+    }
+}
+
+impl Route {
+    /// The Android handler can reach `n` polls.
+    const fn looks(mut self, n: u64) -> Route {
+        self.android_looks = n;
+        self
     }
 }
 
@@ -164,7 +186,7 @@ pub const ROUTES: &[Route] = &[
     // iOS: two existence waits (2 s, 3 s) and the 2 s scroll settle.
     // Android: the 1.5 s poll, one lookup's 2 s idle wait that can start
     // just before it ends, a 75 ms pause and a 0.5 s idle wait.
-    r("/tap-by-id", ms(7_000), ms(4_075), true),
+    r("/tap-by-id", ms(7_000), ms(4_075), true).looks(1),
     r("/tap-at-norm-coord", REQ, REQ, true),
     r("/double-tap-at-norm-coord", NONE, ms(650), false),
     r("/long-press-at-norm-coord", NONE, REQ, false),
@@ -173,20 +195,21 @@ pub const ROUTES: &[Route] = &[
     r("/press-key", ms(0), ms(500), false),
     // iOS: five navigation settles of 2 s, two synthesis waits of 5 s and
     // one fixed 0.5 s settle. Android: the 2 s back settle.
-    r("/back", ms(20_500), ms(2_000), true),
-    r("/hide-keyboard", REQ, ms(2_500), true),
-    r("/input-text", REQ, REQ, false),
+    r("/back", ms(20_500), ms(2_000), true).looks(1),
+    r("/hide-keyboard", REQ, ms(2_500), true).looks(1),
+    r("/input-text", REQ, REQ, false).looks(2),
     r("/fill", ms(0), NONE, true),
     r("/clear", ms(0), NONE, true),
-    // Android: 6 s for focus, 2 s for the field to empty, two 0.5 s idle
-    // waits and 2 s for it to empty again after the delete keys.
-    r("/clear-text", NONE, ms(11_000), false),
+    // Android: 6 s for focus, a 0.5 s idle wait, the delete keys (sent in
+    // batches, each started only while the route's limit lasts) and 2 s for
+    // the field to empty.
+    r("/clear-text", NONE, ms(11_000), false).looks(2),
     // iOS: activate(). Android: 0.5 s idle wait and 3 s for the package to
     // come to the front.
-    r("/foreground", ms(XCUI_APP_CALL_MS), ms(3_500), false),
+    r("/foreground", ms(XCUI_APP_CALL_MS), ms(3_500), false).looks(1),
     // iOS: a 0.2 s settle. Android: 0.8 s idle wait and 3 s for the
     // rotation to arrive.
-    r("/set-orientation", ms(200), ms(3_800), true),
+    r("/set-orientation", ms(200), ms(3_800), true).looks(1),
     // Android: the in-app WebView bridge's connect (5 s) and read (6 s).
     r("/webview-eval", NONE, ms(11_000), false),
     r("/record/start", ms(0), ms(0), false),
@@ -235,17 +258,38 @@ fn route(path: &str) -> Option<&'static Route> {
 /// the wait, or the path is not a runner route.
 fn fixed_longest(path: &str, activates: bool) -> Option<Duration> {
     let r = route(path)?;
-    let ios = match r.ios {
-        Some(Longest::Ms(n)) => Some(Duration::from_millis(n) + ios_extra(r, activates)),
-        Some(Longest::FromRequest) => return None,
-        None => None,
+    if r.ios == Some(Req) || r.android == Some(Req) {
+        return None;
+    }
+    longest_with(r, Duration::ZERO, activates)
+}
+
+/// The longer of the two runners' waits for `r`, a wait the request sets
+/// taken as `from_request`.
+fn longest_with(r: &Route, from_request: Duration, activates: bool) -> Option<Duration> {
+    let own = |l: Longest| match l {
+        Longest::Ms(n) => Duration::from_millis(n),
+        Longest::FromRequest => from_request,
     };
-    let android = match r.android {
-        Some(Longest::Ms(n)) => Some(Duration::from_millis(n)),
-        Some(Longest::FromRequest) => return None,
-        None => None,
-    };
+    let ios = r.ios.map(|l| own(l) + ios_extra(r, activates));
+    let android = r.android.map(|l| own(l) + android_extra(r));
     ios.into_iter().chain(android).max()
+}
+
+/// The Android runner's longest wait for `path` as it states it: its own
+/// waits and one look past each poll. `None` when the request sets it or
+/// Android has no such route.
+pub fn android_longest(path: &str) -> Option<Duration> {
+    let r = route(path)?;
+    match r.android? {
+        Longest::Ms(n) => Some(Duration::from_millis(n) + android_extra(r)),
+        Longest::FromRequest => None,
+    }
+}
+
+/// What the Android side adds to its own waits: one look past each poll.
+fn android_extra(r: &Route) -> Duration {
+    Duration::from_millis(ANDROID_LOOK_MS.saturating_mul(r.android_looks))
 }
 
 /// What the iOS side adds to its own waits: an activation first when the
@@ -281,12 +325,10 @@ pub fn wait_for_request(
     from_request: Duration,
     activates: bool,
 ) -> Result<Duration, crate::RunnerTransportError> {
-    let extra = route(path)
-        .filter(|r| r.ios.is_some())
-        .map_or(Duration::ZERO, |r| ios_extra(r, activates));
-    let wait = from_request
-        .saturating_add(extra)
-        .saturating_add(ANSWER_MARGIN);
+    let longest = route(path)
+        .and_then(|r| longest_with(r, from_request, activates))
+        .unwrap_or(from_request);
+    let wait = longest.saturating_add(ANSWER_MARGIN);
     let limit = Duration::from_millis(SERVER_HANDLER_TIMEOUT_MS);
     if wait >= limit {
         return Err(crate::RunnerTransportError::OutlastsTheRunner {
@@ -433,6 +475,36 @@ mod tests {
                 assert!(wait < server, "{times} taps: {wait:?}");
             }
         }
+    }
+
+    #[test]
+    fn an_android_poll_is_waited_for_through_the_look_past_its_budget() {
+        // /clear-text polls focus and the emptied field; each poll can begin
+        // one last look just before its budget ends and finish a look later
+        assert_eq!(
+            android_longest("/clear-text"),
+            Some(Duration::from_millis(11_000 + 2 * ANDROID_LOOK_MS))
+        );
+        assert_eq!(
+            route_wait("/clear-text", false),
+            Some(Duration::from_millis(11_000 + 2 * ANDROID_LOOK_MS) + ANSWER_MARGIN)
+        );
+        assert_eq!(
+            android_longest("/hide-keyboard"),
+            Some(Duration::from_millis(2_500 + ANDROID_LOOK_MS))
+        );
+    }
+
+    #[test]
+    fn a_request_set_wait_on_android_adds_its_looks() {
+        // the iOS side of /input-text is longer, so the Android side alone
+        let android_only = r("/input-text", NONE, REQ, false).looks(2);
+        let from_request = Duration::from_millis(1_000);
+        assert_eq!(
+            longest_with(&android_only, from_request, false),
+            Some(from_request + Duration::from_millis(2 * ANDROID_LOOK_MS))
+        );
+        assert_eq!(android_longest("/input-text"), None);
     }
 
     #[test]
