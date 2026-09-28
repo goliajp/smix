@@ -26,6 +26,11 @@ differently** and stop. **Rust API** is for code that calls the crates.
   `route_limit_spent`, naming the step it stopped at and how long each one
   took, rather than letting the host give up on a request that never
   answers. `clearText` passes that reason on.
+- **An Android `back` waits for the screen to hold still before the key.**
+  Sent while the previous step's navigation is still landing, it used to
+  count that navigation as its own and answer `ok: true` for a key the app
+  swallowed. It now answers by what the key did, and takes up to 1.5 s
+  longer when the screen is still moving.
 - **A keyboard wait that runs out on iOS** still names the minimization
   setting when it is on, but as a fact about the simulator and not as the
   reason for the timeout: a keyboard appears with it on as well.

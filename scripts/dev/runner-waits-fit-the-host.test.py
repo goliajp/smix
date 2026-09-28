@@ -29,7 +29,7 @@ RED = [
      IOS, "// LONGEST WAIT /back: 20500 ms", "// LONGEST WAIT /back: 30500 ms",
      "/back: ios says 30500"),
     ("the table says less than the runner",
-     TABLE, 'r("/back", ms(20_500), ms(2_000), true)', 'r("/back", ms(0), ms(2_000), true)',
+     TABLE, 'r("/back", ms(20_500), ms(3_500), true)', 'r("/back", ms(0), ms(3_500), true)',
      "/back: ios says 20500 and"),
     ("a route with no statement",
      ANDROID, "// LONGEST WAIT /clear-text:", "// nothing to say about /clear-text:",

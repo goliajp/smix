@@ -221,6 +221,13 @@ class SmixHttpServer(
     private val BACK_SETTLE_MS = 2000L
     private val BACK_POLL_MS = 50L
 
+    /// How long the screen must read the same before the back key goes
+    /// in, and how long `/back` waits for that. A tap's navigation can
+    /// still be landing when the next step's back arrives — see
+    /// `BeforeSettle`.
+    private val BACK_STILL_MS = 300L
+    private val BACK_BEFORE_MS = 1500L
+
     /// How long to wait for the display to reach the rotation asked
     /// for.
     private val ROTATION_ARRIVES_MS = 3000L
@@ -315,7 +322,7 @@ class SmixHttpServer(
                 // LONGEST WAIT /press-key: 500 ms — a 0.5 s idle wait
                 uri == "/press-key" && session.method == Method.POST ->
                     servePressKey(session)
-                // LONGEST WAIT /back: 6000 ms — the back settle (BACK_SETTLE_MS) and one look past it
+                // LONGEST WAIT /back: 11500 ms — the wait for a still screen (BACK_BEFORE_MS) and the back settle (BACK_SETTLE_MS), each with one look past it
                 uri == "/back" && session.method == Method.POST -> serveBack()
                 // LONGEST WAIT /hide-keyboard: 6500 ms — a 0.5 s idle wait, KEYBOARD_GONE_MS and one look past it
                 uri == "/hide-keyboard" && session.method == Method.POST -> serveHideKeyboard()
@@ -715,7 +722,10 @@ class SmixHttpServer(
         // injection here and the answer is read afterwards. The
         // injection result is reported as `injected`, never as `ok`.
         val clock = routeClock("/back")
-        val before = (readScreen() as? Reading.Screen)?.reading
+        val still = BeforeSettle(BACK_STILL_MS)
+        val before = clock.stage("before") {
+            awaitStillScreen(still, clock.budget(BACK_BEFORE_MS))
+        }
         val injected = injectBackKey()
         val settle = BackSettle(before)
         val started = android.os.SystemClock.elapsedRealtime()
@@ -731,7 +741,8 @@ class SmixHttpServer(
         val body = RunnerWire.backBody(
             ok = verdict.ok,
             settledBy = verdict.settledBy,
-            saw = "${settle.saw()} looks=$looks tookMs=$took budgetMs=$BACK_SETTLE_MS",
+            saw = "${settle.saw()} beforeLooks=${still.looks} looks=$looks tookMs=$took " +
+                "budgetMs=$BACK_SETTLE_MS",
             injected = injected,
         )
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
@@ -749,6 +760,18 @@ class SmixHttpServer(
             looked()
             val started = android.os.SystemClock.elapsedRealtime()
             settle.observeStartedAt(readScreen(), started, deadline)?.let { return it }
+        }
+    }
+
+    /// Look until the screen has held still for `BACK_STILL_MS`, or
+    /// `null` when the budget is spent first.
+    private fun awaitStillScreen(still: BeforeSettle, budgetMs: Long): ScreenReading? {
+        val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
+        while (true) {
+            val started = android.os.SystemClock.elapsedRealtime()
+            still.observe(readScreen(), started)?.let { return it }
+            if (started >= deadline) return null
+            Thread.sleep(BACK_POLL_MS)
         }
     }
 
