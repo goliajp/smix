@@ -30,7 +30,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/scripts/lib/e2e-binary.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
 AND_ALIAS="${SMIX_C5_ANDROID:-$E2E_ANDROID}"
-IOS_ALIAS="${SMIX_C5_IOS:-5D087114-ECB3-443C-8DDB-40EEF9CFB90C}"
+IOS_ALIAS="${SMIX_C5_IOS:-$E2E_IOS}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
 # One runner per platform, so two ports, both asked of the OS.
