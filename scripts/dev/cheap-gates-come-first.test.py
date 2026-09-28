@@ -29,10 +29,30 @@ PUBLISHING_TAIL = [
 ]
 
 
-def profile(rows, publishing=True):
+def _gate():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cheap_gates", GATE)
+    mod = importlib.util.module_from_spec(spec)
+    argv, sys.argv = sys.argv, [GATE]
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.argv = argv
+    return mod
+
+
+# The steps the real ship logs on every run. The gate asks the profile for
+# each of them, so a fixture without them is not the file it reads — every
+# case would be judging a profile the ship cannot write. They go in front at
+# zero seconds, so they cost nothing any case measures.
+ALWAYS = _gate().always_logged(open(SHIP, encoding="utf-8").read())
+
+
+def profile(rows, publishing=True, always=True):
     fd, path = tempfile.mkstemp(suffix=".tsv")
     with os.fdopen(fd, "w") as fh:
-        for secs, name in list(rows) + (PUBLISHING_TAIL if publishing else []):
+        head = [(0, n) for n in ALWAYS] if always else []
+        for secs, name in head + list(rows) + (PUBLISHING_TAIL if publishing else []):
             fh.write(f"{secs}\t{name}\n")
     return path
 
@@ -94,8 +114,8 @@ def ship_without_publishing():
     return path
 
 
-def case(name, rows, want_code, must_say, publishing=True, ship=None, costs=None):
-    code, out = run(profile(rows, publishing), ship, costs)
+def case(name, rows, want_code, must_say, publishing=True, ship=None, costs=None, always=True):
+    code, out = run(profile(rows, publishing, always), ship, costs)
     if code != want_code:
         print(f"  FAIL {name}: exit {code}, wanted {want_code}\n{out}")
         return False
@@ -221,12 +241,81 @@ def main():
         publishing=False,
     )
 
-    # A profile short enough to agree with anything.
+    # A profile short enough to agree with anything: none of the steps the
+    # ship logs on every run was recorded.
     ok &= case(
         "a profile too short to mean anything",
         [(1, "a"), (2, "b"), (3, "c")],
         1,
-        "fewer than",
+        "lacks",
+        always=False,
+    )
+
+    # One step the ship always logs, missing: the line that was never
+    # written, which a count of lines cannot see.
+    if not ALWAYS:
+        print("  FAIL the gate reads no step of the real ship as logged on every run")
+        print("=== cheap-gates-come-first.test: FAIL ===")
+        return 1
+    missing_one = [r for r in cheap + dear]
+    fd, path = tempfile.mkstemp(suffix=".tsv")
+    with os.fdopen(fd, "w") as fh:
+        for n in ALWAYS[1:]:
+            fh.write(f"0\t{n}\n")
+        for secs, n in missing_one + PUBLISHING_TAIL:
+            fh.write(f"{secs}\t{n}\n")
+    code, out = run(path)
+    if code != 1 or ALWAYS[0] not in out:
+        print(f"  FAIL a step the ship always logs is missing: exit {code}\n{out}")
+        ok = False
+    else:
+        print("  ok   a step the ship always logs is missing, and is named")
+
+    # And on a machine with no cost history: a missing step is not load, so
+    # it is not downgraded to "cannot run" with the ordering problems.
+    fd, nohist = tempfile.mkstemp(suffix=".costs.tsv")
+    os.close(fd)
+    os.unlink(nohist)
+    code, out = run(path, costs=nohist)
+    if code != 1 or ALWAYS[0] not in out:
+        print(f"  FAIL a missing step on a first run: exit {code}\n{out}")
+        ok = False
+    else:
+        print("  ok   a missing step stays red on a machine with no history")
+
+    # The chains run as functions in the background; their steps count too.
+    chain_step = next((n for n in ALWAYS if n.startswith("v10: a tap that cannot land")), None)
+    if chain_step is None:
+        print("  FAIL the iOS chain's steps are not read as logged on every run — "
+              "a step inside a function the ship calls is not being required")
+        print("=== cheap-gates-come-first.test: FAIL ===")
+        return 1
+    fd, path = tempfile.mkstemp(suffix=".tsv")
+    with os.fdopen(fd, "w") as fh:
+        for n in ALWAYS:
+            if n != chain_step:
+                fh.write(f"0\t{n}\n")
+        for secs, n in cheap + dear + PUBLISHING_TAIL:
+            fh.write(f"{secs}\t{n}\n")
+    code, out = run(path)
+    if code != 1 or chain_step not in out:
+        print(f"  FAIL a device chain's step is missing: exit {code}\n{out}")
+        ok = False
+    else:
+        print("  ok   a step from a device chain run in the background is required too")
+
+    # A reader that stopped matching asks for nothing and would agree with
+    # any profile.
+    real = open(SHIP, encoding="utf-8").read().replace('log "', 'say "')
+    fd, blind = tempfile.mkstemp(suffix=".sh")
+    with os.fdopen(fd, "w") as fh:
+        fh.write(real)
+    ok &= case(
+        "the always-logged reader stops matching",
+        cheap + dear,
+        1,
+        "stopped matching",
+        ship=blind,
     )
 
     # No profile: the apparatus, not the subject. Refusing rather than
