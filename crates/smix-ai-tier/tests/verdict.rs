@@ -217,3 +217,37 @@ fn extract_reports_an_unreadable_reply_rather_than_empty_fields() {
         assert!(err.message.contains("field object"), "got: {}", err.message);
     });
 }
+
+#[test]
+fn a_cli_that_explains_itself_on_stdout_is_quoted_when_it_fails() {
+    // The claude CLI prints a usage limit to stdout and exits 1 with nothing
+    // on stderr. Quoting stderr alone turned that into "exited 1: " — a
+    // failure with its reason thrown away.
+    let _exec = exec_lock();
+    rt().block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = stub_cli(dir.path(), "echo \"You've hit your weekly limit\"; exit 1");
+        let err = ask("p".to_string(), &cfg).await.unwrap_err();
+        assert_eq!(err.code, FailureCode::DriverError);
+        assert!(
+            err.message.contains("hit your weekly limit"),
+            "the reason the CLI gave is lost: {}",
+            err.message
+        );
+    });
+}
+
+#[test]
+fn a_cli_that_fails_silently_says_it_said_nothing() {
+    let _exec = exec_lock();
+    rt().block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = stub_cli(dir.path(), "exit 1");
+        let err = ask("p".to_string(), &cfg).await.unwrap_err();
+        assert!(
+            err.message.contains("no output"),
+            "a silent failure should say so rather than end on a colon: {}",
+            err.message
+        );
+    });
+}

@@ -44,6 +44,7 @@ fail() { printf '[c4-propose] FAIL: %s\n' "$*" >&2; exit 1; }
 # an unset target, says nothing about whether smix works, and FAIL says it
 # does not to whoever reads the suite next.
 cannot_judge() { printf '[c4-propose] %s\n' "$*" >&2; printf '%s\n' "C4-ANDROID-PROPOSE-SKIP"; exit 2; }
+source "$ROOT/scripts/lib/claude-session.sh"
 
 
 # --- guards: emulator-only, yield to a batch owner, tools present ---
@@ -142,6 +143,11 @@ for attempt in 1 2 3; do
   fi
   log "attempt $attempt: no well-formed amend yet"
 done
+# A CLI that could not run answered nothing about the flow; only a CLI that
+# ran and wrote no usable amendment is a finding.
+if [ "$ok" != 1 ] && claude_session_unrunnable "$WORK"/propose.*.err; then
+  cannot_judge "the claude CLI could not run — $(grep -hiE "$CLAUDE_SESSION_UNRUNNABLE" "$WORK"/propose.*.err | head -1)"
+fi
 [ "$ok" = 1 ] || fail "C4-PROPOSE-MALFORMED: no well-formed amended flow in 3 attempts — $(cat "$WORK"/propose.*.err 2>/dev/null)"
 log "amended flow:"; sed 's/^/    /' "$WORK/amended.yaml"
 
