@@ -65,6 +65,20 @@ cat > "$OUT/Info.plist" <<PLIST
   <key>MinimumOSVersion</key><string>$TARGET_OS</string>
   <key>UIDeviceFamily</key><array><integer>1</integer></array>
   <key>UILaunchScreen</key><dict/>
+  <key>UIApplicationSceneManifest</key>
+  <dict>
+    <key>UIApplicationSupportsMultipleScenes</key><false/>
+    <key>UISceneConfigurations</key>
+    <dict>
+      <key>UIWindowSceneSessionRoleApplication</key>
+      <array>
+        <dict>
+          <key>UISceneConfigurationName</key><string>Default</string>
+          <key>UISceneDelegateClassName</key><string>SceneDelegate</string>
+        </dict>
+      </array>
+    </dict>
+  </dict>
   <!-- Declared rather than left to the default, because a view
        controller's supportedInterfaceOrientations is intersected with
        this list: a landscape-only screen inside an app whose bundle
