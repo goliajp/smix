@@ -125,7 +125,7 @@ shows.
 
 **A flow that asserted such a node was visible was passing on something
 that was not on screen, and will now fail.** Both halves need the probe
-upgraded to take effect (`debugImplementation("jp.golia.smix:smix-probe:11.0.0")`);
+at 11.0.0 or later to take effect (the app's `debugImplementation` of `smix-probe`);
 an older probe is read exactly as before.
 
 ### `back` on Android answers whether anything went back
