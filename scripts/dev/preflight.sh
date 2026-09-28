@@ -300,6 +300,10 @@ python3 scripts/dev/an-e2e-leaves-the-phones-alone.test.py
 python3 scripts/dev/a-device-gate-keeps-crash-evidence.py
 python3 scripts/dev/a-device-gate-keeps-crash-evidence.test.py
 bash scripts/lib/crash-evidence.sh --selftest
+# An Android device gate keeps what the runner logged when it goes red.
+python3 scripts/dev/a-device-gate-keeps-the-runner-log.py
+python3 scripts/dev/a-device-gate-keeps-the-runner-log.test.py
+bash scripts/lib/android-runner-log.sh --selftest
 # A plugin e2e whose claude session was cut short cannot judge the plugin.
 bash scripts/lib/claude-session.sh --selftest
 # A flash the watch could have looked away from is not judged either way.
