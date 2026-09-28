@@ -122,7 +122,7 @@ SOURCE_GATE_LOOP = re.compile(r"^\s*for gate in (.+?);\s*do", re.M)
 # runs over.
 SOURCE_GATE_ARRAY = re.compile(r"^SOURCE_GATES=\(\s*$(.*?)^\)\s*$", re.M | re.S)
 PREFLIGHT = "scripts/dev/preflight.sh"
-DOWNSTREAM = (".github/workflows/ci.yml", "scripts/release/ship.sh")
+SHIP = "scripts/release/ship.sh"
 
 # Below this, assume the loop failed to parse rather than that the
 # project runs fewer gates. A regex reading zero names would let every
@@ -142,7 +142,14 @@ CI_GATE = ".github/workflows/ci.yml"
 
 
 def check_source_gates_wired(failures):
-    """Every source gate named in preflight also runs in CI and at ship.
+    """Every source gate named in preflight also runs in CI; the ones CI
+    cannot run run at ship instead.
+
+    The ship takes its source judgement from CI -- `ci-is-green` refuses
+    unless every job passed on the commit it publishes -- so a gate CI
+    runs does not need a second run at release. A gate whose inputs exist
+    only on the release machine has no such stand-in, and the ship is the
+    one place on the path to users where it can run.
 
     Matched against comment-stripped text, and that is the load-bearing
     part rather than tidiness: ship.sh names hygiene-scan in two
@@ -182,29 +189,36 @@ def check_source_gates_wired(failures):
                 f"nothing checks where else it runs. Add it to the loop."
             )
 
-    # preflight → CI and ship, in text that is not a comment.
+    # preflight → CI (or, for a gate CI cannot run, ship), in text that is
+    # not a comment.
+    ci_text = read_without_comments(CI_GATE)
+    ship_text = read_without_comments(SHIP)
     for name in names:
-        for gate in DOWNSTREAM:
-            local_only_in_ci = gate == CI_GATE and name in LOCAL_ONLY
-            present = f"scripts/dev/{name}.py" in read_without_comments(gate)
-            if local_only_in_ci:
-                # Absent from CI is the intent; present would mean it runs
-                # somewhere its inputs do not exist and reports "cannot run"
-                # on every build.
-                if present:
-                    failures.append(
-                        f"{CI_GATE} invokes {name}, whose inputs do not exist on a "
-                        f"CI host. It would report cannot-run on every branch build. "
-                        f"Keep it to preflight and ship."
-                    )
-                continue
-            if not present:
+        invoked = f"scripts/dev/{name}.py"
+        if name in LOCAL_ONLY:
+            # Absent from CI is the intent; present would mean it runs
+            # somewhere its inputs do not exist and reports "cannot run"
+            # on every build.
+            if invoked in ci_text:
                 failures.append(
-                    f"{gate} does not invoke {name}, which {PREFLIGHT} runs. "
-                    f"Three places, not two: preflight is the local habit, CI is "
-                    f"the branch, ship is the release — and the one most often "
-                    f"missing is the only one on the path to users."
+                    f"{CI_GATE} invokes {name}, whose inputs do not exist on a "
+                    f"CI host. It would report cannot-run on every branch build. "
+                    f"Keep it to preflight and ship."
                 )
+            if invoked not in ship_text:
+                failures.append(
+                    f"{SHIP} does not invoke {name}. CI cannot run it, so the "
+                    f"release is the only place on the path to users where it "
+                    f"is asked at all."
+                )
+            continue
+        if invoked not in ci_text:
+            failures.append(
+                f"{CI_GATE} does not invoke {name}, which {PREFLIGHT} runs. "
+                f"The release takes its source judgement from CI's run on the "
+                f"commit it publishes, so a gate CI skips is judged nowhere on "
+                f"the path to users."
+            )
 
 
 # The three gates, in the order the doctrine names them: preflight is

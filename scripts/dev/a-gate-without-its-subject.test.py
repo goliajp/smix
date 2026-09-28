@@ -50,8 +50,15 @@ raise SystemExit(0)
 
 SHIP = '''#!/usr/bin/env bash
 python3 "$ROOT/scripts/dev/honest-gate.py"
-python3 "$ROOT/scripts/dev/hollow-gate.py"
 python3 "$ROOT/scripts/dev/selfcontained-gate.py"
+'''
+
+# The hollow gate is named only by CI: a sweep that reads the ship alone
+# would never run it, and this test would go red saying so.
+CI = '''jobs:
+  gates:
+    steps:
+      - run: python3 scripts/dev/hollow-gate.py
 '''
 
 
@@ -65,6 +72,8 @@ def build(root: str) -> None:
     ):
         open(os.path.join(root, "scripts", "dev", name), "w", encoding="utf-8").write(body)
     open(os.path.join(root, "scripts", "release", "ship.sh"), "w", encoding="utf-8").write(SHIP)
+    os.makedirs(os.path.join(root, ".github", "workflows"), exist_ok=True)
+    open(os.path.join(root, ".github", "workflows", "ci.yml"), "w", encoding="utf-8").write(CI)
     open(os.path.join(root, "subject.txt"), "w", encoding="utf-8").write("good\n")
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     subprocess.run(["git", "add", "-A"], cwd=root, check=True)
