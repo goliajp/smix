@@ -19,6 +19,20 @@ All notable changes to the `smix` workspace are documented here. The format foll
   held the other way. `/coordinate-space`'s `eventRecordOrientation`
   stays `portrait`: it names the orientation the event is stamped with,
   which is not what turns the point.
+- **`hideKeyboard` on iOS closes the keyboard on a form that only lets a
+  drag take it down, and no longer types into the field while it tries.**
+  On a SwiftUI `ScrollView` with `.scrollDismissesKeyboard(.interactively)`
+  whose email field's return key is Next, a touch outside the keyboard does
+  nothing and return moves focus, so every strategy ran and the step failed
+  with `keyboard_did_not_close`. The last of them swiped down on the
+  keyboard itself, which the keyboard reads as slide typing: on an empty
+  field it typed `gu` and left the keyboard up. That swipe is gone. A new
+  strategy, `drag-into-keyboard`, drags the focused field's scroll view from
+  just above the keyboard into the keyboard's upper half, before the two
+  touches (on a form a touch can land on the other field). It runs only when
+  a scroll view holds the field, and it stops short of the pull that
+  refreshes a list at its top. The answer's `tried` list names it.
+
 - **A keyboard wait that runs out no longer blames the keyboard
   minimization setting.** 11.0.0 said that with
   `com.apple.keyboard.preferences AutomaticMinimizationEnabled` on "a
