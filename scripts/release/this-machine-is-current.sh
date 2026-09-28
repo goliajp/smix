@@ -35,11 +35,22 @@ PROFILE_HOME="${SMIX_PROFILE_HOME:-$HOME}"
 # plugin/scripts/readiness.sh for the JSON-RPC error code that once came
 # out of a `tr -cd` as a version number.
 version_of() {
-  command -v "$1" >/dev/null 2>&1 || return 0
+  [ -x "$1" ] || return 0
   "$1" --version 2>/dev/null \
     | head -1 \
     | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*' \
     | head -1 || true
+}
+
+# Every copy of a command on PATH, first to last. The first one is only
+# what this shell runs: a shell that loads nvm puts an old global npm
+# install ahead of ~/.cargo/bin, and judging only the first copy passed
+# a machine whose interactive shells were still running 10.0.0.
+every_copy() {
+  local d IFS=:
+  for d in $PATH; do
+    if [ -n "$d" ] && [ -x "$d/$1" ] && [ ! -d "$d/$1" ]; then printf '%s\n' "$d/$1"; fi
+  done | awk '!seen[$0]++'
 }
 
 # One line per profile that has the plugin: "<dir>\t<version>".
@@ -59,14 +70,23 @@ PY
 
 judge() {
   local version="$1" fail=0 name got count=0 dir
+  local copy copies
   for name in smix smix-mcp; do
-    got="$(version_of "$name")"
-    if [ "$got" = "$version" ]; then
-      echo "this-machine-is-current: $name is $version"
-    else
-      echo "this-machine-is-current: FAIL — $name is ${got:-not on PATH (or reported no version)}, not $version" >&2
+    copies="$(every_copy "$name")"
+    if [ -z "$copies" ]; then
+      echo "this-machine-is-current: FAIL — $name is not on PATH, not $version" >&2
       fail=1
+      continue
     fi
+    while read -r copy; do
+      got="$(version_of "$copy")"
+      if [ "$got" = "$version" ]; then
+        echo "this-machine-is-current: $name is $version ($copy)"
+      else
+        echo "this-machine-is-current: FAIL — $name at $copy is ${got:-reporting no version}, not $version" >&2
+        fail=1
+      fi
+    done <<< "$copies"
   done
 
   while IFS=$'\t' read -r dir got; do
@@ -110,7 +130,7 @@ selftest() {
   expect() {
     local want="$1" what="$2"
     rc=0
-    PATH="$bin:/usr/bin:/bin" SMIX_PROFILE_HOME="$home" bash "$self" 4.0.0 >/dev/null 2>&1 || rc=$?
+    PATH="$bin:$tmp/later:/usr/bin:/bin" SMIX_PROFILE_HOME="$home" bash "$self" 4.0.0 >/dev/null 2>&1 || rc=$?
     if [ "$rc" != "$want" ]; then
       echo "selftest: $what — expected exit $want, got $rc" >&2
       fail=1
@@ -121,6 +141,13 @@ selftest() {
   fake_profile .claude-profile-1 "$PLUGIN_KEY" 4.0.0
   fake_profile .claude-profile-2 "$PLUGIN_KEY" 4.0.0
   expect 0 "a machine that is current"
+
+  mkdir -p "$tmp/later"
+  printf '#!/bin/sh\necho "smix 3.0.0"\n' > "$tmp/later/smix"; chmod +x "$tmp/later/smix"
+  expect 1 "a stale smix later on PATH, behind a current one (an old global npm install)"
+  rm -rf "$tmp/later"
+  expect 0 "current again once the stale copy is gone"
+
 
   rm "$bin/smix-mcp"
   expect 1 "smix without smix-mcp (the cargo-install-smix-cli machine)"
@@ -137,7 +164,7 @@ selftest() {
 
   rm -rf "$tmp"
   [ "$fail" = 0 ] || exit 1
-  echo "this-machine-is-current selftest: a missing smix-mcp, a stale binary, a stale profile and an empty walk are each refused"
+  echo "this-machine-is-current selftest: a missing smix-mcp, a stale binary, a stale copy later on PATH, a stale profile and an empty walk are each refused"
 }
 
 case "${1:-}" in
