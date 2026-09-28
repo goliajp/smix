@@ -64,7 +64,7 @@ describe('A11yRole', () => {
 
 describe('FailureCode', () => {
   // The vocabulary is Rust's — smix_error::FailureCode. Rust is the
-  // source; crates/smix-error/tests/sdk_failure_code_parity.rs reads
+  // source; crates/smix-error/tests/it/sdk_failure_code_parity.rs reads
   // this SDK's declaration and fails if the two ever diverge.
   // The count is not hard-coded here. It used to be, and adding
   // TAP_MISSED to the vocabulary left this asserting 9 against 10 — a

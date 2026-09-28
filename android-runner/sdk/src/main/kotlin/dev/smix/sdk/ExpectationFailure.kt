@@ -58,7 +58,7 @@ private data class ErrorJsonPayload(
 /**
  * Machine-readable failure category. The @SerialName values are Rust
  * `smix_error::FailureCode`'s wire strings verbatim —
- * `crates/smix-error/tests/sdk_failure_code_parity.rs` reads this
+ * `crates/smix-error/tests/it/sdk_failure_code_parity.rs` reads this
  * declaration and fails if the two sets ever diverge.
  */
 @Serializable

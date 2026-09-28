@@ -511,7 +511,7 @@ impl FailureCode {
     /// Every code, once.
     ///
     /// Exported because the alternative is a second hand-written copy,
-    /// and there was one: `tests/sdk_failure_code_parity.rs` kept its
+    /// and there was one: `tests/it/sdk_failure_code_parity.rs` kept its
     /// own `all_variants()` list, and every assertion in that file —
     /// the three SDK declarations and the errors guide — is derived
     /// from it. Its docstring said adding a variant would stop the file
@@ -622,7 +622,7 @@ mod vocabulary {
     /// This match is exhaustive on purpose and lives inside the crate on
     /// purpose: `#[non_exhaustive]` makes an outside `match` accept
     /// anything, so the guard that used to sit in
-    /// `tests/sdk_failure_code_parity.rs` would have started passing for
+    /// `tests/it/sdk_failure_code_parity.rs` would have started passing for
     /// every future variant. Adding a code should break this line, then
     /// the wire-string arm below it, then the three SDK declarations the
     /// parity test reads, then the errors guide.
