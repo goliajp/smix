@@ -40,6 +40,7 @@ LOCAL = {
     "the runner waits fit the host": "runner-waits-fit-the-host.py",
     "the runner-waits gate can still go red": "runner-waits-fit-the-host.test.py",
     "the device e2e tier reads an exit code": "device-e2e-tier.sh --selftest",
+    "the e2e lanes are read from the scripts": "e2e-lanes.py --selftest",
     # How the release verifier reads a registry that is merely late.
     "a late registry is not a failed one": "verify-published.sh --selftest",
     # Three hand-written readers of one recorded document, one per host
@@ -184,6 +185,16 @@ NOT_LOCAL = {
     ),
     "install (workspace)": "bun install is CI setup, not a check",
     "build napi addon": "prerequisite of the vitest step below, not a check itself",
+    "upload the napi loader": (
+        "hands the release the loader this commit generates; locally there is no "
+        "release to hand it to"
+    ),
+    "install cargo-fuzz": "CI setup for the fuzz job below, not a check",
+    "fuzz smoke": (
+        "nightly toolchain and cargo-fuzz, fifteen targets at twenty seconds each "
+        "plus their builds; run `scripts/dev/fuzz-smoke.sh` yourself when working "
+        "on a parser"
+    ),
     "typecheck": "the TS SDK's own toolchain; run from npm/smix-rn when working there",
     "vitest": "same",
     "clean-room install + drive": (

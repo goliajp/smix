@@ -90,6 +90,19 @@ e2e_verdict() {
   return 0
 }
 
+# e2e_count_check <listed> <results> — every script placed in a lane
+# reported back. Lanes run in the background, and one that died would
+# otherwise leave its scripts out of the verdict as if they had never
+# been listed.
+e2e_count_check() {
+  local listed="$1" ran
+  ran="$(printf '%s\n' "$2" | grep -c . || true)"
+  if [ "$ran" != "$listed" ]; then
+    echo "device-e2e-tier: FAILED — $listed scripts placed in lanes, $ran reported"
+    return 1
+  fi
+}
+
 # The scripts run a second time on API 36, after the main leg.
 #
 # The main leg's Android device is API 33, and until 2026-09-27 no gate
@@ -190,6 +203,17 @@ if [ "${1:-}" = "--selftest" ]; then
          fails=$((fails + 1)) ;;
     esac
   }
+  count_check() { # label expected-exit listed results
+    local out rc
+    out="$(e2e_count_check "$3" "$4")" && rc=0 || rc=$?
+    if [ "$rc" -ne "$2" ]; then
+      echo "device-e2e-tier selftest: $1 — exit $rc, wanted $2: $out" >&2
+      fails=$((fails + 1))
+    fi
+  }
+  count_check "every placed script reported" 0 3 "$(printf 'a drove\nb drove\nc skip')"
+  # A lane that died in the background left its scripts out entirely.
+  count_check "a lane that died took scripts with it" 1 3 "$(printf 'a drove\nb drove')"
   list_check "the API 36 list as written" 0 "API 36 list is whole"
   list_check "a name with no script" 1 "no scripts/dev/v0-gone-e2e.sh" "v0-gone-e2e"
   list_check "a script that cannot be pointed at API 36" 1 "neither E2E_ANDROID" "v2.7-c1-tap-hit-e2e"
@@ -238,7 +262,7 @@ if [ "${1:-}" = "--selftest" ]; then
     echo "device-e2e-tier selftest: FAIL ($fails)" >&2
     exit 1
   fi
-  echo "device-e2e-tier selftest: 23 cases pass — a count, a verdict for each leg, the API 36 list, what each exit code means, and whether a screen can show an app"
+  echo "device-e2e-tier selftest: 25 cases pass — a count, every placed script reported, a verdict for each leg, the API 36 list, what each exit code means, and whether a screen can show an app"
   exit 0
 fi
 
@@ -282,24 +306,65 @@ run_one() {
   echo "$name $state"
 }
 
-main_rc=0
-if [ "${SMIX_TIER_ONLY:-}" != api36 ]; then
-  results=""
-  for e2e in "$ROOT"/scripts/dev/*-e2e.sh; do
-    line="$(run_one "$e2e" "")"
-    results="$results$line"$'\n'
-    # A device that stopped being able to show anything fails every script
-    # after it, each about its own step. Stop at the first, with the cause.
-    if [ "${line##* }" = fail ]; then
+# run_lane <lane> <list-file> — run a lane's scripts in turn, printing one
+# `<name> <state>` per script. A lane that touches the Android device stops
+# at the first failure that turns out to be the device no longer able to
+# show anything: every script after it would fail about its own step.
+run_lane() {
+  local lane="$1" list="$2" e2e line problem
+  while read -r e2e <&3; do
+    [ -z "$e2e" ] && continue
+    line="$(run_one "$e2e" "" </dev/null)"
+    echo "$line"
+    if { [ "$lane" = android ] || [ "$lane" = serial ]; } && [ "${line##* }" = fail ]; then
       problem="$(android_problem)"
       if [ -n "$problem" ]; then
-        printf '%s' "$results" | e2e_verdict || true
-        echo "device-e2e-tier: STOPPED after [${line% *}] — $problem"
-        exit 1
+        echo "STOPPED ${line% *} $problem"
+        return 1
       fi
     fi
+  done 3< "$list"
+}
+
+main_rc=0
+if [ "${SMIX_TIER_ONLY:-}" != api36 ]; then
+  # Three lanes that share no device run side by side — the simulator's,
+  # the emulator's, and the scripts that drive no device at all; scripts
+  # that drive both platforms, or act on the whole machine, run after
+  # them, alone.
+  # Which lane a script is in is read from the script (e2e-lanes.py).
+  lanes_dir="$(mktemp -d)"
+  python3 "$ROOT/scripts/dev/e2e-lanes.py" > "$lanes_dir/all" \
+    || { echo "device-e2e-tier: FAILED — could not place the scripts in lanes"; exit 1; }
+  for lane in ios android none serial; do
+    awk -F'\t' -v l="$lane" '$1 == l { print $2 }' "$lanes_dir/all" > "$lanes_dir/$lane.list"
   done
-  printf '%s' "$results" | e2e_verdict || main_rc=1
+  n_listed="$(grep -c . "$lanes_dir/all")"
+
+  run_lane ios "$lanes_dir/ios.list" > "$lanes_dir/ios.res" & ios_pid=$!
+  run_lane android "$lanes_dir/android.list" > "$lanes_dir/android.res" & android_pid=$!
+  run_lane none "$lanes_dir/none.list" > "$lanes_dir/none.res" & none_pid=$!
+  wait "$ios_pid" || true
+  wait "$android_pid" || true
+  wait "$none_pid" || true
+  if ! grep -q '^STOPPED ' "$lanes_dir/android.res"; then
+    run_lane serial "$lanes_dir/serial.list" > "$lanes_dir/serial.res" || true
+  else
+    : > "$lanes_dir/serial.res"
+  fi
+
+  results="$(cat "$lanes_dir/ios.res" "$lanes_dir/android.res" "$lanes_dir/none.res" "$lanes_dir/serial.res" | grep -v '^STOPPED ' || true)"
+  stopped="$(cat "$lanes_dir/android.res" "$lanes_dir/serial.res" | grep '^STOPPED ' | head -1 || true)"
+  if [ -n "$stopped" ]; then
+    printf '%s\n' "$results" | e2e_verdict || true
+    set -- $stopped
+    shift
+    name="$1"; shift
+    echo "device-e2e-tier: STOPPED after [$name] — $*"
+    exit 1
+  fi
+  e2e_count_check "$n_listed" "$results" || main_rc=1
+  printf '%s\n' "$results" | e2e_verdict || main_rc=1
 fi
 
 # ---- the API 36 leg ----------------------------------------------------

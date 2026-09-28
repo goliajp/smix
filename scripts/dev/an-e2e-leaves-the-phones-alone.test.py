@@ -191,6 +191,12 @@ CASES = [
         "tier.sh:1: runs every e2e script",
     ),
     (
+        "a suite read from the lanes list that does not clear them is named",
+        {"base.sh": BASELINE, "tier.sh": 'python3 "$ROOT/scripts/dev/e2e-lanes.py" > "$d/all"\n'},
+        1,
+        "tier.sh:1: runs every e2e script",
+    ),
+    (
         "clearing them after the loop does not count",
         {
             "base.sh": BASELINE,
