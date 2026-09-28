@@ -64,6 +64,8 @@ LOCAL = {
     "swift test": "swift test",
     "unit tests + androidTest compile (no device — instrumentation runs at ship)": "assembleDebugAndroidTest",
     "hygiene scan": "hygiene-scan",
+    "inline python compiles": "inline-python-compiles",
+    "the inline-python gate can still go red": "inline-python-compiles.test",
     "publish dag is complete": "publish-dag-is-complete",
     "actions are pinned": "actions-are-pinned",
     "jobs have a ceiling": "jobs-have-a-ceiling",

@@ -183,6 +183,7 @@ echo "--- source gates"
 # everything that has to be true.
 SOURCE_GATES=(
   hygiene-scan
+  inline-python-compiles
   route-conformance
   every-verb-reads-a-locale-map
   every-cell-is-declared
@@ -408,6 +409,8 @@ python3 scripts/dev/e2e-lanes.py --selftest
 # Whether the apk a device gate installs is the one this tree builds.
 # C7 spent a day measuring a probe that was not this one (open-items O1).
 python3 scripts/dev/fixture-apk-stamp.test.py
+# The inline-python gate still goes red on an indented snippet.
+python3 scripts/dev/inline-python-compiles.test.py
 # The two-paths gate over recorded payloads, without a runner.
 python3 scripts/dev/two-paths-agree.test.py
 # No runner route can take longer than the host waits for it.

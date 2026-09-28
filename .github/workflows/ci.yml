@@ -187,6 +187,12 @@ jobs:
           fetch-depth: 0
       - name: hygiene scan
         run: python3 scripts/dev/hygiene-scan.py
+      # Bash does not look inside the quotes, so a snippet that moved with
+      # its function and gained an indent reads clean until the line runs.
+      - name: inline python compiles
+        run: python3 scripts/dev/inline-python-compiles.py
+      - name: the inline-python gate can still go red
+        run: python3 scripts/dev/inline-python-compiles.test.py
       # A new crate joins the workspace by existing (members = crates/*)
       # and joins the release by being typed into a hand-written array.
       # Nothing compared the two, and the quiet half of that gap is a

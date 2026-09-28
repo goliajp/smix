@@ -487,10 +487,10 @@ android_chain() {
   # So: wait for it to go quiet, then say who has it rather than taking it.
   if [[ -z "${SMIX_V10_ANDROID_PORT:-}" ]]; then
     V10_PORT="$(python3 -c 'import socket
-  s = socket.socket()
-  s.bind(("127.0.0.1", 0))
-  print(s.getsockname()[1])
-  s.close()')"
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()')"
     # `adb` has to still be able to see it. This emulator is managed by
     # another session and went away and came back twice during dry-run
     # nineteen; the third time it was gone for the one minute this leg
