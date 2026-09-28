@@ -6,6 +6,19 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Fixed
 
+- **An iOS tap lands where it was aimed in both landscapes.** A touch is
+  delivered in the device's space, and the runner turned the point it
+  aimed at by reading the app's frame — which says the app is wide, not
+  which way it was turned. In one of the two landscapes every tap went to
+  the opposite corner of the screen: aimed at (214,56) in an 874x402 app
+  turned landscapeLeft, the touch arrived at (660,346), and the step
+  reported success. The runner now reads the app's own interface
+  orientation (and the device's when the app's cannot be read), so taps,
+  swipes and presses by id land in portrait and in either landscape,
+  including on a screen that supports one landscape while the device is
+  held the other way. `/coordinate-space`'s `eventRecordOrientation`
+  stays `portrait`: it names the orientation the event is stamped with,
+  which is not what turns the point.
 - **A keyboard wait that runs out no longer blames the keyboard
   minimization setting.** 11.0.0 said that with
   `com.apple.keyboard.preferences AutomaticMinimizationEnabled` on "a
