@@ -38,7 +38,7 @@ final class ExpectationFailureContractTests: XCTestCase {
     }
 
     /// The vocabulary is Rust's — `smix_error::FailureCode`. Rust is the
-    /// source; `crates/smix-error/tests/sdk_failure_code_parity.rs` reads
+    /// source; `crates/smix-error/tests/it/sdk_failure_code_parity.rs` reads
     /// this SDK's declaration and fails if the two ever diverge, so this
     /// assertion is the Swift-side echo of that contract.
     func testFailureCodeVocabularyMatchesRust() {

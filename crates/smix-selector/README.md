@@ -114,7 +114,7 @@ in a loop, reach for `Pattern::compile()` once at the call site and feed
 the resulting `CompiledPattern` to `match_text_compiled` per node — the
 pattern documented in [`smix-selector-resolver`](https://crates.io/crates/smix-selector-resolver)
 `ResolverContext`. A regression guard
-(`crates/smix-selector/tests/perf_contract.rs`) blocks bare hot-loop
+(`crates/smix-selector/tests/it/perf_contract.rs`) blocks bare hot-loop
 `smix_selector::match_text` calls from landing in workspace `src/`.
 
 ## When to reach for this

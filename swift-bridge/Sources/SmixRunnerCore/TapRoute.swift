@@ -95,7 +95,7 @@ public enum TapRoute {
   // `#[serde(default)]` on the Rust side made that parse "successfully"
   // to all-None/zero, so the drift was invisible until probed. The shape
   // here is now asserted against the Rust crate by
-  // crates/smix-runner-wire/tests/tap_route_shape.rs.
+  // crates/smix-runner-wire/tests/it/tap_route_shape.rs.
   public static func success(
     matchedLabel: String,
     stages: TapStages? = nil,
