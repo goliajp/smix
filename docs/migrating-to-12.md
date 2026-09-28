@@ -34,6 +34,9 @@ differently** and stop. **Rust API** is for code that calls the crates.
 
 `smix_runner_client::route_limits::Route` gains a public field,
 `android_looks: u64` — how many polls the Android handler can reach, each
-adding one `ANDROID_LOOK_MS` to the time the host waits. Code that builds
-a `Route` with a struct literal must set it; `0` keeps the old wait for a
-route that does not poll.
+adding one `ANDROID_LOOK_MS` to the time the host waits. `Route` and
+`Longest` are now `#[non_exhaustive]`: code outside the crate can read a
+`Route`'s fields but cannot build one with a struct literal, and a `match`
+on `Longest` needs a wildcard arm. To get the time the host waits for a
+route, call `route_wait` (fixed routes) or `wait_for_request` (routes whose
+wait the request sets) rather than rebuilding the sum.

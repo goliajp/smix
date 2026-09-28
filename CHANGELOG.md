@@ -10,10 +10,13 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
 
 ### Breaking
 
-- **Rust API: `route_limits::Route` has a new public field, `android_looks`.**
-  It is how many polls a route's Android handler can reach, each adding one
-  look to the time the host waits. A `Route` built with a struct literal
-  must set it (`0` for a route that does not poll).
+- **Rust API: `route_limits::Route` has a new public field, `android_looks`,
+  and `Route` and `Longest` are `#[non_exhaustive]`.** The field is how many
+  polls a route's Android handler can reach, each adding one look to the
+  time the host waits. The table is this crate's own: code outside it can
+  no longer build a `Route` with a struct literal or match `Longest`
+  exhaustively, so a field or variant added later is not a breaking change.
+  Read a route's wait with `route_wait` / `wait_for_request`.
 
 ### Fixed
 
