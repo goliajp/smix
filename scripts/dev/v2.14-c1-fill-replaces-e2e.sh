@@ -84,7 +84,7 @@ fi
 log "device $UDID, runner port $PORT"
 
 step "0. the wire rule, which needs no device"
-( cd "$ROOT" && cargo test -p smix-driver --test driver clear_first_belongs ) > "$WORK/unit.log" 2>&1 \
+( cd "$ROOT" && cargo test -p smix-driver --test it driver::clear_first_belongs ) > "$WORK/unit.log" 2>&1 \
   || { tail -20 "$WORK/unit.log"; fail "the chunking rule's test failed"; }
 grep -qE "test result: ok\. [1-9]" "$WORK/unit.log" || fail "the chunking test did not run"
 log "clearFirst rides the first chunk alone"

@@ -44,8 +44,8 @@ FORM_LABEL = {"OcrText": "`ocrText:`", "LocalizedText": "`localizedText:`",
 
 def cells() -> dict:
     out = subprocess.run(
-        ["cargo", "test", "-p", "smix-adapter-maestro", "--test",
-         "every_cell_is_a_decision", "--", "--nocapture", "print_the_table"],
+        ["cargo", "test", "-p", "smix-adapter-maestro", "--test", "it", "--",
+         "--nocapture", "--exact", "every_cell_is_a_decision::print_the_table"],
         cwd=ROOT, capture_output=True, text=True,
     ).stdout
     found = dict(

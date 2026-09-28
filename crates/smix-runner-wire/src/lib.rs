@@ -169,7 +169,7 @@ pub struct TapStages {
 ///
 /// This struct is the wire contract; the Swift emitter
 /// (`TapRoute.success`) is gated against it by
-/// `tests/tap_route_shape.rs`, which failed to exist long enough for the
+/// `tests/it/tap_route_shape.rs`, which failed to exist long enough for the
 /// runner to ship a nested-`matched` + snake_case body that this struct
 /// silently deserialized to all-`None`/zero.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

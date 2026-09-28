@@ -14,7 +14,7 @@
 #
 # Called by hand when swift-bridge/ changes. Whether the checked-in
 # tarball is current is enforced by
-# crates/smix-runner-sources/tests/tarball_is_current.rs, which runs in
+# crates/smix-runner-sources/tests/it/tarball_is_current.rs, which runs in
 # `cargo test --workspace` and names the drifted files. This header
 # previously claimed a ship gate compared its SHA256; no such gate
 # existed, and three Swift files reached a release branch without ever

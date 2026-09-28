@@ -8,7 +8,7 @@ import type { A11yNode } from './A11yNode.js'
 
 /**
  * Rust `smix_error::FailureCode`'s wire strings verbatim —
- * `crates/smix-error/tests/sdk_failure_code_parity.rs` reads this
+ * `crates/smix-error/tests/it/sdk_failure_code_parity.rs` reads this
  * declaration and fails if the two sets ever diverge.
  */
 export type FailureCode =
