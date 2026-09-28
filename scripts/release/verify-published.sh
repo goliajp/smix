@@ -39,10 +39,6 @@ npm_verdict() {
     echo "ok:npm $ok/$total at $VERSION"
     return
   fi
-  if [ "$ok" -eq 0 ]; then
-    echo "fail:npm $ok/$total —$missing"
-    return
-  fi
   echo "pending:npm $ok/$total —$missing"
 }
 
@@ -63,13 +59,13 @@ if [ "${1:-}" = "--selftest" ]; then
   }
   check "every package is there" ok: 9 9
   check "some packages are still propagating" pending: 4 9
-  check "no package is there at all" fail: 0 9
+  check "no package is there yet" pending: 0 9
   check "there was no list to check" fail: 0 0
   if [ "$npm_selftest_fails" -ne 0 ]; then
     echo "verify-published selftest: FAIL ($npm_selftest_fails)" >&2
     exit 1
   fi
-  echo "verify-published selftest: 4 cases pass — late, absent, complete, and an empty list"
+  echo "verify-published selftest: 4 cases pass — some late, all late, complete, and an empty list"
   exit 0
 fi
 
@@ -153,9 +149,11 @@ done <<< "$NPM_PKGS"
 # this exited 1 and the ship never reached the step after it. Two
 # registries, the same delay, two verdicts.
 #
-# Nothing at all is still a failure: a publish that did not happen and
-# an index that has not caught up look alike only until you notice that
-# one of them has no packages at the version anywhere.
+# None there yet is late too: 11.0.0's index answered 0 of 9 ten seconds
+# after all nine were published, and Maven with nothing there has always
+# been NOT YET. A publish that did not happen is caught where it fails —
+# the publish command exits non-zero and the ship stops there — and pending is
+# never claimed, so this cannot report a release that is not out.
 NPM_VERDICT="$(npm_verdict "$NPM_OK" "$NPM_TOTAL" "$NPM_MISSING")"
 case "$NPM_VERDICT" in
   ok:*)      say "${NPM_VERDICT#ok:}"; CONFIRMED+=("npm") ;;
