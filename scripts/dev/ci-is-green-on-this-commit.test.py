@@ -46,15 +46,25 @@ def make_repo(dirty=False):
     return root
 
 
-def stub_gh(runs_json, jobs_tsv, fail=False):
-    """A `gh` on PATH that answers `run list` and `api .../jobs`."""
+def stub_gh(runs_json, jobs_tsv, fail=False, cancelled_run=None):
+    """A `gh` on PATH that answers `run list` and `api .../jobs`.
+
+    `cancelled_run` names a run id whose jobs all answer `cancelled`, so a
+    gate that reads that run instead of setting it aside goes red.
+    """
     d = tempfile.mkdtemp()
     path = os.path.join(d, "gh")
     if fail:
         body = 'echo "not authenticated" >&2; exit 1'
     else:
+        cancelled = (
+            f'case "$*" in *"/runs/{cancelled_run}/"*) '
+            'printf "build\\tcancelled\\n"; exit 0;; esac\n'
+            if cancelled_run else ""
+        )
         body = (
-            'if [ "$1" = "run" ]; then cat <<\'EOF\'\n'
+            cancelled
+            + 'if [ "$1" = "run" ]; then cat <<\'EOF\'\n'
             f"{runs_json}\n"
             "EOF\n"
             "else cat <<'EOF'\n"
@@ -77,9 +87,10 @@ def run(root, ghdir):
     return p.returncode, p.stdout + p.stderr
 
 
-def case(name, want_code, must_say, dirty=False, runs="[]", jobs="", gh_fails=False):
+def case(name, want_code, must_say, dirty=False, runs="[]", jobs="", gh_fails=False,
+         cancelled_run=None):
     root = make_repo(dirty=dirty)
-    code, out = run(root, stub_gh(runs, jobs, fail=gh_fails))
+    code, out = run(root, stub_gh(runs, jobs, fail=gh_fails, cancelled_run=cancelled_run))
     if code != want_code:
         print(f"  FAIL {name}: exit {code}, wanted {want_code}\n{out}")
         return False
@@ -145,6 +156,22 @@ def main():
         0, "all 2 jobs green",
         runs=GREEN_RUN,
         jobs="rust-and-swift\tsuccess\nportable-corpus\tsuccess",
+    )
+
+    # Two push runs for one commit, the first cancelled by the second.
+    ok &= case(
+        "a cancelled duplicate beside a green run",
+        0, "clean — run 777",
+        runs='[{"databaseId":778,"conclusion":"cancelled","status":"completed"},'
+             '{"databaseId":777,"conclusion":"success","status":"completed"}]',
+        jobs="build\tsuccess", cancelled_run=778,
+    )
+
+    ok &= case(
+        "every run cancelled",
+        1, "all of them cancelled",
+        runs='[{"databaseId":778,"conclusion":"cancelled","status":"completed"}]',
+        jobs="build\tsuccess", cancelled_run=778,
     )
 
     print(f"=== ci-is-green-on-this-commit.test: {'PASS' if ok else 'FAIL'} ===")

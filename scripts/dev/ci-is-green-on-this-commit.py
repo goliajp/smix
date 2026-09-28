@@ -83,7 +83,13 @@ def main() -> int:
 
     # Per job, never the run. A run carrying a continue-on-error job is
     # green at the run level with that job red inside it.
-    for run in runs:
+    #
+    # A cancelled run is set aside: it says nothing about the code. GitHub
+    # can start two push runs for one commit and the concurrency group
+    # cancels one of them; reading that one first refused a commit whose
+    # other run was green.
+    judged = [r for r in runs if r.get("conclusion") != "cancelled"]
+    for run in judged:
         rid = run["databaseId"]
         code, out, err = sh(
             "gh", "api", f"repos/{REPO}/actions/runs/{rid}/jobs",
@@ -135,7 +141,8 @@ def main() -> int:
         return 0
 
     print("ci-is-green-on-this-commit: FAIL")
-    print(f"  - {len(runs)} ci.yml run(s) exist for HEAD and none is all-green.")
+    print(f"  - {len(runs)} ci.yml run(s) exist for HEAD, all of them cancelled.")
+    print("    A cancelled run judged nothing; re-run CI for HEAD.")
     return 1
 
 
