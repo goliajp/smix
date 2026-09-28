@@ -56,6 +56,7 @@ ROOT = os.path.abspath(
 )
 
 SHIP = os.path.join("scripts", "release", "ship.sh")
+CI = os.path.join(".github", "workflows", "ci.yml")
 
 # Long enough for the slowest gate that only reads files; a gate that
 # shells out to cargo will hit this and be reported as unjudgeable
@@ -96,22 +97,26 @@ if _out:
 '''
 
 
-def gates_from_ship(root: str):
-    """Every gate the ship runs, read off the ship rather than listed.
+def gates_on_the_release_path(root: str):
+    """Every gate CI or the ship runs, read off those files rather than listed.
 
-    A list of gates beside the ship is the second copy that goes stale;
-    this is the same reasoning that keeps `FailureCode::ALL` in the enum
-    and not in the test that walks it.
+    A list of gates beside them is the second copy that goes stale; this
+    is the same reasoning that keeps `FailureCode::ALL` in the enum and not
+    in the test that walks it. Both files, because the release takes its
+    source judgement from CI's run and runs only the device and machine
+    gates itself: reading the ship alone would sweep a handful.
     """
-    path = os.path.join(root, SHIP)
-    try:
-        text = open(path, encoding="utf-8").read()
-    except OSError as e:
-        print(f"gate-subject: CANNOT RUN — {SHIP} could not be read: {e}")
-        return None
-    found = re.findall(
-        r'(python3|bash)\s+"\$ROOT/(scripts/(?:dev|release)/[^"]+)"', text
-    )
+    found = []
+    for rel, pattern in (
+        (SHIP, r'(python3|bash)\s+"\$ROOT/(scripts/(?:dev|release)/[^"]+)"'),
+        (CI, r'(python3|bash)\s+(scripts/(?:dev|release)/[\w./-]+\.(?:py|sh))\b'),
+    ):
+        try:
+            text = open(os.path.join(root, rel), encoding="utf-8").read()
+        except OSError as e:
+            print(f"gate-subject: CANNOT RUN — {rel} could not be read: {e}")
+            return None
+        found += re.findall(pattern, text)
     seen, out = set(), []
     for lang, rel in found:
         if rel not in seen:
@@ -254,12 +259,12 @@ def run_gate(tree, lang, rel, audit_dir):
 
 
 def main() -> int:
-    gates = gates_from_ship(ROOT)
+    gates = gates_on_the_release_path(ROOT)
     if gates is None:
         return 1
     if not gates:
         # A sweep that found no gates agrees with every repo there is.
-        print("gate-subject: CANNOT RUN — no gate invocations found in the ship")
+        print("gate-subject: CANNOT RUN — no gate invocations found in CI or the ship")
         return 1
 
     tree = tempfile.mkdtemp(prefix="smix-gate-subject-")

@@ -127,15 +127,8 @@ SELF = (
 # Each is verified to still exist in ship.sh below, so a renamed or
 # deleted step cannot leave a line here excusing nothing in particular.
 PRODUCES = {
-    "every cell is declared": "it asks the compiled verb-by-form table what it "
-    "says, so it needs the adapter built — one second here, two and a half "
-    "minutes at the front of the run",
-    "selector matrix in the guide": "same compiled table, same reason",
     "cargo build -p smix-cli --release (for corpus gate)": "the corpus and android "
     "behaviour gates drive the binary it writes",
-    "android unit tests + androidTest compile (sdk + app; compiles kotlin bindings)": "the "
-    "kotlin bindings it compiles are what the publish leg publishes",
-    "SmixRunner UITest build": "the corpus gate drives the runner it builds",
 }
 
 # The permission to publish, rather than a judgement about the tree.

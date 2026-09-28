@@ -24,16 +24,17 @@ Checks:
   1. At least MIN_MODULES modules were found. A path typo that finds
      nothing would otherwise pass every remaining check vacuously —
      the failure mode the no_json_state gate was given a floor for.
-  2. Every module with src/test/ has its unit test task covered by all
-     three gates. Three, not one: preflight is the local habit, CI is
-     the branch, ship.sh is the release. A task missing from ship alone
-     is a hole on exactly the path that reaches users.
+  2. Every module with src/test/ has its unit test task covered by
+     preflight and CI. Both, not one: preflight is the local habit, CI
+     is the branch -- and the release takes its source judgement from
+     CI's run on the commit it publishes, so a task CI skips is run
+     nowhere on the path to users.
   3. Every module with src/androidTest/ is either covered the same way
      or named in DEFERRED with the checkpoint that will cover it. A new
      instrumentation suite cannot appear unremarked.
-  4. This script is itself invoked by all three gates. adb-guard died of
-     precisely this: the script was committed, the line that runs it was
-     not.
+  4. This script is itself invoked by preflight and CI. adb-guard died
+     of precisely this: the script was committed, the line that runs it
+     was not.
 
 Exit non-zero on any failure.
 """
@@ -50,11 +51,14 @@ SETTINGS = "android-runner/settings.gradle.kts"
 # Below this, assume the enumeration broke rather than the project shrank.
 MIN_MODULES = 2
 
+# Where source-level Android tasks must run. The release is not among
+# them: it takes this judgement from CI's run on the commit it publishes.
 GATES = (
     "scripts/dev/preflight.sh",
     ".github/workflows/ci.yml",
-    "scripts/release/ship.sh",
 )
+# Where the device suite runs -- the one Android judgement CI cannot make.
+SHIP = "scripts/release/ship.sh"
 
 UNIT_TASK = "testDebugUnitTest"
 INSTRUMENTATION_TASK = "connectedDebugAndroidTest"
@@ -199,7 +203,7 @@ def covers(gate_text, module, task):
 def main():
     failures = []
     found = modules()
-    gates = {gate: read(gate) for gate in GATES}
+    gates = {gate: read(gate) for gate in GATES + (SHIP,)}
 
     if len(found) < MIN_MODULES:
         failures.append(
@@ -267,7 +271,7 @@ def main():
                         f"empty source set is unfinished work, not a kind."
                     )
                     continue
-                ship_text = gates["scripts/release/ship.sh"] + "\n".join(
+                ship_text = gates[SHIP] + "\n".join(
                     read(d) for d in SHIP_DELEGATES if os.path.isfile(os.path.join(ROOT, d))
                 )
                 if not covers(ship_text, module, INSTRUMENTATION_TASK):
@@ -278,7 +282,7 @@ def main():
                         f"or a delegate it names."
                     )
         for delegate in SHIP_DELEGATES:
-            if delegate not in gates["scripts/release/ship.sh"]:
+            if delegate not in gates[SHIP]:
                 failures.append(
                     f"{delegate} is treated as part of ship's coverage but ship.sh "
                     f"does not call it — the coverage would be imaginary."
@@ -312,7 +316,7 @@ def main():
     )
     print(
         f"android-gate-scan: clean — {len(found)} modules; "
-        f"androidTest compile: preflight+CI+ship; "
+        f"androidTest compile: preflight+CI; "
         f"instrumentation: ship only — {detail} on a pinned emulator; "
         f"CI has no emulator; "
         f"{body} is the runner body ({entry}), never a connected task"
