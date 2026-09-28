@@ -135,6 +135,9 @@ navd="$(post /back)"
 nav_ok="$(field "$navd" ok)"
 nav_by="$(field "$navd" settledBy)"
 log "  nav-back=ok:$nav_ok settledBy=$nav_by"
+log "  saw: $(field "$navd" saw)"
+log "  after: $(curl -s -m 30 "http://localhost:$PORT/tree" | python3 -c 'import json,sys,re
+t=json.dumps(json.load(sys.stdin)); print("main-screen" if "open-compose" in t else "not-main", sorted(set(re.findall(r"compose_[a-z_]+", t)))[:6])' 2>&1)"
 [ "$nav_ok" = "True" ] || fail "nav-back: back left the Compose screen and this answered ok=$nav_ok"
 [ "$nav_by" = "screenChanged" ] || fail "nav-back: expected settledBy=screenChanged, got '$nav_by'"
 # Corroboration that does not come from the verdict: the main screen's

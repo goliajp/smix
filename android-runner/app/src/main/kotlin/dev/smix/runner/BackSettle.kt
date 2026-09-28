@@ -150,6 +150,22 @@ class BackSettle(private val before: ScreenReading?) {
     }
 
     /**
+     * [observe], for a look that began at [startedAtMs], against a budget
+     * that ends at [deadlineMs].
+     *
+     * "The screen never changed" has to rest on a look that began once
+     * the budget was over. Judged by when a look ended instead, one slow
+     * look — a whole window walk takes about two seconds on a loaded
+     * emulator, measured — photographs the screen before the back key
+     * has landed, returns after the deadline, and becomes a `gaveUp`
+     * about a screen that went back while it was being read.
+     */
+    fun observeStartedAt(reading: Reading, startedAtMs: Long, deadlineMs: Long): Verdict? {
+        observe(reading)?.let { return it }
+        return if (startedAtMs >= deadlineMs) atDeadline() else null
+    }
+
+    /**
      * Whether two halves of a window's identity disagree.
      *
      * `null` is "this look did not read it", which is neither the same

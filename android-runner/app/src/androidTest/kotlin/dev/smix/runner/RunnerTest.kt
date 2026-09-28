@@ -692,15 +692,18 @@ class SmixHttpServer(
         val before = (readScreen() as? Reading.Screen)?.reading
         val injected = injectBackKey()
         val settle = BackSettle(before)
+        val started = android.os.SystemClock.elapsedRealtime()
+        var looks = 0
         val verdict = if (!injected) {
             BackSettle.Verdict.NotInjected
         } else {
-            awaitBackVerdict(settle)
+            awaitBackVerdict(settle) { looks += 1 }
         }
+        val took = android.os.SystemClock.elapsedRealtime() - started
         val body = RunnerWire.backBody(
             ok = verdict.ok,
             settledBy = verdict.settledBy,
-            saw = settle.saw(),
+            saw = "${settle.saw()} looks=$looks tookMs=$took budgetMs=$BACK_SETTLE_MS",
             injected = injected,
         )
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
@@ -711,12 +714,13 @@ class SmixHttpServer(
     /// 50ms polls over 2s, the same cadence and budget the iOS runner
     /// settled on for the same question — its notes record that looking
     /// less often (250ms) was measured and was worse.
-    private fun awaitBackVerdict(settle: BackSettle): BackSettle.Verdict {
+    private fun awaitBackVerdict(settle: BackSettle, looked: () -> Unit): BackSettle.Verdict {
         val deadline = android.os.SystemClock.elapsedRealtime() + BACK_SETTLE_MS
         while (true) {
             Thread.sleep(BACK_POLL_MS)
-            settle.observe(readScreen())?.let { return it }
-            if (android.os.SystemClock.elapsedRealtime() >= deadline) return settle.atDeadline()
+            looked()
+            val started = android.os.SystemClock.elapsedRealtime()
+            settle.observeStartedAt(readScreen(), started, deadline)?.let { return it }
         }
     }
 
