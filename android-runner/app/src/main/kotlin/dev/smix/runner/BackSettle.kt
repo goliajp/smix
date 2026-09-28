@@ -99,7 +99,8 @@ class BackSettle(private val before: ScreenReading?) {
         ArrivedScreenChanged("screenChanged", true),
 
         /**
-         * Nothing could be read before the key went in.
+         * Nothing could be read before the key went in, or what was read
+         * never held still long enough to judge the key against.
          *
          * The iOS runner has a verdict shaped like this one and it
          * answers yes, because there a screen can genuinely have no
@@ -132,18 +133,8 @@ class BackSettle(private val before: ScreenReading?) {
             is Reading.Screen -> {
                 val now = reading.reading
                 last = now
-                if (now.windows.map { it.id }.toSet() != before.windows.map { it.id }.toSet()) {
-                    return Verdict.ArrivedScreenChanged
-                }
-                val was = before.windows.associateBy { it.id }
-                for (window in now.windows) {
-                    val then = was[window.id] ?: continue
-                    if (differs(then.structure, window.structure)) {
-                        return Verdict.ArrivedScreenChanged
-                    }
-                    if (differs(then.pkg, window.pkg)) return Verdict.ArrivedScreenChanged
-                    if (window.structure != null && then.structure != null) compared += 1
-                }
+                val comparable = comparableWindows(before, now) ?: return Verdict.ArrivedScreenChanged
+                compared += comparable
                 return null
             }
         }
@@ -164,17 +155,6 @@ class BackSettle(private val before: ScreenReading?) {
         observe(reading)?.let { return it }
         return if (startedAtMs >= deadlineMs) atDeadline() else null
     }
-
-    /**
-     * Whether two halves of a window's identity disagree.
-     *
-     * `null` is "this look did not read it", which is neither the same
-     * as the other reading nor different from it. Comparing it as a
-     * value is what made a missed look indistinguishable from a window
-     * that had left — the whole of N1.
-     */
-    private fun <T> differs(then: T?, now: T?): Boolean =
-        then != null && now != null && then != now
 
     /**
      * The verdict when the budget runs out.
@@ -199,4 +179,69 @@ class BackSettle(private val before: ScreenReading?) {
      */
     fun saw(): String = "before=${before?.brief() ?: "<none>"} " +
         "last=${last?.brief() ?: "<none>"} unreadable=$unreadable"
+}
+
+/**
+ * How many windows two readings could compare, or `null` when they show
+ * different screens: a window came or went, or one both looks read has
+ * changed.
+ */
+internal fun comparableWindows(then: ScreenReading, now: ScreenReading): Int? {
+    if (now.windows.map { it.id }.toSet() != then.windows.map { it.id }.toSet()) return null
+    val was = then.windows.associateBy { it.id }
+    var compared = 0
+    for (window in now.windows) {
+        val old = was.getValue(window.id)
+        if (differs(old.structure, window.structure) || differs(old.pkg, window.pkg)) return null
+        if (window.structure != null && old.structure != null) compared += 1
+    }
+    return compared
+}
+
+/**
+ * Whether two halves of a window's identity disagree.
+ *
+ * `null` is "this look did not read it", which is neither the same as the
+ * other reading nor different from it. Comparing it as a value is what
+ * made a missed look indistinguishable from a window that had left — the
+ * whole of N1.
+ */
+private fun <T> differs(then: T?, now: T?): Boolean =
+    then != null && now != null && then != now
+
+/**
+ * The reading a back key is judged against, taken once the screen holds
+ * still.
+ *
+ * A back sent while the step before it is still landing was judged
+ * against a picture of that transition. In a release run on
+ * emulator-5554 a `/back` began 150ms after the tap that opened the
+ * blocked screen: the reading before the key held the system windows and
+ * no window of the app, the app's window arrived while the key was being
+ * watched, and a key the app swallowed was answered `screenChanged`. The
+ * change was the tap's.
+ *
+ * So the screen has to read the same across [stillMs] before the key
+ * goes in. Readings that compare nothing do not count as the same: a
+ * screen that holds still is one some look actually read.
+ */
+class BeforeSettle(private val stillMs: Long) {
+    private var held: ScreenReading? = null
+    private var heldSinceMs = 0L
+
+    var looks = 0
+        private set
+
+    /** The settled reading for a look begun at [atMs], or `null` — look again. */
+    fun observe(reading: Reading, atMs: Long): ScreenReading? {
+        looks += 1
+        val now = (reading as? Reading.Screen)?.reading ?: return null
+        val then = held
+        if (then == null || (comparableWindows(then, now) ?: 0) == 0) {
+            held = now
+            heldSinceMs = atMs
+            return null
+        }
+        return if (atMs - heldSinceMs >= stillMs) now else null
+    }
 }

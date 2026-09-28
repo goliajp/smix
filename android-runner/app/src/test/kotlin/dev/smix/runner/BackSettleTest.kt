@@ -218,4 +218,44 @@ class BackSettleTest {
             settle.observeStartedAt(Reading.Screen(screen()), startedAtMs = 2110, deadlineMs = 2000),
         )
     }
+
+    // The readings of the release run that answered `screenChanged` for a
+    // key the blocked screen swallowed: before the key, the system
+    // windows alone, mid-way through the tap that opened the screen.
+    private val statusBar = WindowReading(id = 4997, pkg = "com.android.systemui", structure = 196020198)
+    private val navBar = WindowReading(id = 4998, pkg = "com.android.systemui", structure = 1098933583)
+    private val blocked = WindowReading(id = 5002, pkg = "dev.smix.fixture", structure = -26960745)
+
+    @Test
+    fun aScreenStillArrivingIsNotTheReadingBeforeTheKey() {
+        val still = BeforeSettle(stillMs = 300)
+        assertNull(still.observe(Reading.Screen(screen(statusBar, navBar)), atMs = 0))
+        assertNull(still.observe(Reading.Screen(screen(statusBar, navBar, blocked)), atMs = 50))
+        assertNull(still.observe(Reading.Screen(screen(statusBar, navBar, blocked)), atMs = 200))
+        val before = still.observe(Reading.Screen(screen(statusBar, navBar, blocked)), atMs = 350)
+        assertEquals(screen(statusBar, navBar, blocked), before)
+        // Judged against that, the swallowed key is what it is.
+        val settle = BackSettle(before)
+        repeat(40) { assertNull(settle.observe(Reading.Screen(screen(statusBar, navBar, blocked)))) }
+        assertEquals(BackSettle.Verdict.GaveUp, settle.atDeadline())
+    }
+
+    @Test
+    fun theSameReadingForLessThanTheSpanIsNotStill() {
+        val still = BeforeSettle(stillMs = 300)
+        assertNull(still.observe(Reading.Screen(screen()), atMs = 0))
+        assertNull(still.observe(Reading.Screen(screen()), atMs = 299))
+        assertEquals(screen(), still.observe(Reading.Screen(screen()), atMs = 300))
+    }
+
+    @Test
+    fun readingsThatCompareNothingNeverHoldStill() {
+        // Every window listed and none read: "the same" would be a claim
+        // about looks that saw nothing.
+        val unread = screen(bars.copy(structure = null), app.copy(structure = null))
+        val still = BeforeSettle(stillMs = 300)
+        for (at in 0L..2000L step 50) assertNull(still.observe(Reading.Screen(unread), atMs = at))
+        assertNull(still.observe(Reading.Unreadable, atMs = 2050))
+        assertEquals(42, still.looks)
+    }
 }

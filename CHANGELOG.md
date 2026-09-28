@@ -20,6 +20,18 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
 
 ### Fixed
 
+- **An Android `back` sent right after a step that navigates is judged
+  against the screen that step arrived at.** The runner read the screen
+  once before the key and answered by whether it changed afterwards. When
+  the previous step's navigation was still landing, that one reading was
+  of the transition — the system bars and no window of the app — the
+  app's window arrived while the key was being watched, and a key the app
+  swallowed was answered `ok: true`, `settledBy: screenChanged`. The
+  runner now waits, up to 1.5 s, for the screen to read the same for
+  0.3 s before the key goes in; a screen that never holds still is
+  answered `couldNotSee`, not guessed at. The host waits correspondingly
+  longer for `/back` on Android, and `saw` counts the looks taken before
+  the key (`beforeLooks`).
 - **An iOS tap lands where it was aimed in both landscapes.** A touch is
   delivered in the device's space, and the runner turned the point it
   aimed at by reading the app's frame — which says the app is wide, not

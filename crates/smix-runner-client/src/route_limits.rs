@@ -199,8 +199,9 @@ pub const ROUTES: &[Route] = &[
     r("/swipe-once", ms(0), ms(500), true),
     r("/press-key", ms(0), ms(500), false),
     // iOS: five navigation settles of 2 s, two synthesis waits of 5 s and
-    // one fixed 0.5 s settle. Android: the 2 s back settle.
-    r("/back", ms(20_500), ms(2_000), true).looks(1),
+    // one fixed 0.5 s settle. Android: up to 1.5 s for a still screen
+    // before the key, then the 2 s back settle.
+    r("/back", ms(20_500), ms(3_500), true).looks(2),
     r("/hide-keyboard", REQ, ms(2_500), true).looks(1),
     r("/input-text", REQ, REQ, false).looks(2),
     r("/fill", ms(0), NONE, true),
