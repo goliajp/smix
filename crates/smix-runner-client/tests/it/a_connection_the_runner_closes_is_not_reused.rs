@@ -52,15 +52,16 @@ fn read_one_request(s: &mut std::net::TcpStream) -> bool {
 
 /// Answers the first request on each connection, then closes it after
 /// `linger` without reading anything else. Returns its port and how many
-/// requests it answered.
+/// requests reached it — counted on arrival: counted after the answer is
+/// written, the client can hold the answer before the count moves.
 fn one_request_per_connection(linger: Duration) -> (u16, Arc<AtomicUsize>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
     let port = listener
         .local_addr()
         .expect("a bound listener has an address")
         .port();
-    let answered = Arc::new(AtomicUsize::new(0));
-    let count = Arc::clone(&answered);
+    let reached = Arc::new(AtomicUsize::new(0));
+    let count = Arc::clone(&reached);
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut s) = stream else { continue };
@@ -69,6 +70,7 @@ fn one_request_per_connection(linger: Duration) -> (u16, Arc<AtomicUsize>) {
                 if !read_one_request(&mut s) {
                     return;
                 }
+                count.fetch_add(1, Ordering::SeqCst);
                 let body = r#"{"ok":true}"#;
                 let head = format!(
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\n\r\n",
@@ -77,17 +79,16 @@ fn one_request_per_connection(linger: Duration) -> (u16, Arc<AtomicUsize>) {
                 if s.write_all(head.as_bytes()).is_err() || s.write_all(body.as_bytes()).is_err() {
                     return;
                 }
-                count.fetch_add(1, Ordering::SeqCst);
                 std::thread::sleep(linger);
             });
         }
     });
-    (port, answered)
+    (port, reached)
 }
 
 #[tokio::test]
 async fn back_to_back_actions_each_reach_a_runner_that_closes_after_answering() {
-    let (port, answered) = one_request_per_connection(Duration::from_millis(200));
+    let (port, reached) = one_request_per_connection(Duration::from_millis(200));
     let client = HttpRunnerClient::with_base(format!("http://127.0.0.1:{port}"));
     for step in 0..5 {
         client
@@ -96,9 +97,9 @@ async fn back_to_back_actions_each_reach_a_runner_that_closes_after_answering() 
             .unwrap_or_else(|e| panic!("swipe {step} did not reach the runner: {e}"));
     }
     assert_eq!(
-        answered.load(Ordering::SeqCst),
+        reached.load(Ordering::SeqCst),
         5,
-        "the runner answered {} of 5 swipes",
-        answered.load(Ordering::SeqCst)
+        "{} of 5 swipes reached the runner",
+        reached.load(Ordering::SeqCst)
     );
 }
