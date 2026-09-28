@@ -341,9 +341,15 @@ if [ "${SMIX_TIER_ONLY:-}" != api36 ]; then
   done
   n_listed="$(grep -c . "$lanes_dir/all")"
 
+  # With job control on. A shell without it starts every background job
+  # with SIGINT and SIGQUIT ignored, and a script cannot undo an ignore
+  # it inherited — so a script that sends its own process group a Ctrl-C
+  # (c9k) watched it go nowhere, but only when it ran in a lane.
+  set -m
   run_lane ios "$lanes_dir/ios.list" > "$lanes_dir/ios.res" & ios_pid=$!
   run_lane android "$lanes_dir/android.list" > "$lanes_dir/android.res" & android_pid=$!
   run_lane none "$lanes_dir/none.list" > "$lanes_dir/none.res" & none_pid=$!
+  set +m
   wait "$ios_pid" || true
   wait "$android_pid" || true
   wait "$none_pid" || true
