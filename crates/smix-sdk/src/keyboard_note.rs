@@ -1,5 +1,5 @@
-//! What to say when a wait for the keyboard runs out on a simulator that
-//! keeps its keyboard minimized.
+//! What to add when a wait for the keyboard runs out on a simulator with
+//! `AutomaticMinimizationEnabled` on.
 
 use smix_screen::Role;
 use smix_selector::Selector;
@@ -7,12 +7,12 @@ use smix_selector::Selector;
 /// The sentence a keyboard wait's failure carries when the simulator's
 /// `AutomaticMinimizationEnabled` is on; `None` otherwise.
 ///
-/// With the setting on, a focused field shows no software keyboard, so
-/// the timeout is a fact about the device and not about the app — and
-/// the failure used to read like the latter. Named, with the way back,
-/// and not acted on: the setting is the owner's. How it gets switched on
-/// is not known; neither `pressKey` nor `inputText` did it on a clean
-/// simulator (2026-09-25).
+/// A fact about the device, not a verdict on the timeout. On 2026-09-25 a
+/// simulator with the setting on showed no keyboard and did once it was
+/// deleted; that was never reproduced, and on iOS 27 (and a later iOS 26.5
+/// simulator) a keyboard appears with it on, after relaunching the app or
+/// rebooting the simulator. So it is named, with the way to rule it out,
+/// and not called the cause. Not acted on: the setting is the owner's.
 #[must_use]
 pub fn keyboard_minimized_note(
     selector: &Selector,
@@ -23,12 +23,12 @@ pub fn keyboard_minimized_note(
         return None;
     }
     Some(format!(
-        "this simulator keeps its software keyboard minimized \
-         (com.apple.keyboard.preferences AutomaticMinimizationEnabled = 1), so a \
-         focused field shows no keyboard and this wait cannot succeed on it. smix \
-         does not change the setting. To turn it off: `xcrun simctl spawn {udid} \
-         defaults delete com.apple.keyboard.preferences AutomaticMinimizationEnabled`, \
-         then relaunch the app."
+        "this simulator has com.apple.keyboard.preferences \
+         AutomaticMinimizationEnabled = 1. It is reported as a fact about the \
+         device, not as the cause of this timeout: a keyboard has been seen both \
+         hidden and shown with it on. smix does not change the setting. To rule it out: \
+         `xcrun simctl spawn {udid} defaults delete com.apple.keyboard.preferences \
+         AutomaticMinimizationEnabled`, then relaunch the app."
     ))
 }
 

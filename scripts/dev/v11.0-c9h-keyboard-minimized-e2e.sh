@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# A keyboard wait that cannot succeed says which device setting is why.
+# A keyboard wait that ran out on a simulator with the minimization
+# setting on names that setting and the way to turn it off.
 #
-# A simulator whose com.apple.keyboard.preferences AutomaticMinimizationEnabled
-# is on shows no software keyboard over a focused field (K1, measured
-# 2026-09-25: the same flow red twice with it on, green at once after
-# `defaults delete`). The failure said "timed out", which reads as the app.
+# On 2026-09-25 a simulator with com.apple.keyboard.preferences
+# AutomaticMinimizationEnabled on showed no software keyboard over a
+# focused field (the same flow red twice with it on, green at once after
+# `defaults delete`). That was never reproduced: on iOS 27 a keyboard
+# comes up with it on. So this script first proves the setting keeps the
+# keyboard down on the simulator in front of it, and cannot judge when it
+# does not.
 #
 # On the second smix simulator (sim-smix-03), with the fixture app:
 #   * key on:  keyboard-comes-and-goes fails, and its output names the
@@ -94,12 +98,15 @@ appId: $APPID
     visible: { role: "keyboard" }
     timeout: 5000
 YAML
-if SMIX_RUNNER_PORT="$PORT" "$SMIX" run "$WORK/premise.yaml" --device "$UDID" --platform ios \
-     --runner-port "$PORT" >"$WORK/premise.log" 2>&1; then
-  runtime="$(xcrun simctl list devices -j | python3 -c "import json,sys
-for rt, ds in json.load(sys.stdin)['devices'].items():
-    if any(d['udid'] == sys.argv[1] for d in ds): print(rt.rsplit('.', 1)[-1])" "$UDID")"
+prc=0
+# raw run: only a pass (the keyboard came up) or a TIMEOUT on the keyboard wait answers the premise; anything else cannot judge it
+SMIX_RUNNER_PORT="$PORT" "$SMIX" run "$WORK/premise.yaml" --device "$UDID" --platform ios \
+  --runner-port "$PORT" >"$WORK/premise.log" 2>&1 || prc=$?
+if [ "$prc" = 0 ]; then
+  runtime="iOS $(xcrun simctl spawn "$UDID" sw_vers -productVersion 2>/dev/null || echo unknown)"
   cannot_judge "with $KEY = 1 a focused field on $UDID ($runtime) still shows the software keyboard, so there is no minimized keyboard here to be named"
+elif ! grep -q 'TIMEOUT' "$WORK/premise.log" || ! grep -q 'extendedWaitUntil' "$WORK/premise.log"; then
+  cannot_judge "the premise flow failed (exit $prc) for a reason other than the keyboard wait running out: $(tail -3 "$WORK/premise.log" | tr '\n' ' ')"
 fi
 log "premise: with $KEY = 1 no keyboard came up over the focused field"
 

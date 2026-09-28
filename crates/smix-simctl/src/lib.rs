@@ -1480,14 +1480,15 @@ impl SimctlClient {
         Ok(None)
     }
 
-    /// Whether this simulator keeps its software keyboard minimized
-    /// (`com.apple.keyboard.preferences` `AutomaticMinimizationEnabled`).
+    /// The value of `com.apple.keyboard.preferences`
+    /// `AutomaticMinimizationEnabled` on this simulator.
     ///
-    /// With it on, a focused text field shows no keyboard, so a wait for
-    /// `role: keyboard` can only time out — measured on 2026-09-25: the
-    /// same flow red twice with the key set and green at once after
-    /// `defaults delete`. `Ok(None)` when the key is unset or its value
-    /// is not a boolean; neither is "off".
+    /// What it does to the keyboard is not settled: on 2026-09-25 a flow
+    /// was red twice with the key set and green at once after `defaults
+    /// delete`, but on iOS 27 (and a later iOS 26.5 simulator) a focused
+    /// field shows the keyboard with it set. Read so a keyboard wait's
+    /// failure can mention it, not to explain one. `Ok(None)` when the key
+    /// is unset or its value is not a boolean; neither is "off".
     ///
     /// Only read, never written: it is the owner's setting.
     pub async fn keyboard_minimization(
