@@ -770,14 +770,15 @@ pub async fn cmd_wait_for(
     // polls rather than refusing. It cannot go through `wait_for`: that
     // resolves, and a resolve of an OCR needle is a no every time.
     if let Some(needle) = ocr_needle(&selector) {
-        let deadline = std::time::Instant::now() + timeout;
+        let budget = smix_driver::poll::Budget::new(timeout);
         loop {
+            let look = budget.look();
             let seen = ocr_frame(d.as_ref(), needle, &ocr_locales).await?.is_some();
             if seen != absent {
                 println!("{} {selector_str}", if absent { "gone" } else { "visible" });
                 return Ok(());
             }
-            if std::time::Instant::now() >= deadline {
+            if budget.spent_by(look) {
                 return Err(ActError::Timeout {
                     selector: selector_str,
                     timeout_ms: timeout.as_millis() as u64,

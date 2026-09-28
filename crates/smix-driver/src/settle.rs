@@ -19,7 +19,7 @@
 use crate::HitElement;
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use std::future::Future;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// An element's `(x, y, w, h)` as the tree reports it.
 pub type Frame = (f64, f64, f64, f64);
@@ -114,11 +114,12 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<Reading, ExpectationFailure>>,
 {
-    let start = Instant::now();
+    let budget = crate::poll::Budget::new(limit);
     let mut last = first;
     let mut before: Option<Aim> = None;
     loop {
         tokio::time::sleep(poll).await;
+        let look = budget.look();
         // The latest reading's failure, when it found the target gone.
         let gone = match reread().await? {
             Reading::At(now) => {
@@ -130,7 +131,7 @@ where
             }
             Reading::Gone(failure) => Some(*failure),
         };
-        if start.elapsed() < limit {
+        if !budget.spent_by(look) {
             continue;
         }
         let target = describe_target(&last);

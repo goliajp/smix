@@ -261,13 +261,14 @@ impl Driver for AndroidDriver {
     ) -> Result<A11yNode, ExpectationFailure> {
         // Poll tree at 250ms cadence up to `timeout`, return
         // matched node on first hit. Mirror of iOS wait_for semantics.
-        let start = std::time::Instant::now();
+        let budget = crate::poll::Budget::new(timeout);
         loop {
+            let look = budget.look();
             let tree = self.tree(include).await?;
             if let Some(node) = resolve_selector(&tree, selector) {
                 return Ok(node.clone());
             }
-            if start.elapsed() >= timeout {
+            if budget.spent_by(look) {
                 // Suggestions scan the whole visible tree, not just the ten
                 // displayed elements: an Android window dump leads with the
                 // navigation / status bar chrome, so the first ten

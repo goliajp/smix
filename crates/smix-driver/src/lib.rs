@@ -491,8 +491,7 @@ impl IosDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<Aimed, ExpectationFailure> {
-        let start = Instant::now();
-        let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
+        let budget = poll::Budget::new(Duration::from_millis(TOTAL_TIMEOUT_MS));
 
         // Before resolving anything: if the point this is about to
         // compute will be read in a different space than it is computed
@@ -504,6 +503,7 @@ impl IosDriver {
             // Transport retry parity with wait_for / find. Tree fetch
             // transient transport drops (runner socket refusal /
             // concurrent-handling hiccup) are re-tried in-loop.
+            let look = budget.look();
             let perceived = self.perceived_with_retry(include).await?;
             let read_by = std::sync::Mutex::new(perceived.source);
             let tree = perceived.root;
@@ -543,7 +543,7 @@ impl IosDriver {
                     // shows nowhere is not on screen yet, and its centre is
                     // not a place to touch.
                     let Some(first) = aim_in(&tree, selector)? else {
-                        if start.elapsed() > timeout {
+                        if budget.spent_by(look) {
                             return Err(element_not_found(&tree, selector));
                         }
                         sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
@@ -572,7 +572,7 @@ impl IosDriver {
                     ));
                 }
                 Err(HostResolveError::NotFound) => {
-                    if start.elapsed() > timeout {
+                    if budget.spent_by(look) {
                         return Err(element_not_found(&tree, selector));
                     }
                     sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
@@ -1075,6 +1075,7 @@ impl IosDriver {
         include: Option<IncludeScope>,
     ) -> Result<A11yNode, ExpectationFailure> {
         let start = Instant::now();
+        let budget = poll::Budget::new(timeout);
         // Transient tree() transport errors (e.g. sim still launching →
         // /tree returns 500 snapshot_unavailable) are treated the same
         // as selector-not-found — retry within the timeout budget,
@@ -1109,6 +1110,7 @@ impl IosDriver {
         // wait-pass → tap-miss pair).
         let mut tree_hit_offscreen = false;
         loop {
+            let look = budget.look();
             match self.tree(include).await {
                 Ok(tree) => {
                     if let Some(node) = resolve_selector_compiled(&tree, selector, &ctx) {
@@ -1137,7 +1139,7 @@ impl IosDriver {
                             }
                         }
                     }
-                    if start.elapsed() >= timeout {
+                    if budget.spent_by(look) {
                         let screen = screen_facts(&tree, 10);
                         let target = base_text_or_id(selector);
                         let suggestions =
@@ -1875,6 +1877,7 @@ mod android_aim;
 mod android_input;
 mod android_notes;
 mod landing;
+pub mod poll;
 pub(crate) use aim::{aim_in, settle_reading};
 pub use landing::{Aimed, ChainCoverage, landing_outcome, tap_landed_within, verdict_reader};
 mod ios;

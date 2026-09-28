@@ -881,13 +881,7 @@ class SmixHttpServer(
         // so with no field in focus this 2-second wait took 6, and a clear
         // on a screen with nothing to clear took 12 s to say so (measured
         // 2026-09-25; the e2e that asks gives it 10).
-        val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
-        while (true) {
-            val left = deadline - android.os.SystemClock.elapsedRealtime()
-            val held = focusedTextLength(focusPx, maxOf(left, 0L))
-            if (held == 0 || android.os.SystemClock.elapsedRealtime() >= deadline) return held
-            Thread.sleep(50)
-        }
+        return Poll.until(budgetMs, 50, { left -> focusedTextLength(focusPx, left) }, { it == 0 })
     }
 
     /// How many characters the focused field holds, or -1 when no
@@ -913,12 +907,7 @@ class SmixHttpServer(
     /// shape as the text read-back next door — one instant cannot
     /// answer a question about a transition.
     private fun awaitKeyboardGone(budgetMs: Long): Boolean {
-        val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
-        while (true) {
-            if (!keyboardIsUp()) return true
-            if (android.os.SystemClock.elapsedRealtime() >= deadline) return false
-            Thread.sleep(50)
-        }
+        return !Poll.until(budgetMs, 50, { keyboardIsUp() }, { !it })
     }
 
     /// Is an input-method window on screen?
@@ -1006,12 +995,7 @@ class SmixHttpServer(
         // own calls, and a single read right after it caught the
         // display still at its old value.
         val want = RunnerWire.rotationFor(orientation)
-        val deadline = android.os.SystemClock.elapsedRealtime() + ROTATION_ARRIVES_MS
-        var rotation = device.displayRotation
-        while (rotation != want && android.os.SystemClock.elapsedRealtime() < deadline) {
-            Thread.sleep(50)
-            rotation = device.displayRotation
-        }
+        val rotation = Poll.until(ROTATION_ARRIVES_MS, 50, { device.displayRotation }, { it == want })
         val body = RunnerWire.setOrientationBody(
             RunnerWire.rotationMatches(orientation, rotation),
             orientation,
@@ -1414,15 +1398,13 @@ class SmixHttpServer(
         budgetMs: Long,
         focusPx: IntArray? = null,
     ): AccessibilityNodeInfo? {
-        val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
-        while (true) {
-            focusedTextNode(focusPx)?.let { return it }
-            if (android.os.SystemClock.elapsedRealtime() >= deadline) {
-                return null
-            }
-            device.waitForIdle(100)
-            Thread.sleep(50)
-        }
+        return Poll.until(
+            budgetMs,
+            50,
+            { focusedTextNode(focusPx) },
+            { it != null },
+            pause = { device.waitForIdle(100); Thread.sleep(it) },
+        )
     }
 
     /// Whatever holds focus and can be typed into, asked two ways.
@@ -1574,20 +1556,27 @@ class SmixHttpServer(
         masked: Boolean,
         budgetMs: Long,
     ): ChunkedInput.Reading {
-        val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
-        while (true) {
-            // `refresh` answers whether the node is still in the hierarchy.
-            // Ignoring that read a field that had left as holding nothing.
-            if (!node.refresh()) return ChunkedInput.Reading(base, present = false, focused = false)
-            val now = ChunkedInput.Reading(
-                FieldText.held(node.text, node.isShowingHintText),
-                present = true,
-                focused = node.isFocused,
-            )
-            if (ChunkedInput.chunkOutcome(base, now.text, chunk, masked) == ChunkedInput.ChunkOutcome.Landed) return now
-            if (android.os.SystemClock.elapsedRealtime() >= deadline) return now
-            Thread.sleep(50)
-        }
+        return Poll.until(
+            budgetMs,
+            50,
+            {
+                // `refresh` answers whether the node is still in the hierarchy.
+                // Ignoring that read a field that had left as holding nothing.
+                if (!node.refresh()) {
+                    ChunkedInput.Reading(base, present = false, focused = false)
+                } else {
+                    ChunkedInput.Reading(
+                        FieldText.held(node.text, node.isShowingHintText),
+                        present = true,
+                        focused = node.isFocused,
+                    )
+                }
+            },
+            {
+                !it.present ||
+                    ChunkedInput.chunkOutcome(base, it.text, chunk, masked) == ChunkedInput.ChunkOutcome.Landed
+            },
+        )
     }
 
     /// The failure for a chunk that did not land: which chunk, how many
@@ -1692,12 +1681,7 @@ class SmixHttpServer(
         device.waitForIdle(500)
         // An activity takes a moment to come forward, so this is a
         // deadline on something that has usually already happened.
-        val deadline = android.os.SystemClock.elapsedRealtime() + FOREGROUND_ARRIVES_MS
-        var current = device.currentPackageName
-        while (current != bundleId && android.os.SystemClock.elapsedRealtime() < deadline) {
-            Thread.sleep(50)
-            current = device.currentPackageName
-        }
+        val current = Poll.until(FOREGROUND_ARRIVES_MS, 50, { device.currentPackageName }, { it == bundleId })
         val body = RunnerWire.foregroundBody(
             current == bundleId,
             bundleId,

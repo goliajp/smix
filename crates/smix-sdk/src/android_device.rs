@@ -776,9 +776,10 @@ impl DeviceControl for AndroidDeviceControl {
             .wake(serial)
             .await
             .map_err(|e| adb_to_simctl_err(e, "input keyevent KEYCODE_WAKEUP"))?;
-        let deadline = std::time::Instant::now() + WAKE_BUDGET;
+        let budget = smix_driver::poll::Budget::new(WAKE_BUDGET);
         let mut last;
         loop {
+            let look = budget.look();
             last = self
                 .client
                 .wakefulness(serial)
@@ -787,7 +788,7 @@ impl DeviceControl for AndroidDeviceControl {
             if last == Some(Wakefulness::Awake) {
                 return Ok(());
             }
-            if std::time::Instant::now() >= deadline {
+            if budget.spent_by(look) {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
