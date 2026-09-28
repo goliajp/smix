@@ -477,19 +477,33 @@ struct ContentView: View {
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
-  var window: UIWindow?
-
   func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    let window = UIWindow(frame: UIScreen.main.bounds)
+    true
+  }
+}
+
+// The window belongs to a scene: iOS 27 stops an app at launch that still
+// makes its window in the app delegate. The class name is fixed so the
+// Info.plist written by the build script can name it without a module.
+@objc(SceneDelegate)
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+  var window: UIWindow?
+
+  func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+    guard let windowScene = scene as? UIWindowScene else { return }
+    let window = UIWindow(windowScene: windowScene)
     let root = UIHostingController(rootView: ContentView())
     window.rootViewController = root
     window.makeKeyAndVisible()
     self.window = window
     LandscapeStage.presenter = root
-    return true
   }
 }
 
