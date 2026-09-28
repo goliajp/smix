@@ -194,4 +194,28 @@ class BackSettleTest {
         // two different things the host cannot tell apart.
         assertEquals(4, BackSettle.Verdict.values().map { it.settledBy }.toSet().size)
     }
+
+    @Test
+    fun aSlowLookThatBeganBeforeTheDeadlineIsNotTheLastWord() {
+        // Measured on a loaded emulator: one look at every window took
+        // about two seconds. Begun before the back key landed, it reads
+        // the old screen and ends after the deadline. Giving up there
+        // answered gaveUp about a screen that had gone back.
+        val settle = BackSettle(screen())
+        assertNull(settle.observeStartedAt(Reading.Screen(screen()), startedAtMs = 60, deadlineMs = 2000))
+        assertEquals(
+            BackSettle.Verdict.ArrivedScreenChanged,
+            settle.observeStartedAt(Reading.Screen(screen(bars, app.copy(structure = 2000))), startedAtMs = 2110, deadlineMs = 2000),
+        )
+    }
+
+    @Test
+    fun aLookBegunAfterTheDeadlineThatStillSeesTheOldScreenGivesUp() {
+        val settle = BackSettle(screen())
+        assertNull(settle.observeStartedAt(Reading.Screen(screen()), startedAtMs = 60, deadlineMs = 2000))
+        assertEquals(
+            BackSettle.Verdict.GaveUp,
+            settle.observeStartedAt(Reading.Screen(screen()), startedAtMs = 2110, deadlineMs = 2000),
+        )
+    }
 }

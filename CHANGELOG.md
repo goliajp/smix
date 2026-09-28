@@ -754,6 +754,15 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Fixed
 
+- **Android `/back` no longer answers `gaveUp` about a screen that went
+  back while it was looking.** One look at every window takes about two
+  seconds on a loaded emulator, measured. A look begun before the key
+  landed read the old screen, ended after the two-second budget, and the
+  route gave up on that reading alone. "The screen never changed" now
+  rests on a look begun once the budget was over. The answer's `saw`
+  says how many looks were taken and how long they took
+  (`looks=… tookMs=… budgetMs=…`).
+
 - **An AI-tier step whose `claude` CLI fails says why.** The error quoted
   the CLI's stderr only, and the CLI reports a usage limit on stdout with
   stderr empty — so the step failed with `the claude CLI exited 1: ` and
