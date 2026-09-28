@@ -18,7 +18,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/scripts/lib/e2e-devices.sh"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${SMIX_C6D_IOS:-smix-ios}"
+ALIAS="${SMIX_C6D_IOS:-$E2E_IOS}"
 # shellcheck source=../lib/gate-port.sh
 . "$ROOT/scripts/lib/gate-port.sh"
 PORT="${SMIX_C6D_PORT:-$SMIX_RUNNER_PORT}"
