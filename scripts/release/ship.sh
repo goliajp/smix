@@ -73,6 +73,8 @@ ship_profile_close() {
 }
 trap ship_profile_close EXIT
 fail() { printf '[ship] FAIL: %s\n' "$*" >&2; exit 1; }
+# shellcheck source=../lib/android-runner-log.sh
+. "$ROOT/scripts/lib/android-runner-log.sh"
 
 # --- pre-flight -------------------------------------------------------
 
@@ -506,6 +508,7 @@ android_chain() {
       Attached now: $(adb devices 2>/dev/null | tail -n +2 | tr '\n' ' ')"
 
     log "v10: runner up on $V10_DEVICE:$V10_PORT"
+    V10_LOG_SINCE="$(android_device_now "$V10_DEVICE" || true)"
     SMIX_RUNNER_PORT="$V10_PORT" "$ROOT/target/release/smix" runner up "$V10_DEVICE" \
       --platform android --runner-port "$V10_PORT" > /tmp/smix-ship-v10-runner.log 2>&1 \
       || fail "v10: runner up failed on $V10_DEVICE (see /tmp/smix-ship-v10-runner.log)"
@@ -526,10 +529,18 @@ android_chain() {
   # chains rather than overwrites.
   trap 'v10_runner_down; ship_profile_close' EXIT
 
+  # A red here keeps what the runner logged: each route, its answer and
+  # where its time went.
+  v10_fail() {
+    local n
+    n="$(collect_android_runner_log "$V10_DEVICE" "${V10_LOG_SINCE:-}" /tmp/smix-ship-v10-runner-routes.log || true)"
+    fail "$1 (the runner's log, $n route line(s): /tmp/smix-ship-v10-runner-routes.log)"
+  }
+
   log "v10: two perception paths agree"
   python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
     --port "$V10_PORT" --min-both 16 --min-bounds-compared 16 --focus compose_input \
-    || fail "two-paths-agree FAILED — the semantics and accessibility readers disagree"
+    || v10_fail "two-paths-agree FAILED — the semantics and accessibility readers disagree"
 
   # The same reader, on the screen that has a View hosted inside Compose.
   #
@@ -540,22 +551,22 @@ android_chain() {
   python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
     --port "$V10_PORT" --activity .InteropActivity --min-both 8 \
     --min-bounds-compared 8 --prove-differences-exhibited --focus fixture_interop_input \
-    || fail "two-paths-agree FAILED on the interop screen"
+    || v10_fail "two-paths-agree FAILED on the interop screen"
 
   log "v10: the three that went red"
   python3 "$ROOT/scripts/dev/the-three-that-went-red.py" --device "$V10_DEVICE" \
     --port "$V10_PORT" \
-    || fail "the-three-that-went-red FAILED — a 6.4.0 root cause is unguarded again"
+    || v10_fail "the-three-that-went-red FAILED — a 6.4.0 root cause is unguarded again"
 
   log "v10: a wait that does not end early"
   python3 "$ROOT/scripts/dev/a-wait-that-does-not-end-early.py" --device "$V10_DEVICE" \
     --port "$V10_PORT" \
-    || fail "a-wait-that-does-not-end-early FAILED"
+    || v10_fail "a-wait-that-does-not-end-early FAILED"
 
   log "v10: a semantics action is not a touch"
   python3 "$ROOT/scripts/dev/a-semantics-action-is-not-a-touch.py" --device "$V10_DEVICE" \
     --port "$V10_PORT" \
-    || fail "a-semantics-action-is-not-a-touch FAILED — the probe's action surface grew a touch substitute"
+    || v10_fail "a-semantics-action-is-not-a-touch FAILED — the probe's action surface grew a touch substitute"
 
   v10_runner_down
   trap - EXIT

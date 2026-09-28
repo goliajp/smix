@@ -20,6 +20,8 @@ ANDROID = "android-runner/app/src/androidTest/kotlin/dev/smix/runner/RunnerTest.
 TIMELINE = "swift-bridge/Sources/SmixRunnerCore/TouchTimeline.swift"
 BURST = "android-runner/app/src/main/kotlin/dev/smix/runner/TapBurst.kt"
 HOST_DIR = "crates/smix-runner-client/src"
+ANDROID_MAIN = "android-runner/app/src/main/kotlin/dev/smix/runner"
+LIMITS = ANDROID_MAIN + "/RouteLimits.kt"
 
 # (name, file, old, new, what the verdict must mention)
 RED = [
@@ -65,19 +67,46 @@ RED = [
     ("a table whose rows cannot be read",
      TABLE, '    r("/', '    row("/',
      "read only 3 routes"),
+    ("an Android poll the table allows no look past",
+     TABLE, 'r("/hide-keyboard", REQ, ms(2_500), true).looks(1)', 'r("/hide-keyboard", REQ, ms(6_500), true)',
+     "/hide-keyboard: the android handler reaches 1 poll(s) and"),
+    ("a look that takes longer than the runner says",
+     TABLE, "ANDROID_LOOK_MS: u64 = 4_000", "ANDROID_LOOK_MS: u64 = 3_000",
+     "/clear-text: android says 19000 and"),
+    ("the runner keeps to another limit than the table",
+     LIMITS, '"/clear-text" to 19_000L', '"/clear-text" to 18_000L',
+     "/clear-text: " + LIMITS + " keeps to 18000 ms"),
+    ("a route that keeps a clock with no limit",
+     LIMITS, '        "/foreground" to 7_500L,\n', "",
+     "android: /foreground keeps a clock and"),
+    ("a reading that finds no polls",
+     ANDROID, "Poll.until", "Poll.wait",
+     "found polls in only"),
+]
+
+# Changes that must be made together so that only one check is left to
+# name them: the table, the runner's statement and its limit all agree on a
+# total that leaves out a look.
+TOGETHER = [
+    ("a route that drops a look it still makes",
+     [(TABLE, 'r("/clear-text", NONE, ms(11_000), false).looks(2)', 'r("/clear-text", NONE, ms(11_000), false).looks(1)'),
+      (ANDROID, "// LONGEST WAIT /clear-text: 19000 ms", "// LONGEST WAIT /clear-text: 15000 ms"),
+      (LIMITS, '"/clear-text" to 19_000L', '"/clear-text" to 15_000L')],
+     "/clear-text: the android handler reaches 2 poll(s) and"),
 ]
 
 # Cases whose change is every occurrence rather than the first.
-EVERY = {"a reading that finds no routes", "a table whose rows cannot be read"}
+EVERY = {"a reading that finds no routes", "a table whose rows cannot be read", "a reading that finds no polls"}
 
 problems: list[str] = []
 
 
 def tree() -> str:
     t = tempfile.mkdtemp()
-    for rel in (TABLE, IOS, ANDROID, TIMELINE, BURST):
+    for rel in (TABLE, IOS, ANDROID, TIMELINE):
         os.makedirs(os.path.dirname(os.path.join(t, rel)), exist_ok=True)
         shutil.copy(os.path.join(ROOT, rel), os.path.join(t, rel))
+    shutil.copytree(os.path.join(ROOT, ANDROID_MAIN), os.path.join(t, ANDROID_MAIN))
     os.makedirs(os.path.join(t, HOST_DIR), exist_ok=True)
     for name in os.listdir(os.path.join(ROOT, HOST_DIR)):
         if name.endswith(".rs"):
@@ -96,15 +125,20 @@ if rc != 0:
     problems.append(f"the unchanged files should be clean:\n{out}")
 shutil.rmtree(root)
 
-for name, rel, old, new, must in RED:
+for name, edits, must in [(n, [(r, o, w)], m) for n, r, o, w, m in RED] + TOGETHER:
     root = tree()
-    path = os.path.join(root, rel)
-    text = open(path).read()
-    if old not in text:
-        problems.append(f"{name}: the case no longer applies — {old!r} is not in {rel}")
+    missing = []
+    for rel, old, new in edits:
+        path = os.path.join(root, rel)
+        text = open(path).read()
+        if old not in text:
+            missing.append(f"{old!r} is not in {rel}")
+            continue
+        open(path, "w").write(text.replace(old, new) if name in EVERY else text.replace(old, new, 1))
+    if missing:
+        problems.append(f"{name}: the case no longer applies — {'; '.join(missing)}")
         shutil.rmtree(root)
         continue
-    open(path, "w").write(text.replace(old, new) if name in EVERY else text.replace(old, new, 1))
     rc, out = run(root)
     if rc != 1:
         problems.append(f"{name}: exit {rc}, wanted 1:\n{out}")
@@ -119,4 +153,4 @@ if problems:
     for p in problems:
         print(f"  - {p}")
     sys.exit(1)
-print(f"runner-waits-fit-the-host.test: clean — the real files pass and {len(RED)} changes are each named")
+print(f"runner-waits-fit-the-host.test: clean — the real files pass and {len(RED) + len(TOGETHER)} changes are each named")

@@ -106,6 +106,10 @@ class SmixHttpServer(
     // survives it, which is why `/clear-text` reports which path ran.
     private val FALLBACK_DELETE_COUNT = 64
 
+    /// Delete keys per shell command in the fallback, so the route can stop
+    /// between commands when its limit runs out.
+    private val DELETE_BATCH = 16
+
     // /tree serve counter for the X-Tree-Snapshot-Refresh-Count
     // header (parity with the iOS runner).
     private val treeServeCounter = java.util.concurrent.atomic.AtomicLong(0)
@@ -273,7 +277,13 @@ class SmixHttpServer(
                 drainedBody.set("")
             }
         }
-        return try {
+        // Each route leaves one line in the device log — when it came in,
+        // what it answered, how long it took and, for a route that keeps a
+        // clock, each stage — so a route that ran long can be read back
+        // after the fact.
+        val arrived = android.os.SystemClock.elapsedRealtime()
+        RouteLog.current.remove()
+        val response = try {
             when {
                 // LONGEST WAIT /health: 0 ms
                 uri == "/health" && session.method == Method.GET -> serveHealth()
@@ -305,14 +315,14 @@ class SmixHttpServer(
                 // LONGEST WAIT /press-key: 500 ms — a 0.5 s idle wait
                 uri == "/press-key" && session.method == Method.POST ->
                     servePressKey(session)
-                // LONGEST WAIT /back: 2000 ms — the back settle (BACK_SETTLE_MS)
+                // LONGEST WAIT /back: 6000 ms — the back settle (BACK_SETTLE_MS) and one look past it
                 uri == "/back" && session.method == Method.POST -> serveBack()
-                // LONGEST WAIT /hide-keyboard: 2500 ms — a 0.5 s idle wait and KEYBOARD_GONE_MS
+                // LONGEST WAIT /hide-keyboard: 6500 ms — a 0.5 s idle wait, KEYBOARD_GONE_MS and one look past it
                 uri == "/hide-keyboard" && session.method == Method.POST -> serveHideKeyboard()
-                // LONGEST WAIT /set-orientation: 3800 ms — a 0.8 s idle wait and ROTATION_ARRIVES_MS
+                // LONGEST WAIT /set-orientation: 7800 ms — a 0.8 s idle wait, ROTATION_ARRIVES_MS and one look past it
                 uri == "/set-orientation" && session.method == Method.POST ->
                     serveSetOrientation(session)
-                // LONGEST WAIT /tap-by-id: 4075 ms — the 1.5 s poll, one lookup's 2 s idle wait, 75 ms and a 0.5 s idle wait
+                // LONGEST WAIT /tap-by-id: 8075 ms — the 1.5 s poll, one lookup's 2 s idle wait, 75 ms, a 0.5 s idle wait and one look past the poll
                 uri == "/tap-by-id" && session.method == Method.POST -> serveTapById(session)
                 // LONGEST WAIT /double-tap-at-norm-coord: 650 ms — 150 ms between the taps and a 0.5 s idle wait
                 uri == "/double-tap-at-norm-coord" && session.method == Method.POST ->
@@ -322,11 +332,11 @@ class SmixHttpServer(
                     serveLongPressAtNormCoord(session)
                 // LONGEST WAIT /input-text: from the request — budgetMs
                 uri == "/input-text" && session.method == Method.POST -> serveInputText(session)
-                // LONGEST WAIT /clear-text: 11000 ms — FOCUS_SETTLE_MS, TEXT_LAND_MS twice and two 0.5 s idle waits
+                // LONGEST WAIT /clear-text: 19000 ms — FOCUS_SETTLE_MS, a 0.5 s idle wait, the delete keys and TEXT_LAND_MS, and one look past each of its two polls
                 uri == "/clear-text" && session.method == Method.POST -> serveClearText(session)
                 // LONGEST WAIT /windows: 0 ms
                 uri == "/windows" && session.method == Method.GET -> serveWindows()
-                // LONGEST WAIT /foreground: 3500 ms — a 0.5 s idle wait and FOREGROUND_ARRIVES_MS
+                // LONGEST WAIT /foreground: 7500 ms — a 0.5 s idle wait, FOREGROUND_ARRIVES_MS and one look past it
                 uri == "/foreground" && session.method == Method.POST -> serveForeground(session)
                 // LONGEST WAIT /find-text-by-ocr: 8000 ms — the screenshot pacer (3 s) and the recogniser latch (5 s)
                 uri == "/find-text-by-ocr" && session.method == Method.POST ->
@@ -372,7 +382,22 @@ class SmixHttpServer(
             )
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", body)
         }
+        android.util.Log.i(
+            RouteLog.TAG,
+            RouteLog.line(
+                uri,
+                response.status.requestStatus,
+                android.os.SystemClock.elapsedRealtime() - arrived,
+                RouteLog.current.get(),
+            ),
+        )
+        RouteLog.current.remove()
+        return response
     }
+
+    /// A route's clock, kept where the request's log line can read it.
+    private fun routeClock(path: String): RouteClock =
+        RouteClock(RouteLimits.of(path)).also { RouteLog.current.set(it) }
 
     private fun serveHealth(): Response {
         val body = RunnerWire.healthBody(SmixRunner.VERSION)
@@ -689,6 +714,7 @@ class SmixHttpServer(
         // lands late cannot), which is why the key goes in by plain
         // injection here and the answer is read afterwards. The
         // injection result is reported as `injected`, never as `ok`.
+        val clock = routeClock("/back")
         val before = (readScreen() as? Reading.Screen)?.reading
         val injected = injectBackKey()
         val settle = BackSettle(before)
@@ -697,7 +723,9 @@ class SmixHttpServer(
         val verdict = if (!injected) {
             BackSettle.Verdict.NotInjected
         } else {
-            awaitBackVerdict(settle) { looks += 1 }
+            clock.stage("settle") {
+                awaitBackVerdict(settle, clock.budget(BACK_SETTLE_MS)) { looks += 1 }
+            } ?: BackSettle.Verdict.GaveUp
         }
         val took = android.os.SystemClock.elapsedRealtime() - started
         val body = RunnerWire.backBody(
@@ -714,8 +742,8 @@ class SmixHttpServer(
     /// 50ms polls over 2s, the same cadence and budget the iOS runner
     /// settled on for the same question — its notes record that looking
     /// less often (250ms) was measured and was worse.
-    private fun awaitBackVerdict(settle: BackSettle, looked: () -> Unit): BackSettle.Verdict {
-        val deadline = android.os.SystemClock.elapsedRealtime() + BACK_SETTLE_MS
+    private fun awaitBackVerdict(settle: BackSettle, budgetMs: Long, looked: () -> Unit): BackSettle.Verdict {
+        val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
         while (true) {
             Thread.sleep(BACK_POLL_MS)
             looked()
@@ -857,9 +885,10 @@ class SmixHttpServer(
         //
         // The outcome has its own evidence, and it is the same evidence
         // the no-op decision above already uses. Ask it afterwards.
+        val clock = routeClock("/hide-keyboard")
         device.pressBack()
         device.waitForIdle(500)
-        val gone = awaitKeyboardGone(KEYBOARD_GONE_MS)
+        val gone = clock.stage("keyboard-gone") { awaitKeyboardGone(clock.budget(KEYBOARD_GONE_MS)) } == true
         val body = RunnerWire.hideKeyboardBody(gone)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
@@ -988,6 +1017,7 @@ class SmixHttpServer(
                 "expected portrait | landscapeLeft | landscapeRight | portraitUpsideDown, got '$orientation'",
             )
         }
+        val clock = routeClock("/set-orientation")
         device.waitForIdle(800)
         // A rotation is a transition, and one look cannot answer a
         // question about a transition — the settings route in
@@ -995,7 +1025,9 @@ class SmixHttpServer(
         // own calls, and a single read right after it caught the
         // display still at its old value.
         val want = RunnerWire.rotationFor(orientation)
-        val rotation = Poll.until(ROTATION_ARRIVES_MS, 50, { device.displayRotation }, { it == want })
+        val rotation = clock.stage("rotation") {
+            Poll.until(clock.budget(ROTATION_ARRIVES_MS), 50, { device.displayRotation }, { it == want })
+        } ?: -1
         val body = RunnerWire.setOrientationBody(
             RunnerWire.rotationMatches(orientation, rotation),
             orientation,
@@ -1030,7 +1062,8 @@ class SmixHttpServer(
         // details to the caller. Latency cost for present targets is
         // small (first iter hits in <100ms); for genuinely missing
         // targets it adds up to 1500ms (still correct, just slower error).
-        val pollDeadlineMs = System.currentTimeMillis() + 1500
+        val clock = routeClock("/tap-by-id")
+        val pollDeadlineMs = System.currentTimeMillis() + clock.budget(1500)
         var clicked = false
         var path = "none"
         var sawNode = false
@@ -1322,7 +1355,11 @@ class SmixHttpServer(
             masked,
             ChunkedInput.INPUT_CHUNK_POINTS,
             ChunkedInput.INPUT_CHUNK_RETYPES,
-            { req.budgetMs?.let { android.os.SystemClock.elapsedRealtime() - started >= it } ?: false },
+            // A chunk is not begun unless its read-back fits in what is left:
+            // past the budget there is then only the chunk's `input text`
+            // and the one look its poll may begin at the end, which the
+            // host's table allows for.
+            { req.budgetMs?.let { android.os.SystemClock.elapsedRealtime() - started + TEXT_LAND_MS > it } ?: false },
         ) { sent, base, chunk ->
             // No `waitForIdle` here: `awaitChunk` polls until the chunk has
             // landed, and the idle wait spent 0.5–0.9 s of every chunk
@@ -1339,7 +1376,8 @@ class SmixHttpServer(
                 Response.Status.INTERNAL_ERROR,
                 "text_budget_spent",
                 "input-text: the host's budget of ${req.budgetMs}ms for ${text.length} " +
-                    "character(s) ran out before chunk ${result.chunk + 1} of ${result.of}; " +
+                    "character(s) had too little left to type and read back chunk " +
+                    "${result.chunk + 1} of ${result.of} (${TEXT_LAND_MS}ms); " +
                     "$whichField went from ${before.length} to ${result.held.length} " +
                     "character(s). Nothing more was typed, so the field holds what landed.",
             )
@@ -1632,7 +1670,8 @@ class SmixHttpServer(
         // compose_password went from ten characters to none while the
         // caller had named compose_input.
         val focusPx = focusRectPx(RunnerWire.decodeClearText(readBodyString(session)))
-        val focused = awaitEditableFocus(FOCUS_SETTLE_MS, focusPx)
+        val clock = routeClock("/clear-text")
+        val focused = clock.stage("focus") { awaitEditableFocus(clock.budget(FOCUS_SETTLE_MS), focusPx) }
         if (focused != null && focused.isEditable) {
             val args = android.os.Bundle()
             args.putCharSequence(
@@ -1640,27 +1679,41 @@ class SmixHttpServer(
                     .ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
                 "",
             )
-            val ok = focused.performAction(
-                android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT,
-                args,
-            )
+            val ok = clock.stage("set-text") {
+                focused.performAction(
+                    android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT,
+                    args,
+                )
+            } == true
             focused.recycle()
-            if (ok) {
-                device.waitForIdle(500)
-                val held = awaitEmptied(focusPx, TEXT_LAND_MS)
-                val body = RunnerWire.clearTextBody(held == 0, "set-text", 0, held)
-                return newFixedLengthResponse(Response.Status.OK, "application/json", body)
-            }
+            if (ok) return clearTextAnswer(clock, focusPx, "set-text", 0)
         } else {
             focused?.recycle()
         }
-        val deletes = FALLBACK_DELETE_COUNT
-        runShellCommand(RunnerWire.deleteKeysCommand(deletes))
-        device.waitForIdle(500)
-        // Fifty delete keys with nothing checking what they did was the
-        // whole of this path's evidence. The field itself can say.
-        val held = awaitEmptied(focusPx, TEXT_LAND_MS)
-        val body = RunnerWire.clearTextBody(held == 0, "key-events", deletes, held)
+        // Sent in batches, each only while the route's limit lasts: one
+        // shell command of sixty-four keys has no bound on a loaded
+        // emulator, and it was the one stage this route could not stop.
+        var deletes = 0
+        while (deletes < FALLBACK_DELETE_COUNT) {
+            val batch = minOf(DELETE_BATCH, FALLBACK_DELETE_COUNT - deletes)
+            clock.stage("delete-keys") { runShellCommand(RunnerWire.deleteKeysCommand(batch)) } ?: break
+            deletes += batch
+        }
+        return clearTextAnswer(clock, focusPx, "key-events", deletes)
+    }
+
+    /// Settle, read the field back, and answer — or say where the route's
+    /// limit ran out. Fifty-odd delete keys with nothing checking what they
+    /// did was once the whole of the key-event path's evidence; the field
+    /// itself can say.
+    private fun clearTextAnswer(clock: RouteClock, focusPx: IntArray?, method: String, deletes: Int): Response {
+        clock.stage("idle") { device.waitForIdle(minOf(500L, clock.leftMs())) }
+        val held = clock.stage("readback") { awaitEmptied(focusPx, clock.budget(TEXT_LAND_MS)) }
+        val body = if (held == null) {
+            RunnerWire.clearTextSpentBody(false, method, deletes, clock.saw())
+        } else {
+            RunnerWire.clearTextBody(held == 0, method, deletes, held)
+        }
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -1677,11 +1730,14 @@ class SmixHttpServer(
         // pkg/.MainActivity`. This brings the app to foreground without
         // launching a new instance (matches the iOS XCUIDevice activate
         // semantic).
+        val clock = routeClock("/foreground")
         runShellCommand(RunnerWire.foregroundCommand(bundleId, entryPoint(bundleId)))
         device.waitForIdle(500)
         // An activity takes a moment to come forward, so this is a
         // deadline on something that has usually already happened.
-        val current = Poll.until(FOREGROUND_ARRIVES_MS, 50, { device.currentPackageName }, { it == bundleId })
+        val current = clock.stage("arrives") {
+            Poll.until(clock.budget(FOREGROUND_ARRIVES_MS), 50, { device.currentPackageName }, { it == bundleId })
+        }
         val body = RunnerWire.foregroundBody(
             current == bundleId,
             bundleId,
