@@ -55,7 +55,7 @@ EXCLUDED_AREAS = [
         "names the executable that died",
     ),
     (
-        "crates/smix-selector/tests/perf_contract.rs",
+        "crates/smix-selector/tests/it/perf_contract.rs",
         "names directories in this repo",
     ),
     (

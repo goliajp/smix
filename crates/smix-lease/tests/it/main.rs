@@ -1,0 +1,10 @@
+mod a_boot_after_a_departure_is_a_new_lease;
+mod a_claim_grants_one_of_the_two;
+mod a_device_that_left;
+mod a_newer_smix_fields_survive;
+mod boot_row_outlives_the_session;
+mod coexistence;
+mod dropping_one_kind_leaves_the_others;
+mod machine_ledger;
+mod roundtrip;
+mod several_routes_on_one_device;

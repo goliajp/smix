@@ -56,7 +56,7 @@ public struct ExpectationFailure: Error, LocalizedError, Codable, Sendable, Equa
 
 /// Machine-readable failure category. The case names are Swift-idiomatic
 /// but the raw values are Rust `smix_error::FailureCode`'s wire strings
-/// verbatim — `crates/smix-error/tests/sdk_failure_code_parity.rs` reads
+/// verbatim — `crates/smix-error/tests/it/sdk_failure_code_parity.rs` reads
 /// this declaration and fails if the two sets ever diverge.
 public enum FailureCode: String, Sendable, Codable, Equatable, CaseIterable {
     /// Selector matched zero elements in the visible tree.
