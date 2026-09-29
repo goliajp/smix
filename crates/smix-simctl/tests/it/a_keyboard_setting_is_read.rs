@@ -51,6 +51,20 @@ fn only_defaults_own_words_mean_the_key_is_unset() {
     assert!(defaults_key_is_absent(
         "2026-09-25 09:21:33.087 defaults[29110:71275193] \nThe domain/default pair of (com.apple.keyboard.preferences, NoSuchKeyX) does not exist"
     ));
+    // iOS 27, verbatim from `simctl spawn … defaults read|delete` on
+    // 2026-09-29: the same answer in new words.
+    assert!(defaults_key_is_absent(
+        "Error: Could not find key 'NoSuchKeyXyz' in domain 'com.apple.Accessibility'.\n"
+    ));
+    assert!(defaults_key_is_absent(
+        "Error: Could not find key 'NoSuchKeyXyz' in domain 'com.apple.Accessibility'.\nDefaults have not been changed.\n"
+    ));
+    assert!(defaults_key_is_absent(
+        "Error: Domain 'com.example.nosuchdomain' not found.\n"
+    ));
     assert!(!defaults_key_is_absent("Process spawn via launchd failed."));
+    assert!(!defaults_key_is_absent(
+        "Invalid device state: the domain was not found on a device that is not booted"
+    ));
     assert!(!defaults_key_is_absent(""));
 }
