@@ -167,6 +167,12 @@ class BackSettle(private val before: ScreenReading?) {
     fun atDeadline(): Verdict = when {
         before == null -> Verdict.CouldNotSee
         compared == 0 -> Verdict.CouldNotSee
+        // A window whose content was never read cannot be said to have
+        // stayed the same. Measured under load on API 36: the app's
+        // Compose window read as `<unread>` before the key and for the
+        // whole budget, the status bar read unchanged, and a back that had
+        // left the screen was answered `gaveUp`.
+        before.windows.any { it.structure == null } -> Verdict.CouldNotSee
         else -> Verdict.GaveUp
     }
 
