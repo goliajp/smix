@@ -264,8 +264,14 @@ object SemanticsProbe {
     private fun ViewRootForTest.semanticsRoot(): SemanticsNode =
         (this as RootForTest).semanticsOwner.unmergedRootSemanticsNode
 
+    // Shown as well as attached: an activity that has gone behind another
+    // keeps its window attached with nothing on screen. Measured on the
+    // fixture, 2026-09-30: with the watch screen stopped behind the main
+    // one, the probe served the watch screen's tree, and `tapOn` looked for
+    // the main screen's button in it. `windowsWithoutCompose` has always
+    // asked both.
     private fun attached(): List<ViewRootForTest> =
-        synchronized(roots) { roots.toList() }.filter { it.view.isAttachedToWindow }
+        synchronized(roots) { roots.toList() }.filter { it.view.isAttachedToWindow && it.view.isShown }
 }
 
 internal fun SemanticsNode.toProbeNode(): ProbeNode? {
