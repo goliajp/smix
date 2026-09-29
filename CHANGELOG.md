@@ -51,6 +51,23 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
   `/live=<server>/live/<udid>`, a path the capture server does not have;
   it now prints `stream=<server>/streams/<udid>/index.m3u8`, the HLS
   playlist the server serves.
+- **A fill on Android keeps its first characters when the keyboard has
+  only just started.** With Gboard freshly started (API 36, google_apis) the
+  first key events of a fill were lost — `cold1-first` arrived as
+  `old1-first` — and the fill failed as "characters missing from the
+  middle". Two changes: clearing a field that is already empty no longer
+  sets its text, which made the keyboard restart its input session right
+  before typing (the loss went from 2 in 5 to 0 in 5 with that alone); and
+  a chunk whose end landed without its start is repaired by deleting what
+  landed and typing the chunk again, the way a dropped end already was.
+  With the keyboard stopped before every fill, 7 of 8 fills now land whole
+  where 0 of 8 did; the eighth ran out of the time the host allows and
+  says so, with what the field holds.
+- **A runner's error reaches the caller whole.** The host cut every error
+  body at 200 characters, and a runner's explanation puts what happened
+  last: "The field held … and holds …" arrived as "The field he". A body
+  the runner wrote as `{"error", "message"}` is kept whole; anything else
+  is still cut.
 - **`smix tree` on iOS no longer prints the Android note** about Compose
   dialogs and `smix-probe`, which has no meaning there.
 - **`smix sim boot emulator-5554` no longer starts whichever AVD it

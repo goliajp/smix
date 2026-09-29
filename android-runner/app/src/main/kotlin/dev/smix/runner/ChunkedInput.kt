@@ -13,6 +13,10 @@ object ChunkedInput {
     sealed class ChunkOutcome {
         object Landed : ChunkOutcome()
         data class MissingTail(val rest: String) : ChunkOutcome()
+
+        /// The chunk's end is there and its start is not: `landed`
+        /// characters of it arrived, all of them its last ones.
+        data class MissingHead(val landed: Int) : ChunkOutcome()
         object Mismatch : ChunkOutcome()
     }
 
@@ -27,9 +31,9 @@ object ChunkedInput {
 
     /// How a chunked `input text` ended.
     ///
-    /// `send` types `sent` and reads the field afterwards; `base` and
-    /// `chunk` are passed so a caller can wait for the chunk to land
-    /// before reading.
+    /// `send` deletes `erase` characters before the caret, types `sent`,
+    /// and reads the field afterwards; `base` and `chunk` are passed so a
+    /// caller can wait for the chunk to land before reading.
     sealed class ChunkedResult {
         data class Done(val held: String, val chunks: Int, val retyped: Int) : ChunkedResult()
         data class Failed(val held: String, val chunk: Int, val of: Int, val retries: Int) : ChunkedResult()
@@ -56,7 +60,7 @@ object ChunkedInput {
         chunkPoints: Int,
         retypes: Int,
         outOfTime: () -> Boolean,
-        send: (sent: String, base: String, chunk: String) -> Reading,
+        send: (erase: Int, sent: String, base: String, chunk: String) -> Reading,
     ): ChunkedResult {
         val chunks = inputChunks(text, chunkPoints)
         var held = before
@@ -65,13 +69,14 @@ object ChunkedInput {
         for ((index, chunk) in chunks.withIndex()) {
             val base = held
             var sent = chunk
+            var erase = 0
             var tries = 0
             while (true) {
                 // Checked before every `input text`, a retype included: one
                 // already sent cannot be taken back, and an answer after the
                 // host stopped waiting reaches nobody.
                 if (outOfTime()) return ChunkedResult.OutOfTime(seen, index, chunks.size)
-                val now = send(sent, base, chunk)
+                val now = send(erase, sent, base, chunk)
                 if (!now.present) {
                     return ChunkedResult.FieldLeft(seen, index, chunks.size, index == chunks.lastIndex)
                 }
@@ -86,7 +91,16 @@ object ChunkedInput {
                         if (tries == retypes) return ChunkedResult.Failed(now.text, index, chunks.size, tries)
                         tries++
                         retyped++
+                        erase = 0
                         sent = outcome.rest
+                    }
+                    is ChunkOutcome.MissingHead -> {
+                        if (!now.focused) return ChunkedResult.FocusLeft(now.text, index, chunks.size)
+                        if (tries == retypes) return ChunkedResult.Failed(now.text, index, chunks.size, tries)
+                        tries++
+                        retyped++
+                        erase = outcome.landed
+                        sent = chunk
                     }
                     ChunkOutcome.Mismatch -> return ChunkedResult.Failed(now.text, index, chunks.size, tries)
                 }
@@ -120,8 +134,12 @@ object ChunkedInput {
     /// Landed when `after` is `base` with the whole chunk put in once, at
     /// one place (the caret need not be at the end). MissingTail when the
     /// chunk's first characters are there and only its end is not — the
-    /// shape a dropped run of key events leaves, and the only one typing
-    /// again can repair without typing a character twice. Anything else
+    /// shape a dropped run of key events leaves; typing the rest repairs
+    /// it. MissingHead when only its end is there — the shape a keyboard
+    /// still binding to the field leaves (measured 2026-09-29 on API 36
+    /// with Gboard just started: `cold1-first` arrived as `old1-first`);
+    /// the characters that did land sit right before the caret, so
+    /// deleting them and typing the chunk again repairs it. Anything else
     /// is Mismatch. A masked field answers only with its length, so it is
     /// judged by length alone and a shortfall is taken as the tail.
     fun chunkOutcome(base: String, after: String, chunk: String, masked: Boolean): ChunkOutcome {
@@ -143,6 +161,12 @@ object ChunkedInput {
             } else {
                 ChunkOutcome.MissingTail(chunk.substring(grew))
             }
+        }
+        for (at in 0..base.length) {
+            if (!after.regionMatches(0, base, 0, at)) continue
+            if (!after.regionMatches(at + grew, base, at, base.length - at)) continue
+            if (!after.regionMatches(at, chunk, chunk.length - grew, grew)) continue
+            return ChunkOutcome.MissingHead(grew)
         }
         return ChunkOutcome.Mismatch
     }

@@ -56,6 +56,20 @@ class ChunkedInputTest {
     }
 
     @Test
+    fun a_missing_start_is_named_with_how_much_of_the_end_landed() {
+        // Verbatim from API 36 with Gboard just started, 2026-09-29.
+        assertEquals(
+            ChunkedInput.ChunkOutcome.MissingHead(10),
+            ChunkedInput.chunkOutcome(base = "", after = "old1-first", chunk = "cold1-first", masked = false),
+        )
+        // In the middle of what the field held, where the caret was.
+        assertEquals(
+            ChunkedInput.ChunkOutcome.MissingHead(2),
+            ChunkedInput.chunkOutcome(base = "xy", after = "xcdy", chunk = "abcd", masked = false),
+        )
+    }
+
+    @Test
     fun a_gap_in_the_middle_is_not_repaired() {
         assertEquals(
             ChunkedInput.ChunkOutcome.Mismatch,
@@ -97,10 +111,10 @@ class ChunkedInputTest {
 class ChunkedLoopTest {
     private class Field(var held: String, val drops: Map<Int, (String) -> String>) {
         var calls = 0
-        fun type(sent: String): String {
+        fun type(erase: Int, sent: String): String {
             val landed = drops[calls]?.invoke(sent) ?: sent
             calls++
-            held += landed
+            held = held.dropLast(erase) + landed
             return held
         }
     }
@@ -113,8 +127,8 @@ class ChunkedLoopTest {
         callsInTime: Int? = null,
     ) = Field(before, drops).let { f ->
         val outOfTime = { callsInTime != null && f.calls >= callsInTime }
-        f to ChunkedInput.typeInChunks(text, before, masked = false, chunkPoints = 4, retypes = 3, outOfTime) { sent, _, _ ->
-            ChunkedInput.Reading(f.type(sent), present = true, focused = true)
+        f to ChunkedInput.typeInChunks(text, before, masked = false, chunkPoints = 4, retypes = 3, outOfTime) { erase, sent, _, _ ->
+            ChunkedInput.Reading(f.type(erase, sent), present = true, focused = true)
         }
     }
 
@@ -162,13 +176,20 @@ class ChunkedLoopTest {
     }
 
     @Test
-    fun a_dropped_first_character_fails_without_typing_more() {
+    fun a_dropped_start_is_erased_and_the_chunk_typed_again_whole() {
+        // A keyboard still binding to the field loses the first key events:
+        // "efgh" arrives as "fgh". What landed is erased and "efgh" typed again.
         val (f, r) = run("abcdefgh", mapOf(1 to { s: String -> s.drop(1) }))
-        assertEquals(
-            ChunkedInput.ChunkedResult.Failed(held = "abcdfgh", chunk = 1, of = 2, retries = 0),
-            r,
-        )
-        assertEquals(2, f.calls)
+        assertEquals(ChunkedInput.ChunkedResult.Done("abcdefgh", chunks = 2, retyped = 1), r)
+        assertEquals(3, f.calls)
+    }
+
+    @Test
+    fun a_start_that_keeps_dropping_stops_at_the_retype_limit() {
+        val alwaysHeadless = (0..10).associateWith { { s: String -> s.drop(2) } }
+        val (f, r) = run("abcd", alwaysHeadless)
+        assertEquals(ChunkedInput.ChunkedResult.Failed(held = "cd", chunk = 0, of = 1, retries = 3), r)
+        assertEquals(4, f.calls)
     }
 
     @Test
@@ -191,7 +212,7 @@ class ChunkedLoopTest {
     /// test can say nothing more was typed.
     private fun runReading(text: String, reads: List<ChunkedInput.Reading>): Pair<Int, ChunkedInput.ChunkedResult> {
         var calls = 0
-        val r = ChunkedInput.typeInChunks(text, "", masked = false, chunkPoints = 4, retypes = 3, { false }) { _, _, _ ->
+        val r = ChunkedInput.typeInChunks(text, "", masked = false, chunkPoints = 4, retypes = 3, { false }) { _, _, _, _ ->
             reads.getOrElse(calls++) { reads.last() }
         }
         return calls to r
