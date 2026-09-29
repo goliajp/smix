@@ -25,6 +25,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 PASS=0
 FAIL=0
 
@@ -49,6 +51,11 @@ LEDGERED="$("$SMIX" lease list 2>/dev/null | awk '{print $1}' | tr -d ':' || tru
 has_ledger() { printf '%s\n' "$LEDGERED" | grep -qx "$1"; }
 
 step "2. pick two devices, neither of them anybody's"
+# The one this script boots and shuts down is one of the suite's own
+# simulators. Any shut-down simulator without a ledger used to qualify, and
+# on a shared machine that booted another project's device — its not
+# having a ledger says nobody is holding it now, not that it is ours.
+OWN_IDLE=" $E2E_IOS_SECOND $E2E_IOS_THIRD "
 DEVICES="$(xcrun simctl list devices -j)"
 # BUSY first: booted, no ledger. IDLE second: not booted, no ledger.
 # In that order, so the two can never be the same device.
@@ -57,7 +64,7 @@ IDLE=""
 while read -r udid state; do
     has_ledger "$udid" && continue
     if [ "$state" = "Booted" ] && [ -z "$BUSY" ]; then BUSY="$udid"; fi
-    if [ "$state" = "Shutdown" ] && [ -z "$IDLE" ]; then IDLE="$udid"; fi
+    if [ "$state" = "Shutdown" ] && [ -z "$IDLE" ] && [[ "$OWN_IDLE" == *" $udid "* ]]; then IDLE="$udid"; fi
 done <<EOF
 $(printf '%s' "$DEVICES" | python3 -c '
 import json, sys
@@ -69,7 +76,7 @@ for runtime, devs in json.load(sys.stdin)["devices"].items():
 EOF
 
 if [ -z "$IDLE" ]; then
-    echo "no unbooted simulator without a ledger — cannot run"
+    echo "none of the suite's own simulators ($E2E_IOS_SECOND, $E2E_IOS_THIRD) is shut down without a ledger — cannot run"
     exit 2
 fi
 echo "  IDLE (this script will boot and shut down): $IDLE"
@@ -198,16 +205,29 @@ if [ -z "$ABANDONED" ]; then
     ok "nothing on this machine is called abandoned"
 else
     LIVE=""
+    CHECKED=0
+    UNASKED=""
     while read -r line; do
         [ -n "$line" ] || continue
         id="${line%%:*}"
-        pid="$("$SMIX" lease status "$id" 2>/dev/null | sed -n 's/.*pid \([0-9][0-9]*\).*/\1/p' | head -1)"
-        [ -n "$pid" ] || continue
+        # `lease status` refuses a device nothing here has registered — a
+        # ledger can outlive the device it was about. Under `set -e` that
+        # refusal ended the script mid-section; it is a device this cannot
+        # ask about, and is said as one.
+        pid="$("$SMIX" lease status "$id" 2>/dev/null | sed -n 's/.*pid \([0-9][0-9]*\).*/\1/p' | head -1)" || pid=""
+        if [ -z "$pid" ]; then UNASKED="$UNASKED $id"; continue; fi
+        CHECKED=$((CHECKED + 1))
         state="$(ps -p "$pid" -o state= 2>/dev/null || true)"
         case "$state" in "") ;; Z*) ;; *) LIVE="$LIVE $id" ;; esac
     done <<< "$ABANDONED"
-    [ -z "$LIVE" ] && ok "everything called abandoned has a dead holder" \
-                   || bad "called abandoned while its holder is alive:$LIVE"
+    [ -z "$UNASKED" ] || echo "  could not ask about:$UNASKED"
+    if [ -n "$LIVE" ]; then
+        bad "called abandoned while its holder is alive:$LIVE"
+    elif [ "$CHECKED" = 0 ]; then
+        ok "nothing called abandoned could be asked about, so this checked none of them"
+    else
+        ok "all $CHECKED asked about have a dead holder"
+    fi
 fi
 
 echo
