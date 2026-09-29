@@ -23,6 +23,7 @@ macro_rules! println {
 mod act;
 mod authoring;
 mod bench;
+mod boot_avd;
 mod boot_cold;
 mod boot_record;
 mod capsule;
@@ -3158,16 +3159,17 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             EmulatorState::WasOff
                         });
                         if !already {
-                            let avd = lookup_registered(&device)
-                                .and_then(|s| s.avd_name().map(str::to_string))
-                                .ok_or_else(|| {
-                                    CliError::Other(format!(
-                                        "{udid} has no AVD name on record, so there is \
-                                         nothing to start. Register it once while it is \
-                                         running — `smix sim register <alias> --udid \
-                                         {udid} --kind emulator` — and the name is kept."
-                                    ))
-                                })?;
+                            let book = load_registry().registry;
+                            let at_port: Vec<(&str, &str)> = book
+                                .all()
+                                .filter(|(_, s)| s.udid.eq_ignore_ascii_case(&udid))
+                                .filter_map(|(alias, s)| s.avd_name().map(|avd| (alias, avd)))
+                                .collect();
+                            let named = booting_emulator
+                                .then(|| registered.as_ref().map(|s| s.avd_name()))
+                                .flatten();
+                            let avd = boot_avd::avd_to_start(&device, &udid, named, &at_port)
+                                .map_err(CliError::Other)?;
                             let adb = smix_adb::AdbClient::new();
                             let console = emulator_console_path(&avd)?;
                             let from = if cold {
