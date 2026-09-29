@@ -1383,10 +1383,11 @@ class SmixHttpServer(
             // and the one look its poll may begin at the end, which the
             // host's table allows for.
             { req.budgetMs?.let { android.os.SystemClock.elapsedRealtime() - started + TEXT_LAND_MS > it } ?: false },
-        ) { sent, base, chunk ->
+        ) { erase, sent, base, chunk ->
             // No `waitForIdle` here: `awaitChunk` polls until the chunk has
             // landed, and the idle wait spent 0.5–0.9 s of every chunk
             // (measured, 2026-09-27) before a read that did not need it.
+            if (erase > 0) runShellCommand(RunnerWire.deleteKeysCommand(erase))
             runShellCommand(RunnerWire.inputTextCommand(sent))
             awaitChunk(focused, base, chunk, masked, TEXT_LAND_MS)
         }
@@ -1695,6 +1696,19 @@ class SmixHttpServer(
         val focusPx = focusRectPx(RunnerWire.decodeClearText(readBodyString(session)))
         val clock = routeClock("/clear-text")
         val focused = clock.stage("focus") { awaitEditableFocus(clock.budget(FOCUS_SETTLE_MS), focusPx) }
+        if (focused != null && focused.isEditable &&
+            FieldText.held(focused.text, focused.isShowingHintText).isEmpty()
+        ) {
+            // Nothing to clear, and clearing anyway costs the text that
+            // follows: setting a field's text makes the keyboard restart
+            // its input session, and while a keyboard that has just started
+            // (Gboard on API 36, measured 2026-09-29) does that, the first
+            // key events typed after it are lost — `cold1-first` arrived as
+            // `old1-first` in 2 of 5 fills that cleared first, 0 of 5 that
+            // did not.
+            focused.recycle()
+            return clearTextAnswer(clock, focusPx, "already-empty", 0)
+        }
         if (focused != null && focused.isEditable) {
             val args = android.os.Bundle()
             args.putCharSequence(
