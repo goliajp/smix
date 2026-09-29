@@ -20,6 +20,39 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
 
 ### Fixed
 
+- **The capsule guard asks Device Hub the right question on Xcode 27.**
+  Device Hub shows only the simulator selected in it, and shows that one
+  again the moment it boots — so booting the simulator Device Hub is
+  showing puts it on screen. The guard used to count Device Hub's windows
+  through System Events, which always answered zero: `DeviceHub.app`
+  starts through a trampoline that exits, and System Events holds its dead
+  pid. It now finds Device Hub by its real pid, reads its on-screen windows
+  (no permission needed), and with the Accessibility permission reads
+  which simulator it shows. Showing this one, or unable to tell, makes the
+  capsule soft and says why; `--require-hard` refuses instead. Another
+  simulator shown in Device Hub leaves the capsule hard.
+- **Settings that are not set read as not set on iOS 27.** `defaults` in
+  the iOS 27 runtime (and macOS 27) words a missing key as `Could not find
+  key 'K' in domain 'D'.` and a missing domain as `Domain 'D' not found.`;
+  smix recognised only the older `does not exist`, so reading Reduce Motion,
+  keyboard minimisation or the locale, and deleting a user default, failed
+  where the answer was "not set". Both wordings are recognised.
+- **`smix-mcp` keeps stray output off the JSON-RPC channel.** `smix_release`
+  runs `runner down`, which printed `runner down: port N closed` on stdout —
+  the MCP channel. The client could not parse it and the server then died
+  on a broken pipe. The server now gives the channel a descriptor of its
+  own and sends descriptor 1 to stderr, so no library print can reach it.
+- **A launch through devicectl reads the pid from its JSON.** Xcode 27's
+  `devicectl device process launch` prints no `pid:` (measured against a
+  simulator), so smix reported 0; it now asks for `--json-output` and reads
+  `result.process.processIdentifier`, and still reads the prose an older
+  devicectl prints.
+- **`capsule up` prints a stream address that exists.** It printed
+  `/live=<server>/live/<udid>`, a path the capture server does not have;
+  it now prints `stream=<server>/streams/<udid>/index.m3u8`, the HLS
+  playlist the server serves.
+- **`smix tree` on iOS no longer prints the Android note** about Compose
+  dialogs and `smix-probe`, which has no meaning there.
 - **`smix sim boot emulator-5554` no longer starts whichever AVD it
   reaches first.** An emulator serial names a console port, and every AVD
   that has run on that port was registered at the same serial. With the

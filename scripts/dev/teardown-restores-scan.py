@@ -92,6 +92,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v2.3-c6-lease-reconcile-e2e.sh",
     "v2.3-c7-admission-e2e.sh",
     "v2.3-c8-recording-reconcile-e2e.sh",
+    "v2.13-c4-mcp-session-e2e.sh",
     "v2.3-c9-ledger-teardown-e2e.sh",
     "v3.1-c2-machine-lease-e2e.sh",
     "v11.0-c9k-an-emulator-quits-cleanly-e2e.sh",
