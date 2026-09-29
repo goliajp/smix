@@ -103,7 +103,9 @@ prc=0
 SMIX_RUNNER_PORT="$PORT" "$SMIX" run "$WORK/premise.yaml" --device "$UDID" --platform ios \
   --runner-port "$PORT" >"$WORK/premise.log" 2>&1 || prc=$?
 if [ "$prc" = 0 ]; then
-  runtime="iOS $(xcrun simctl spawn "$UDID" sw_vers -productVersion 2>/dev/null || echo unknown)"
+  # From the running simulator's own environment: iOS 27's runtime root
+  # has no `sw_vers`.
+  runtime="iOS $(xcrun simctl getenv "$UDID" SIMULATOR_RUNTIME_VERSION 2>/dev/null || echo unknown)"
   cannot_judge "with $KEY = 1 a focused field on $UDID ($runtime) still shows the software keyboard, so there is no minimized keyboard here to be named"
 elif ! grep -q 'TIMEOUT' "$WORK/premise.log" || ! grep -q 'extendedWaitUntil' "$WORK/premise.log"; then
   cannot_judge "the premise flow failed (exit $prc) for a reason other than the keyboard wait running out: $(tail -3 "$WORK/premise.log" | tr '\n' ' ')"

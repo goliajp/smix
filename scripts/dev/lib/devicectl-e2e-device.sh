@@ -11,13 +11,17 @@
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/e2e-devices.sh"
 
 # phone_tunnel_state <UDID> → connected | disconnected | … | absent
+# Read from `properties`: JSON version 5 marks `hardwareProperties` and
+# `connectionProperties` deprecated, and `properties.connection.state`
+# carries the same value their `tunnelState` did.
 phone_tunnel_state() {
   xcrun devicectl list devices --json-output - 2>/dev/null | python3 -c '
 import json, sys
 u = sys.argv[1]
 for d in json.load(sys.stdin)["result"]["devices"]:
-    if d.get("hardwareProperties", {}).get("udid") == u:
-        print(d.get("connectionProperties", {}).get("tunnelState", "unknown")); break
+    p = d.get("properties", {})
+    if p.get("hardware", {}).get("udid") == u:
+        print(p.get("connection", {}).get("state", "unknown")); break
 else:
     print("absent")' "$1"
 }

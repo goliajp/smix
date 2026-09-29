@@ -57,6 +57,7 @@ log "device: $UDID"
 e2e_yield_if_held "$UDID"
 
 WORK="$(mktemp -d)"
+WE_BOOTED=0
 cleanup() {
   step "teardown"
   # Keep the transcript: judging happens on it, and a failure that takes
@@ -64,6 +65,9 @@ cleanup() {
   cp "$WORK/out.jsonl" /tmp/c4-out.jsonl 2>/dev/null || true
   cp "$WORK/err.log" /tmp/c4-err.log 2>/dev/null || true
   ( cd "$WORK" && SMIX_RUNNER_PORT="$PORT" "$SMIX" runner down >/dev/null 2>&1 ) || true
+  # Put the simulator back the way it was found: off, when this script
+  # turned it on.
+  [ "$WE_BOOTED" = 1 ] && "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -71,7 +75,10 @@ trap cleanup EXIT
 step "build the fixture app and install it"
 bash "$ROOT/scripts/dev/build-fixture-app.sh" >"$WORK/fixture.log" 2>&1 \
   || { tail -5 "$WORK/fixture.log" >&2; fail "fixture build failed"; }
-xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+if [ "$(simulator_state "$UDID")" != Booted ]; then
+  "$SMIX" sim boot "$UDID" >"$WORK/boot.log" 2>&1 || fail "sim boot failed: $(tail -3 "$WORK/boot.log")"
+  WE_BOOTED=1
+fi
 xcrun simctl install "$UDID" "$APP" >"$WORK/install.log" 2>&1 \
   || { cat "$WORK/install.log" >&2; fail "install failed"; }
 
