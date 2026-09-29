@@ -78,6 +78,7 @@ python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
 
 FAILED=0
 UNJUDGED=""
+TAP_LATENCY=0
 DENSITY=""
 source "$ROOT/scripts/lib/flash-verdict.sh"
 AND_FLASH_MS="$(fixture_flash_ms kotlin "$ROOT/test-fixtures/android-app/app/src/main/kotlin/dev/smix/fixture/WatchActivity.kt")" \
@@ -152,6 +153,13 @@ for n in walk(t):
   if [ "$RC" = 0 ] && [ "$presses" = "presses 1" ]; then
     log "  $1 $6: pressed, as it should — app says '$presses', '$latency' ms after it appeared"
     DENSITY="$DENSITY $1 $6: $latency;"
+    if [ "$6" = tap ]; then TAP_LATENCY="${latency#latency }"; fi
+  elif [ "$6" = wait-then-tap ] && [ "${TAP_LATENCY:-0}" -ge 2000 ] 2>/dev/null; then
+    # A bare tap already took two thirds of the button's three seconds, so
+    # a wait before it cannot fit whatever smix does: missing here says
+    # the device was slow, not that waiting first is.
+    log "  $1 $6: CANNOT JUDGE — a bare tap took ${TAP_LATENCY} ms of the button's 3000, so a wait before it cannot fit (app says '${presses:-nothing}')"
+    UNJUDGED="$UNJUDGED $1-wait-then-tap"
   else
     printf '[c8-between] FAIL: %s %s: expected the app to count one press, it says %s (flow exited %s) — %s\n' \
       "$1" "$6" "'${presses:-nothing}'" "$RC" "$(printf '%s' "$OUT" | tail -3 | tr '\n' ' ')" >&2
@@ -260,7 +268,7 @@ case "${SMIX_C8_PLATFORMS:-both}" in
   android)
     log "measured:$DENSITY"
     [ "$FAILED" = 0 ] || exit 1
-    [ -z "$UNJUDGED" ] || cannot_judge "every leg that could be judged passed; not judged:$UNJUDGED — the watch left a gap as long as the flash"
+    [ -z "$UNJUDGED" ] || cannot_judge "every leg that could be judged passed; not judged:$UNJUDGED (each says why above)"
     log "C8-BETWEEN-E2E-PASS (Android only, as SMIX_C8_PLATFORMS asked)"
     exit 0 ;;
   *) fail "SMIX_C8_PLATFORMS is '${SMIX_C8_PLATFORMS}' — it takes 'both' or 'android'"; exit 1 ;;
@@ -294,5 +302,5 @@ judge_vanish ios "$UDID" "$IOS_PORT" watch-presses watch-latency wait-then-tap
 
 log "measured:$DENSITY"
 [ "$FAILED" = 0 ] || exit 1
-[ -z "$UNJUDGED" ] || cannot_judge "every leg that could be judged passed; not judged:$UNJUDGED — the watch left a gap as long as the flash"
+[ -z "$UNJUDGED" ] || cannot_judge "every leg that could be judged passed; not judged:$UNJUDGED (each says why above)"
 log "C8-BETWEEN-E2E-PASS (an overlay that flashed between two steps failed, naming when and which step; a quiet span passed, saying how often it looked; a control that leaves on its own was pressed — on both platforms)"

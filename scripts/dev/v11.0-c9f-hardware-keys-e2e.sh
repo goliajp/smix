@@ -94,10 +94,22 @@ restore_android() {
   [ -n "$SERIAL" ] || return 0
   adb -s "$SERIAL" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
   adb -s "$SERIAL" shell wm dismiss-keyguard >/dev/null 2>&1 || true
-  local i=0 st
+  local i=0 st n
   for st in $STREAMS; do
     if [ -n "${VOL_BEFORE[$i]:-}" ]; then
-      adb -s "$SERIAL" shell cmd media_session volume --stream "$st" --set "${VOL_BEFORE[$i]}" >/dev/null 2>&1 || true
+      # Set, then read back until it holds. On API 36 `cmd media_session
+      # volume --set` answers "will set volume to index=5" and leaves the
+      # stream where it was (measured 2026-09-29); AudioManager's own
+      # setter through `cmd audio set-volume` does move it. The older
+      # spelling stays as the second try for images without the first.
+      for n in $(seq 1 10); do
+        adb -s "$SERIAL" shell cmd audio set-volume "$st" "${VOL_BEFORE[$i]}" >/dev/null 2>&1 || true
+        sleep 0.5
+        [ "$(volume_of "$st")" = "${VOL_BEFORE[$i]}" ] && break
+        adb -s "$SERIAL" shell cmd media_session volume --stream "$st" --set "${VOL_BEFORE[$i]}" >/dev/null 2>&1 || true
+        sleep 0.5
+        [ "$(volume_of "$st")" = "${VOL_BEFORE[$i]}" ] && break
+      done
     fi
     i=$((i + 1))
   done
