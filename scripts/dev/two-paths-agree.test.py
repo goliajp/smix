@@ -78,6 +78,26 @@ def main():
     rc, out = run(base_a, base_s, "--min-both", "16", tmp=tmp)
     check("base screen should reconcile", rc == 0, out.strip()[:160])
 
+    # 1b. API 36 draws apps edge to edge: the app's Compose root covers the
+    #     status bar, and the status bar's ids sit inside it by geometry
+    #     while belonging to another window. They are not the subject.
+    edge = copy.deepcopy(base_a)
+    root = edge.get("root", edge)
+    l, t, r, b = base_s[0]["bounds"]
+    root["children"].append({
+        "rawType": "android.widget.FrameLayout", "elementTypeRaw": 0,
+        "enabled": True, "hasFocus": False, "selected": False, "visible": True,
+        "bounds": {"x": l, "y": t, "w": r - l, "h": 60},
+        "children": [{
+            "identifier": "status_bar", "rawType": "android.widget.FrameLayout",
+            "elementTypeRaw": 0, "enabled": True, "hasFocus": False,
+            "selected": False, "visible": True,
+            "bounds": {"x": l + 10, "y": t + 10, "w": 200, "h": 40},
+        }],
+    })
+    rc, out = run(edge, base_s, "--min-both", "16", tmp=tmp)
+    check("a status bar in its own window over the app's root should not count", rc == 0, out.strip()[:200])
+
     # 2. Take a tag away from the probe's side. The gate has to notice a
     #    node the accessibility path can see and the probe cannot — that
     #    direction is the probe being wrong, and it is the one that would
