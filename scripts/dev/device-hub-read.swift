@@ -50,11 +50,26 @@ func walk(_ el: AXUIElement, depth: Int, into rows: inout [(String, Bool)]) {
     for c in children(el) { walk(c, depth: depth + 1, into: &rows) }
 }
 
-guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dt.Devices").first else {
+// The pid from `pgrep`, not from LaunchServices: DeviceHub.app's executable
+// is `DevicesTrampoline`, which starts the real `DeviceHub` and exits, so
+// NSRunningApplication and System Events hold a pid that is gone (-1 / 0).
+func deviceHubPid() -> pid_t? {
+    let pgrep = Process()
+    pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+    pgrep.arguments = ["-x", "DeviceHub"]
+    let out = Pipe()
+    pgrep.standardOutput = out
+    guard (try? pgrep.run()) != nil else { return nil }
+    pgrep.waitUntilExit()
+    let text = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    return text.split(separator: "\n").first.flatMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
+}
+
+guard let pid = deviceHubPid() else {
     FileHandle.standardError.write("device-hub-read: Device Hub is not running\n".data(using: .utf8)!)
     exit(2)
 }
-let axApp = AXUIElementCreateApplication(app.processIdentifier)
+let axApp = AXUIElementCreateApplication(pid)
 guard let windows = attr(axApp, kAXWindowsAttribute) as? [AXUIElement], let window = windows.first else {
     FileHandle.standardError.write("device-hub-read: Device Hub has no window, or its windows could not be read\n".data(using: .utf8)!)
     exit(2)

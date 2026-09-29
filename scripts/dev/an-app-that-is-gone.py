@@ -34,6 +34,8 @@ ROOT = os.path.abspath(
 
 SCANNED = ["docs", "plugin", "README.md", os.path.join("crates", "smix-cli", "src")]
 GUARD = os.path.join("crates", "smix-cli", "src", "capsule.rs")
+# The guard reads Device Hub through its own module; both files are the guard.
+GUARD_FILES = [GUARD, os.path.join("crates", "smix-cli", "src", "device_hub.rs")]
 
 MENTION = re.compile(r"Simulator\.app")
 QUALIFIED = re.compile(r"Xcode\s*(<=|≤)?\s*2[67]\b|\bon 26\b")
@@ -81,12 +83,17 @@ def main() -> int:
             "read the wrong tree; passing on an empty set is not passing"
         )
 
-    with open(os.path.join(ROOT, GUARD), encoding="utf-8") as fh:
-        if "DeviceHub" not in fh.read():
-            problems.append(
-                f"{GUARD} never mentions DeviceHub — the guard knows one generation "
-                f"of the simulator UI and not the one that replaced it"
-            )
+    guard_text = ""
+    for rel in GUARD_FILES:
+        path = os.path.join(ROOT, rel)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                guard_text += fh.read()
+    if "DeviceHub" not in guard_text:
+        problems.append(
+            f"{' / '.join(GUARD_FILES)} never mention DeviceHub — the guard knows one "
+            f"generation of the simulator UI and not the one that replaced it"
+        )
 
     if problems:
         print("an-app-that-is-gone: FAIL")

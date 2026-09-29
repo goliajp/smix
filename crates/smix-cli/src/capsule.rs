@@ -7,14 +7,12 @@
 //!   Soft capsule — used when a simulator window IS on screen. Falls
 //!     back to the EventRecorder + SDK ledger reconciliation path.
 //!
-//! What counts as a window on screen is decided by [`window_on_screen`]
-//! from two probes. Simulator.app (Xcode <= 26) pops a window for every
-//! boot, so its running is the condition. Device Hub, the simulator UI on
-//! Xcode 27, does not: measured 2026-09-19, a boot under an
-//! open Device Hub window moves neither its selection nor its title
-//! (its sidebar lists every simulator, booted or not, and a boot changes
-//! nothing on it), so it is probed and reported but never counts. On Xcode 27 a boot touches nothing on
-//! screen and the guard has nothing to refuse.
+//! Whether a boot would be on screen is decided by [`on_screen_reason`].
+//! Simulator.app (Xcode <= 26) pops a window for every boot, so its running
+//! is the condition. Device Hub, the simulator UI on Xcode 27, shows only
+//! the simulator selected in it — but that one it shows again the moment
+//! it boots, so the question there is whether it is showing this UDID
+//! (see [`crate::device_hub`]).
 
 use std::path::{Path, PathBuf};
 
@@ -37,7 +35,7 @@ pub struct CapsuleState {
     /// back down.
     pub capture_endpoint: String,
     /// Was a simulator window on screen at `capsule up` time (see
-    /// [`window_on_screen`])? True implies mode = Soft, false implies
+    /// [`on_screen_reason`])? True implies mode = Soft, false implies
     /// mode = Hard. Retained on `down` for audit; not re-read.
     ///
     /// The alias is the field's name before 10.1: `down` reads the
@@ -59,13 +57,12 @@ pub struct CapsuleGuardRejected {
     pub hint: String,
 }
 
-pub const GUARD_HINT: &str = "a simulator window is on screen (Simulator.app on Xcode <= 26; \
-     on Xcode 27 the simulator UI is Device Hub, which does not react to a boot \
-     and never trips this guard) — simctl boot would pop a window, which \
-     violates the hard-capsule precondition.\n\
-     Close that window and retry, or pass `--soft` to explicitly accept the \
-     soft-capsule fallback (window visible, event-ledger reconciliation only; \
-     no headless entry point).";
+pub const GUARD_HINT: &str = "a hard capsule promises a boot that stays off screen, \
+     and this one cannot be promised.\n\
+     Quit Simulator.app (Xcode <= 26), or on Xcode 27 select another device in \
+     Device Hub or close its window, and retry; or pass `--soft` to explicitly \
+     accept the soft-capsule fallback (window visible, event-ledger reconciliation \
+     only; no headless entry point).";
 
 /// Where the capture endpoint comes from, said in full.
 ///
@@ -96,56 +93,32 @@ pub fn simulator_app_running() -> bool {
         .unwrap_or(false)
 }
 
-/// What the Device Hub probe found. Kept as a value, not a bool, so the
-/// state of the other generation's UI is on record even though it does
-/// not enter the decision (see [`window_on_screen`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeviceHubProbe {
-    NotRunning,
-    Running {
-        /// `None` when the process is there but its window count could
-        /// not be read (no Accessibility permission, System Events not
-        /// answering). Not zero: an unread window is not an absent one.
-        windows: Option<u32>,
-    },
-}
-
-/// Guard probe for Xcode 27's Device Hub: `pgrep -x DeviceHub`, then
-/// System Events for its window count.
-pub fn probe_device_hub() -> DeviceHubProbe {
-    let running = std::process::Command::new("pgrep")
-        .args(["-x", "DeviceHub"])
-        .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false);
-    if !running {
-        return DeviceHubProbe::NotRunning;
-    }
-    let windows = std::process::Command::new("osascript")
-        .args([
-            "-e",
-            "tell application \"System Events\" to tell process \"DeviceHub\" to count windows",
-        ])
-        .output()
-        .ok()
-        .filter(|out| out.status.success())
-        .and_then(|out| String::from_utf8_lossy(&out.stdout).trim().parse().ok());
-    DeviceHubProbe::Running { windows }
-}
-
-/// Is there a simulator window on screen that a `simctl boot` would
-/// touch?
+/// Why a boot of this simulator would be on screen, or `None` when it
+/// would not.
 ///
-/// Simulator.app (Xcode <= 26) pops a window per boot, so its running is the
-/// whole answer. Device Hub does not move for a boot — measured on
-/// 2026-09-19 with `scripts/dev/device-hub-shows-a-boot.sh`, not assumed
-/// — so its probe never makes this true, whatever it found. It is still a
-/// parameter so that the decision is one table in one place: a
-/// different measurement on a later Xcode changes this function and
-/// nothing at the call site.
-pub fn window_on_screen(simulator_app_running: bool, device_hub: DeviceHubProbe) -> bool {
-    let _ = device_hub;
-    simulator_app_running
+/// "Cannot tell" is a reason too: a window that could not be read is not
+/// an absent one, and a hard capsule is a promise about the screen.
+pub fn on_screen_reason(
+    simulator_app_running: bool,
+    hub: &crate::device_hub::HubShows,
+) -> Option<String> {
+    use crate::device_hub::HubShows;
+    if simulator_app_running {
+        return Some(
+            "Simulator.app is running (Xcode <= 26), and it opens a window for every boot"
+                .to_string(),
+        );
+    }
+    match hub {
+        HubShows::This => Some(
+            "Device Hub is showing this simulator, and it shows it again as soon as it boots"
+                .to_string(),
+        ),
+        HubShows::CannotTell(why) => Some(format!(
+            "{why}; whether this simulator would be on screen cannot be told"
+        )),
+        HubShows::NotRunning | HubShows::NoWindowOnScreen | HubShows::Other => None,
+    }
 }
 
 /// Decide capsule mode, and say so when it is not the one asked for.
@@ -166,24 +139,23 @@ pub fn window_on_screen(simulator_app_running: bool, device_hub: DeviceHubProbe)
 /// function, which is what lets the table below test the decision
 /// instead of the plumbing.
 pub fn decide_mode(
-    window_on_screen: bool,
+    on_screen: Option<&str>,
     soft: bool,
     require_hard: bool,
 ) -> Result<(CapsuleMode, Option<String>), CapsuleGuardRejected> {
-    match (window_on_screen, soft, require_hard) {
-        (false, _, _) => Ok((CapsuleMode::Hard, None)),
-        (true, _, true) => Err(CapsuleGuardRejected {
-            hint: GUARD_HINT.to_string(),
+    match (on_screen, soft, require_hard) {
+        (None, _, _) => Ok((CapsuleMode::Hard, None)),
+        (Some(why), _, true) => Err(CapsuleGuardRejected {
+            hint: format!("{why} — {GUARD_HINT}"),
         }),
-        (true, true, false) => Ok((CapsuleMode::Soft, None)),
-        (true, false, false) => Ok((
+        (Some(_), true, false) => Ok((CapsuleMode::Soft, None)),
+        (Some(why), false, false) => Ok((
             CapsuleMode::Soft,
-            Some(
-                "a simulator window (Simulator.app, Xcode <= 26) is on screen, so this \
-                 is a soft capsule: the window is visible and reconciliation is \
-                 event-ledger only. Pass `--require-hard` to make this a failure instead."
-                    .to_string(),
-            ),
+            Some(format!(
+                "{why}, so this is a soft capsule: the window is visible and \
+                 reconciliation is event-ledger only. Pass `--require-hard` to make \
+                 this a failure instead."
+            )),
         )),
     }
 }
@@ -253,7 +225,7 @@ pub fn capsule_supports(
     ))
 }
 
-/// End-to-end `capsule up`: guard + boot + capture start + /live URL +
+/// End-to-end `capsule up`: guard + boot + capture start + stream URL +
 /// runner up (record mode) + state.json write. Each step fails fast to
 /// stderr and skips the rest; state.json is written only on full success
 /// (atomic write+rename) so a partial failure leaves no residue.
@@ -263,9 +235,18 @@ pub fn capsule_supports(
 /// error under tokio 1.x. The surface is async and `main` awaits it
 /// directly rather than spinning up a new runtime in the cement layer.
 pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
-    let on_screen = window_on_screen(simulator_app_running(), probe_device_hub());
+    let simctl = smix_simctl::SimctlClient::new();
+    let devices = simctl.list_devices().await.unwrap_or_default();
+    let name = devices
+        .iter()
+        .find(|d| d.udid.eq_ignore_ascii_case(opts.udid))
+        .map_or("", |d| d.name.as_str());
+    let name_is_unique = !name.is_empty() && devices.iter().filter(|d| d.name == name).count() == 1;
+    let hub = crate::device_hub::probe(opts.udid, name, name_is_unique);
+    let reason = on_screen_reason(simulator_app_running(), &hub);
+    let on_screen = reason.is_some();
     let (mode, warning) =
-        decide_mode(on_screen, opts.soft, opts.require_hard).map_err(|e| e.hint)?;
+        decide_mode(reason.as_deref(), opts.soft, opts.require_hard).map_err(|e| e.hint)?;
     if let Some(w) = warning {
         eprintln!("capsule up: {w}");
     }
@@ -273,7 +254,6 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
     // 2. Boot sim. `boot_and_wait` returns once the sim is fully ready,
     // and answers the same whether it was already running — which is why
     // who turned it on is read before it.
-    let simctl = smix_simctl::SimctlClient::new();
     let claim = crate::boot_record::claim_before_boot(&simctl, opts.udid).await;
     simctl
         .boot_and_wait(opts.udid, std::time::Duration::from_secs(120))
@@ -295,7 +275,9 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
         })?;
     }
 
-    // 4. print /live URL (or skip-capture banner).
+    // 4. Print where the live stream is (or the skip-capture banner).
+    // smix-server serves the HLS playlist under /streams; `/live` is a page
+    // of the dashboard, not a path this server has.
     if opts.no_capture {
         println!(
             "capsule up: mode={mode:?} device={} no-capture (simctl io recordVideo lock free for in-scenario use)",
@@ -303,7 +285,7 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
         );
     } else {
         println!(
-            "capsule up: mode={mode:?} device={} /live={}/live/{}",
+            "capsule up: mode={mode:?} device={} stream={}/streams/{}/index.m3u8",
             opts.udid, opts.capture_endpoint, opts.udid
         );
     }
@@ -540,22 +522,25 @@ mod tests {
     #[test]
     fn mode_default_hard_when_simulator_absent() {
         assert_eq!(
-            decide_mode(false, false, false).unwrap().0,
+            decide_mode(None, false, false).unwrap().0,
             CapsuleMode::Hard
         );
-        assert_eq!(
-            decide_mode(false, true, false).unwrap().0,
-            CapsuleMode::Hard
-        );
+        assert_eq!(decide_mode(None, true, false).unwrap().0, CapsuleMode::Hard);
     }
 
     #[test]
     fn mode_requires_soft_flag_when_simulator_present() {
-        let err = decide_mode(true, false, true).unwrap_err();
-        // Both generations by name: Simulator.app pops a window on Xcode <= 26,
-        // and a reader on Xcode 27 has only Device Hub.
+        let err =
+            decide_mode(Some("Device Hub is showing this simulator"), false, true).unwrap_err();
+        // The reason leads, and both generations are named in the way out:
+        // Simulator.app on Xcode <= 26, Device Hub on Xcode 27.
         assert!(
-            err.hint.contains("Simulator.app on Xcode <= 26") && err.hint.contains("Device Hub"),
+            err.hint.starts_with("Device Hub is showing this simulator"),
+            "{:?}",
+            err.hint
+        );
+        assert!(
+            err.hint.contains("Simulator.app (Xcode <= 26)") && err.hint.contains("Device Hub"),
             "guard hint should name both generations of the simulator UI, got {:?}",
             err.hint
         );
@@ -573,40 +558,46 @@ mod tests {
         );
     }
 
-    // Row B of the decision table, measured 2026-09-19 with
-    // scripts/dev/device-hub-shows-a-boot.sh: a Device Hub window does
-    // not move to a simulator that boots under it, so
-    // Device Hub running — with or without a window — puts nothing on
-    // screen that a boot would touch. Only Simulator.app (Xcode <= 26) does.
+    // Device Hub shows only the simulator selected in it, and shows that
+    // one again when it boots (measured 2026-09-29): running, or having a
+    // window, is not a reason; showing this UDID is, and so is not being
+    // able to read which one it shows.
     #[test]
-    fn device_hub_never_counts_as_a_window_on_screen() {
-        assert!(!window_on_screen(false, DeviceHubProbe::NotRunning));
-        assert!(!window_on_screen(
-            false,
-            DeviceHubProbe::Running { windows: Some(1) }
-        ));
-        assert!(!window_on_screen(
-            false,
-            DeviceHubProbe::Running { windows: Some(0) }
-        ));
-        assert!(!window_on_screen(
-            false,
-            DeviceHubProbe::Running { windows: None }
-        ));
+    fn device_hub_counts_only_when_it_shows_this_simulator() {
+        use crate::device_hub::HubShows;
+        assert_eq!(on_screen_reason(false, &HubShows::NotRunning), None);
+        assert_eq!(on_screen_reason(false, &HubShows::NoWindowOnScreen), None);
+        assert_eq!(on_screen_reason(false, &HubShows::Other), None);
+        assert!(on_screen_reason(false, &HubShows::This).is_some());
+        let unread = on_screen_reason(false, &HubShows::CannotTell("no permission".into()));
+        assert!(
+            unread
+                .as_deref()
+                .is_some_and(|r| r.starts_with("no permission")),
+            "{unread:?}"
+        );
     }
 
     #[test]
-    fn simulator_app_is_the_window_on_screen() {
-        assert!(window_on_screen(true, DeviceHubProbe::NotRunning));
-        assert!(window_on_screen(
-            true,
-            DeviceHubProbe::Running { windows: Some(1) }
-        ));
+    fn simulator_app_is_a_reason_whatever_device_hub_says() {
+        use crate::device_hub::HubShows;
+        assert!(on_screen_reason(true, &HubShows::NotRunning).is_some());
+        assert!(on_screen_reason(true, &HubShows::Other).is_some());
+    }
+
+    #[test]
+    fn a_reason_without_require_hard_degrades_and_says_why() {
+        let (mode, warning) = decide_mode(Some("cannot tell"), false, false).unwrap();
+        assert_eq!(mode, CapsuleMode::Soft);
+        assert!(warning.is_some_and(|w| w.starts_with("cannot tell")));
     }
 
     #[test]
     fn mode_soft_when_explicit() {
-        assert_eq!(decide_mode(true, true, false).unwrap().0, CapsuleMode::Soft);
+        assert_eq!(
+            decide_mode(Some("x"), true, false).unwrap().0,
+            CapsuleMode::Soft
+        );
     }
 
     #[test]

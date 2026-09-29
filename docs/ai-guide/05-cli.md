@@ -1177,10 +1177,20 @@ reverse (`down`). The guard rejects a windowed session by default;
 `--soft` accepts the soft-capsule fallback.
 
 iOS Simulators only, and it says so rather than trying: all three of its
-legs — the simulator-window guard (Simulator.app on Xcode <= 26; Device Hub on
-Xcode 27 does not react to a boot and never trips it), `simctl boot`, the
-`/live` capture — are simulator machinery with no counterpart on an emulator or a physical
-device. Those are brought up with `smix runner up` instead
+legs — the simulator-window guard, `simctl boot`, the `/live` capture — are
+simulator machinery with no counterpart on an emulator or a physical
+device.
+
+The guard asks whether a boot of this simulator would be on screen. On
+Xcode <= 26 that is Simulator.app running, which opens a window for every
+boot. On Xcode 27 it is Device Hub showing this simulator: Device Hub shows
+only the simulator selected in it, and shows that one again as soon as it
+boots, so another simulator selected there leaves the capsule hard.
+Reading which simulator Device Hub shows needs the Accessibility
+permission of the app the command runs under (System Settings > Privacy &
+Security > Accessibility); without it, and with a Device Hub window on
+screen, the guard cannot tell, says so, and comes up soft —
+`--require-hard` refuses instead. Those are brought up with `smix runner up` instead
 (`--platform android` for an emulator, `--physical` for a phone).
 
 ### `smix diagnostic store` — read the persisted state

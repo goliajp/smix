@@ -15,7 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GATE = os.path.join(HERE, "an-app-that-is-gone.py")
 
 
-def build(root: str, doc_line: str, guard_body: str) -> None:
+def build(root: str, doc_line: str, guard_body: str, hub_body: str = "") -> None:
     os.makedirs(os.path.join(root, "docs"))
     os.makedirs(os.path.join(root, "plugin"))
     os.makedirs(os.path.join(root, "crates", "smix-cli", "src"))
@@ -25,6 +25,9 @@ def build(root: str, doc_line: str, guard_body: str) -> None:
         fh.write(doc_line + "\n")
     with open(os.path.join(root, "crates", "smix-cli", "src", "capsule.rs"), "w") as fh:
         fh.write(guard_body + "\n")
+    if hub_body:
+        with open(os.path.join(root, "crates", "smix-cli", "src", "device_hub.rs"), "w") as fh:
+            fh.write(hub_body + "\n")
 
 
 def run(root: str) -> subprocess.CompletedProcess:
@@ -63,9 +66,17 @@ def main() -> int:
             print(f"a guard that never mentions DeviceHub should be red: exit {r.returncode}\n{r.stdout}")
             fail = 1
 
+    with tempfile.TemporaryDirectory() as tmp:
+        build(tmp, "close the Simulator.app window first (Xcode <= 26)",
+              "// Simulator.app on Xcode <= 26 only", "// finds DeviceHub by pid")
+        r = run(tmp)
+        if r.returncode != 0:
+            print(f"a guard whose Device Hub half lives in device_hub.rs should be green: exit {r.returncode}\n{r.stdout}")
+            fail = 1
+
     if fail:
         return 1
-    print("an-app-that-is-gone.test: unqualified, qualified, empty, and a guard without Device Hub are each judged as they should be")
+    print("an-app-that-is-gone.test: unqualified, qualified, empty, a guard without Device Hub, and one whose Device Hub half is its own module are each judged as they should be")
     return 0
 
 
