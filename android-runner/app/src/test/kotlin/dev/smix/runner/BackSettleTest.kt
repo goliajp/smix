@@ -258,4 +258,14 @@ class BackSettleTest {
         assertNull(still.observe(Reading.Unreadable, atMs = 2050))
         assertEquals(42, still.looks)
     }
+
+    @Test
+    fun an_app_window_never_read_is_not_a_screen_that_stayed_the_same() {
+        // The status bar read the same the whole time; the app's window
+        // never read at all. "Nothing changed" is not what was seen.
+        val unreadApp = WindowReading(id = 551, pkg = null, structure = null)
+        val settle = BackSettle(screen(bars, unreadApp))
+        repeat(40) { assertNull(settle.observe(Reading.Screen(screen(bars, unreadApp)))) }
+        assertEquals(BackSettle.Verdict.CouldNotSee, settle.atDeadline())
+    }
 }

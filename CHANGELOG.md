@@ -80,6 +80,11 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
   one; otherwise `sim boot` refuses and lists each alias with its AVD, so
   the caller boots the one they mean by alias. Booting by alias is
   unchanged.
+- **An Android `back` that could not read the app's window says so.** When
+  the app's window gave no content for the whole wait — measured on a
+  loaded API 36 emulator with a Compose screen — and only the status bar
+  could be compared, `back` answered `gaveUp`, "the screen did not
+  change", about a screen it had not seen. It now answers `couldNotSee`.
 - **An Android `back` sent right after a step that navigates is judged
   against the screen that step arrived at.** The runner read the screen
   once before the key and answered by whether it changed afterwards. When
