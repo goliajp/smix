@@ -21,6 +21,8 @@
 //! - `smix_press_key` — press named key (Return / Tab / arrow keys)
 //! - `smix_screenshot` — capture base64 PNG (UDID-bound)
 
+mod stdio;
+
 use base64::Engine as _;
 use rmcp::ErrorData as McpError;
 use rmcp::ServiceExt;
@@ -30,7 +32,6 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     CallToolResult, Content, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo,
 };
-use rmcp::transport::stdio;
 use rmcp::{tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -1174,19 +1175,7 @@ impl ServerHandler for SmixMcpService {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Answer `--version` before anything else touches stdio.
-    //
-    // Without this, asking the server its version made it treat an empty
-    // stdin as a request and print a JSON-RPC parse error — on stdout, in
-    // a shape whose digits (`-32700`) read as a version number to anything
-    // scraping them. The plugin's readiness hook did exactly that and told
-    // sessions there was a version mismatch that did not exist. A binary
-    // that ships should be able to say what it is.
-    let mut args = std::env::args().skip(1);
-    if let Some(flag) = args.next()
-        && (flag == "--version" || flag == "-V")
-    {
-        println!("smix-mcp {}", env!("CARGO_PKG_VERSION"));
+    if stdio::answered_version() {
         return Ok(());
     }
 
@@ -1207,7 +1196,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let session = smix_mcp::SessionState::from_env(std::env::var("SMIX_UDID").ok(), port);
     let service = SmixMcpService::new(app, session);
-    let server = service.serve(stdio()).await?;
+    let server = service.serve(stdio::protocol()?).await?;
     server.waiting().await?;
     Ok(())
 }
