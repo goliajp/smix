@@ -99,6 +99,27 @@ def a11y_tags(tree):
     return found
 
 
+def a11y_windows(tree):
+    """Which top-level window each accessibility id sits in.
+
+    The accessibility tree's root is the device; its children are the
+    windows on it — the app's, the status bar's, the navigation bar's, the
+    keyboard's. The window is what says whose a node is.
+    """
+    where = {}
+
+    def walk(n, window):
+        i = n.get("identifier")
+        if i:
+            where[str(i)] = window
+        for c in n.get("children") or []:
+            walk(c, window)
+
+    for index, window in enumerate(tree.get("children") or []):
+        walk(window, index)
+    return where
+
+
 def compose_area(sem_roots):
     """The rectangles the app's Compose roots occupy.
 
@@ -108,9 +129,12 @@ def compose_area(sem_roots):
     the two sets whole reports fifty system ids as missing from the probe,
     which is true and useless.
 
-    So the subject is scoped by geometry rather than by name: what lies
-    inside a Compose root is what both sides are supposed to be describing.
-    A `status_bar` id sits outside every root; `compose_input` does not.
+    So the subject is scoped by window first (see `a11y_windows`) and by
+    geometry inside it: what lies inside a Compose root of the app's own
+    window is what both sides are supposed to be describing. Geometry
+    alone was enough until API 36 drew apps edge to edge: the app's root
+    then covers the status bar, and `status_bar` sat inside it while
+    belonging to another window.
     """
     return [tuple(r["bounds"]) for r in sem_roots if "bounds" in r]
 
@@ -301,8 +325,15 @@ def reconcile(a11y_tree, sem_roots, prove):
             matched[why] += 1
 
     area = compose_area(sem_roots)
+    window_of = a11y_windows(a11y_tree)
+    # The app's windows: the ones holding an id both sides see.
+    app_windows = {window_of[t] for t in both if t in window_of}
     outside = 0
+    in_app = 0
     for tag in sorted(only_a11y):
+        if window_of.get(tag) not in app_windows:
+            continue
+        in_app += 1
         if not inside_any(a11y[tag], area) or contains_any(a11y[tag], area):
             outside += 1
             continue
@@ -311,10 +342,11 @@ def reconcile(a11y_tree, sem_roots, prove):
             f"root, and is not on the semantics side — the probe is the one "
             f"that should see more, not less"
         )
-    # The presence half of the geometric scoping: if nothing landed outside,
-    # the rectangles are wrong (the whole device is not inside one Compose
-    # root) and the scoping is excusing by accident rather than by shape.
-    if only_a11y and outside == 0:
+    # The presence half of the geometric scoping, inside the app's own
+    # windows: the views that host a Compose root (the decor, the content
+    # frame) wrap it and are excused by shape. If none was, the rectangles
+    # are wrong and the scoping is excusing by accident rather than by shape.
+    if in_app and outside == 0:
         problems.append(
             "every accessibility id fell inside a Compose root — the system "
             "bars did too, so the root rectangles are not what they claim"
