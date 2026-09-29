@@ -17,8 +17,11 @@
 # and a release gate that fails on it would be reporting the wrong
 # thing. Whether text reaches a focused field is /input-text's contract;
 # what this flow isolates is whether the flag changed the driver's path.
-# The search page belongs to `com.android.settings.intelligence`, not to
-# Settings itself.
+# The search page belongs to the settings-intelligence app, not to
+# Settings itself — on the API 36 google_apis image the gate runs on,
+# `com.google.android.settings.intelligence`, whose search field is
+# `open_search_view_edit_text` (the AOSP image's was
+# `com.android.settings.intelligence` and `search_src_text`).
 #
 # Tapping the search bar hands the screen to a different application, and
 # smix's tree reads the windows of the app it is bound to — so with
@@ -30,8 +33,8 @@
 # Same shape as the iOS defect this cycle opened with: bound to one app,
 # looking for an element in another, and the failure names the element
 # rather than the binding.
-appId: com.android.settings.intelligence
+appId: com.google.android.settings.intelligence
 ---
 - tapOn: { id: "search_action_bar" }
-- extendedWaitUntil: { visible: { id: "search_src_text" }, timeout: 8000 }
+- extendedWaitUntil: { visible: { id: "open_search_view_edit_text" }, timeout: 8000 }
 - inputText: { id: "smix-c4-no-such-field", text: "smixkeyevents" }
