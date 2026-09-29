@@ -79,7 +79,8 @@ adjust_since() { # $1 ADJUST_RAISE | ADJUST_LOWER  $2 MM-DD HH:MM:SS
 
 screen_state() {
   local wake screen
-  wake="$(adb -s "$SERIAL" shell dumpsys power 2>/dev/null | sed -n 's/^ *mWakefulness=\(.*\)$/\1/p' | tr -d '\r')"
+  # The first line: API 36 carries a numeric `mWakefulness=1` further down.
+  wake="$(adb -s "$SERIAL" shell dumpsys power 2>/dev/null | sed -n 's/^ *mWakefulness=\(.*\)$/\1/p' | head -1 | tr -d '\r')"
   screen="$(adb -s "$SERIAL" shell dumpsys display 2>/dev/null | sed -n 's/^ *mScreenState=\(.*\)$/\1/p' | head -1 | tr -d '\r')"
   printf '%s/%s\n' "$wake" "$screen"
 }

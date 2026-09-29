@@ -98,10 +98,13 @@ human_line() { # $1 = id; prints the human line carrying id="<id>"
   human_tree | grep -F "id=\"$1\"" || true
 }
 
-step "presence: fixture_submit and statusBarBackground must be in the --json tree"
+# SIDE B's anchor is the app window's `content` frame: every activity has
+# one and it carries no text. It was `statusBarBackground`, which API 36
+# no longer puts in the app's window — apps are drawn under the status bar.
+step "presence: fixture_submit and content must be in the --json tree"
 launch_fresh
 [ "$(json_count fixture_submit)" -ge 1 ] || fail "fixture_submit not in tree — the gate would be reading air"
-[ "$(json_count statusBarBackground)" -ge 1 ] || fail "statusBarBackground not in tree — SIDE B anchor missing, its absence check would be vacuous"
+[ "$(json_count content)" -ge 1 ] || fail "content not in tree — SIDE B anchor missing, its absence check would be vacuous"
 
 step "SIDE A: text with a value shows in the text position, not folded into id"
 SUBMIT_LINE="$(human_line fixture_submit)"
@@ -114,8 +117,8 @@ human_tree | grep -q 'text="smix fixture"' || fail "an id-less TextView's text (
 log "SIDE A OK: $SUBMIT_LINE"
 
 step "SIDE B: a node with no text must not grow a text= field"
-BAR_LINE="$(human_line statusBarBackground)"
-[ -n "$BAR_LINE" ] || fail "statusBarBackground has no human line"
+BAR_LINE="$(human_line content)"
+[ -n "$BAR_LINE" ] || fail "content has no human line"
 printf '%s\n' "$BAR_LINE" | grep -q 'text=' && fail "empty text produced a ghost text= field: $BAR_LINE"
 log "SIDE B OK: $BAR_LINE"
 
