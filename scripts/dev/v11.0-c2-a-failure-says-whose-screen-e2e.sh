@@ -39,9 +39,19 @@ fail() { printf '[c2-whose-screen] FAIL: %s\n' "$*" >&2; exit 1; }
 cannot_judge() { printf '[c2-whose-screen] CANNOT JUDGE: %s\n' "$*" >&2; exit 2; }
 
 SERIAL="" WE_UPPED=0 WE_BOOTED=0
+# Settings, and the search page that sits on its task: it belongs to
+# another package (com.android.settings.intelligence on the AOSP image,
+# com.google.android.settings.intelligence on google_apis), and a page one
+# left there comes back in front when Settings is launched.
+settings_gone() {
+  local pkg
+  for pkg in com.android.settings com.android.settings.intelligence com.google.android.settings.intelligence; do
+    adb -s "$SERIAL" shell am force-stop "$pkg" >/dev/null 2>&1 || true
+  done
+}
 cleanup() {
   if [ -n "$SERIAL" ]; then
-    adb -s "$SERIAL" shell am force-stop com.android.settings >/dev/null 2>&1 || true
+    settings_gone
   fi
   if [ "$WE_UPPED" = 1 ]; then
     local said
@@ -119,6 +129,7 @@ run_leg() { # $1 leg, $2 app id, $3.. judge flags
 # symptom lives.
 FAILED=""
 run_leg probe "$APPID"
+settings_gone
 run_leg a11y com.android.settings --no-system-first "$WORK/a11y.tree.json"
 [ -z "$FAILED" ] || fail "the failure does not say whose screen it happened on in:$FAILED"
 

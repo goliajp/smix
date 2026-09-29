@@ -259,10 +259,6 @@ pub enum Wakefulness {
     Dozing,
 }
 
-/// The `mWakefulness=` line out of `dumpsys power`.
-///
-/// Measured on API 36: the dump carries one `  mWakefulness=Awake` line,
-/// and a device sent to sleep with `KEYCODE_SLEEP` reads `Asleep`.
 #[must_use]
 /// The AVD name out of what the emulator console answered.
 ///
@@ -278,6 +274,12 @@ pub fn parse_avd_name(console_out: &str) -> String {
         .to_string()
 }
 
+/// The `mWakefulness=` line out of `dumpsys power`.
+///
+/// The first one: measured on API 36, the dump opens with
+/// `  mWakefulness=Awake` and carries a numeric `mWakefulness=1` some 350
+/// lines further down. A device sent to sleep with `KEYCODE_SLEEP` reads
+/// `Asleep`.
 pub fn parse_wakefulness(dump: &str) -> Option<Wakefulness> {
     let value = dump
         .lines()

@@ -88,8 +88,10 @@ with_deadline 120 "$SMIX" sim install "$SERIAL" "$APK" >"$WORK/install.log" 2>&1
 
 # --- what the device says ------------------------------------------------
 resumed() {
+  # API 36 appends the task (`…/.MainActivity t209}`); the package is what
+  # comes before the `/` either way.
   with_deadline 10 adb -s "$SERIAL" shell dumpsys activity activities 2>/dev/null \
-    | tr -d '\r' | grep -m1 'ResumedActivity:' | sed -E 's#.* ([^ /]+)/[^ ]*}.*#\1#'
+    | tr -d '\r' | grep -m1 'ResumedActivity:' | sed -E 's#.* ([^ /]+)/[^ }]*( [^}]*)?}.*#\1#'
 }
 app_window_readable() { # the runner's own window list has a readable app window
   local body
