@@ -20,6 +20,16 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
 
 ### Fixed
 
+- **`smix sim boot emulator-5554` no longer starts whichever AVD it
+  reaches first.** An emulator serial names a console port, and every AVD
+  that has run on that port was registered at the same serial. With the
+  emulator off, `sim boot` took the AVD from the first registry row it
+  found for that string — which could be another project's AVD registered
+  under an alias spelled like the serial — and started it. A serial now
+  names the AVD only when every row registered at that port agrees on
+  one; otherwise `sim boot` refuses and lists each alias with its AVD, so
+  the caller boots the one they mean by alias. Booting by alias is
+  unchanged.
 - **An Android `back` sent right after a step that navigates is judged
   against the screen that step arrived at.** The runner read the screen
   once before the key and answered by whether it changed afterwards. When
