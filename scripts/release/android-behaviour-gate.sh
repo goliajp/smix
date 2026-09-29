@@ -47,8 +47,8 @@ TIMEOUT_S="${SMIX_ANDROID_GATE_TIMEOUT_S:-600}"
 APP="com.android.settings"
 # The app the FLOW binds to, which is not always the one we launch.
 #
-# Tapping Settings' search bar hands the screen to
-# `com.android.settings.intelligence`, so the flow declares that as its
+# Tapping Settings' search bar hands the screen to the
+# settings-intelligence app, so the flow declares that as its
 # appId and every driving request carries it. A2 asserts the header is
 # present on each one, and comparing against $APP made it fail on a
 # correct run — the launcher and the flow's subject are two different
@@ -159,6 +159,9 @@ RUNNER_LOG_SINCE="$(android_device_now "$SERIAL")"
 # `-n <pkg>/.MainActivity`, and an AOSP app's launcher activity is not
 # called that. Recorded as a product gap; not this gate's business.
 
+# A search page left on top of Settings (see settings_home below) would
+# keep Settings from being the resumed activity.
+adb -s "$SERIAL" shell am force-stop "$FLOW_APP" >/dev/null 2>&1
 adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1 \
   || die "could not foreground $APP on $SERIAL"
 
@@ -270,16 +273,24 @@ await_settings() {
   This is about the screen arriving, not about --force-key-events.
   Current: $(adb -s "$SERIAL" shell dumpsys activity activities 2>/dev/null | grep -m1 topResumedActivity)"
 }
-adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1
-await_settings
+# Settings' home, not whatever sits on it. The search page is another
+# app's activity on top of Settings' task; `am start` only delivers the
+# intent to the Settings instance underneath, so a search page left from
+# the run before (or from A1a, for the control) kept Settings from ever
+# being the resumed activity. Stopping that app takes its page away.
+settings_home() {
+  adb -s "$SERIAL" shell am force-stop "$FLOW_APP" >/dev/null 2>&1
+  adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1
+  await_settings
+}
+settings_home
 if ! run_flow with-flag --force-key-events; then
   die "A1: the flow failed WITH --force-key-events. Log: $WORK/with-flag.log"
 fi
 echo "  A1a: flow passes with --force-key-events"
 
 # A1 control — without it, the flow must fail. This is a pass condition.
-adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1
-await_settings
+settings_home
 if run_flow without-flag; then
   die "A1: the flow ALSO passed without --force-key-events, so it no longer
   proves anything about that flag. Either the flow stopped depending on it, or
@@ -318,7 +329,7 @@ PY
 # the node to exist first -- bounded, and through the runner port rather
 # than the recorder, because this is a precondition and not what A3
 # measures -- and say so plainly when it never shows up.
-adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1
+settings_home
 await_node A3 "$APP" "$PROBE_ID" "the homepage arriving"
 MATCH="$(curl -sS -D- -o /dev/null -X POST "http://localhost:$PROXY_PORT/tap-by-id" \
   -H "App-Bundle-Id: $APP" -d "{\"id\":\"$PROBE_ID\"}" \
