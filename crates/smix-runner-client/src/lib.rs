@@ -447,7 +447,24 @@ fn classify_error_body(endpoint: &str, status: u16, body: &str) -> RunnerTranspo
     RunnerTransportError::NonSuccessStatus {
         endpoint: endpoint.to_string(),
         status,
-        body: body.chars().take(200).collect(),
+        body: error_body(body),
+    }
+}
+
+/// What of a non-success body to keep.
+///
+/// A body the runner wrote as `{"error", "message"}` is its explanation,
+/// and the part that says what happened is at the end: cutting it at 200
+/// characters turned "chunk 1 did not land … The field held \"\" and holds
+/// \"…\"" into "… The field he". Anything else — an HTML error page, a
+/// proxy's response — is kept to its first 200 characters.
+pub fn error_body(body: &str) -> String {
+    let structured = serde_json::from_str::<serde_json::Value>(body)
+        .is_ok_and(|v| v.get("message").is_some_and(serde_json::Value::is_string));
+    if structured {
+        body.to_string()
+    } else {
+        body.chars().take(200).collect()
     }
 }
 
@@ -1650,7 +1667,7 @@ impl HttpRunnerClient {
             return Err(RunnerTransportError::NonSuccessStatus {
                 endpoint: "/system-popup-action".to_string(),
                 status: status.as_u16(),
-                body: body.chars().take(200).collect(),
+                body: error_body(&body),
             });
         }
         let resp: SystemPopupActionResponse =
