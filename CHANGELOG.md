@@ -20,6 +20,12 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
 
 ### Fixed
 
+- **The Android probe reads the screen in front.** An app that carries the
+  smix probe and had a Compose activity stopped behind the one in front —
+  a screen the user had left — was read as that screen: the probe took every
+  Compose root whose window was still attached, and a stopped activity's
+  window stays attached. `tapOn` then looked for the front screen's
+  elements in the one behind it. Only roots that are shown are read now.
 - **The capsule guard asks Device Hub the right question on Xcode 27.**
   Device Hub shows only the simulator selected in it, and shows that one
   again the moment it boots — so booting the simulator Device Hub is
