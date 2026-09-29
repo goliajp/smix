@@ -2,6 +2,7 @@ package dev.smix.fixture
 
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -45,6 +46,23 @@ import kotlinx.coroutines.launch
  * account of having pressed it.
  */
 class WatchActivity : ComponentActivity() {
+    // When touches reach this activity, on the uptime clock the runner
+    // stamps its touches with: the moment each arrived, and the time the
+    // event carries. A tap that was not counted can then be placed —
+    // never delivered, delivered late, or delivered to a screen whose
+    // button had already gone.
+    private val downAt = mutableStateOf("-")
+    private val upAt = mutableStateOf("-")
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        val now = SystemClock.uptimeMillis()
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> downAt.value = "$now/${ev.eventTime}"
+            MotionEvent.ACTION_UP -> upAt.value = "$now/${ev.eventTime}"
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -52,6 +70,7 @@ class WatchActivity : ComponentActivity() {
             var done by remember { mutableStateOf(false) }
             var vanishing by remember { mutableStateOf(false) }
             var shownAt by remember { mutableLongStateOf(0L) }
+            var hiddenAt by remember { mutableLongStateOf(0L) }
             var presses by remember { mutableIntStateOf(0) }
             var latency by remember { mutableLongStateOf(-1L) }
             val scope = rememberCoroutineScope()
@@ -87,6 +106,7 @@ class WatchActivity : ComponentActivity() {
                             scope.launch {
                                 delay(3000)
                                 vanishing = false
+                                hiddenAt = SystemClock.uptimeMillis()
                             }
                         },
                         modifier = Modifier.testTag("watch_reveal"),
@@ -102,6 +122,12 @@ class WatchActivity : ComponentActivity() {
                     }
                     Text("presses $presses", modifier = Modifier.testTag("watch_presses"))
                     Text("latency $latency", modifier = Modifier.testTag("watch_latency"))
+                    // When the vanishing button last appeared, on the uptime
+                    // clock the runner stamps its touches with.
+                    Text("shown $shownAt", modifier = Modifier.testTag("watch_shown"))
+                    Text("hidden $hiddenAt", modifier = Modifier.testTag("watch_hidden"))
+                    Text("down ${downAt.value}", modifier = Modifier.testTag("watch_down"))
+                    Text("up ${upAt.value}", modifier = Modifier.testTag("watch_up"))
                 }
                 if (overlay) {
                     Box(

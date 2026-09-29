@@ -78,7 +78,6 @@ python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
 
 FAILED=0
 UNJUDGED=""
-TAP_LATENCY=0
 DENSITY=""
 source "$ROOT/scripts/lib/flash-verdict.sh"
 AND_FLASH_MS="$(fixture_flash_ms kotlin "$ROOT/test-fixtures/android-app/app/src/main/kotlin/dev/smix/fixture/WatchActivity.kt")" \
@@ -128,38 +127,58 @@ judge_quiet() { # $1 platform
 
 # The press count and the latency, read from the app's own labels in the
 # tree — not from smix's account of having pressed.
+#
+# A press the app did not count is judged by when the app handled the
+# touch. The Android fixture labels when its button was taken away and
+# when the touch's release reached it, both on the uptime clock. Measured
+# on API 36 under load, 60 of 60 taps: the press counted exactly when the
+# release was handled before the button went, and every tap smix reported
+# as landing with no press counted was handled after — the app's input
+# arrived up to a second late, with the touch already delivered where the
+# button was. That is the app not taking the press in time, which no
+# driver can see; a miss handled while the button was still there is
+# smix's, and fails.
+label_of() { # $1 tree json, $2 id → the label's text
+  printf '%s' "$1" | python3 -c "
+import json,sys
+def walk(n):
+    yield n
+    for c in n.get('children',[]): yield from walk(c)
+t=json.load(sys.stdin); t=t.get('root',t)
+for n in walk(t):
+    if n.get('identifier')=='$2': print(n.get('label') or n.get('value') or n.get('text') or '')
+"
+}
 judge_vanish() { # $1 platform, $2 device, $3 port, $4 presses id, $5 latency id, $6 leg name
-  local tree presses latency
+  local tree presses latency hidden up handled_late
   tree="$(SMIX_RUNNER_PORT="$3" with_deadline 60 "$SMIX" tree --device "$2" --port "$3" --json 2>/dev/null)" \
     || cannot_judge "$1 $6: could not read the tree afterwards"
-  presses="$(printf '%s' "$tree" | python3 -c "
-import json,sys
-def walk(n):
-    yield n
-    for c in n.get('children',[]): yield from walk(c)
-t=json.load(sys.stdin); t=t.get('root',t)
-for n in walk(t):
-    if n.get('identifier')=='$4': print(n.get('label') or n.get('value') or n.get('text') or '')
-")"
-  latency="$(printf '%s' "$tree" | python3 -c "
-import json,sys
-def walk(n):
-    yield n
-    for c in n.get('children',[]): yield from walk(c)
-t=json.load(sys.stdin); t=t.get('root',t)
-for n in walk(t):
-    if n.get('identifier')=='$5': print(n.get('label') or n.get('value') or n.get('text') or '')
-")"
+  presses="$(label_of "$tree" "$4")"
+  latency="$(label_of "$tree" "$5")"
   if [ "$RC" = 0 ] && [ "$presses" = "presses 1" ]; then
     log "  $1 $6: pressed, as it should — app says '$presses', '$latency' ms after it appeared"
     DENSITY="$DENSITY $1 $6: $latency;"
-    if [ "$6" = tap ]; then TAP_LATENCY="${latency#latency }"; fi
-  elif [ "$6" = wait-then-tap ] && [ "${TAP_LATENCY:-0}" -ge 2000 ] 2>/dev/null; then
-    # A bare tap already took two thirds of the button's three seconds, so
-    # a wait before it cannot fit whatever smix does: missing here says
-    # the device was slow, not that waiting first is.
-    log "  $1 $6: CANNOT JUDGE — a bare tap took ${TAP_LATENCY} ms of the button's 3000, so a wait before it cannot fit (app says '${presses:-nothing}')"
-    UNJUDGED="$UNJUDGED $1-wait-then-tap"
+    return 0
+  fi
+  handled_late=""
+  if [ "$1" = android ]; then
+    hidden="$(label_of "$tree" watch_hidden)"; hidden="${hidden#hidden }"
+    up="$(label_of "$tree" watch_up)"; up="${up#up }"; up="${up%%/*}"
+    if [ -n "$hidden" ] && [ "$hidden" != 0 ] && [ "$up" != "-" ] && [ "${up:-0}" -ge "$hidden" ] 2>/dev/null; then
+      handled_late="$((up - hidden))"
+    fi
+  fi
+  if [ -n "$handled_late" ]; then
+    log "  $1 $6: CANNOT JUDGE — the app handled the touch's release ${handled_late} ms after it had taken the button away itself (app says '${presses:-nothing}')"
+    UNJUDGED="$UNJUDGED $1-$6"
+  elif [ "$1" = android ] && [ "$RC" != 0 ]; then
+    # smix said the step failed. What this leg exists to catch is the
+    # other answer — "pressed" with no press counted — and a failure that
+    # says so is not that. Measured under load: the app took the reveal's
+    # own touch up to 2.75 s late, so the button appeared as the wait for
+    # it ran out; smix reported the wait as failed, truthfully.
+    log "  $1 $6: CANNOT JUDGE — smix reported the step failed (exit $RC), and the app says presses '${presses:-nothing}', shown '$(label_of "$tree" watch_shown)', hidden '${hidden:-?}', release handled at '${up:-?}'"
+    UNJUDGED="$UNJUDGED $1-$6"
   else
     printf '[c8-between] FAIL: %s %s: expected the app to count one press, it says %s (flow exited %s) — %s\n' \
       "$1" "$6" "'${presses:-nothing}'" "$RC" "$(printf '%s' "$OUT" | tail -3 | tr '\n' ' ')" >&2
