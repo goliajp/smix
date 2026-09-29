@@ -19,9 +19,9 @@
 E2E_ANDROID="${SMIX_E2E_ANDROID:-sim-smix-android-01}"
 E2E_ANDROID_SECOND="${SMIX_E2E_ANDROID_SECOND:-sim-smix-android-02}"
 E2E_ANDROID_THIRD="${SMIX_E2E_ANDROID_THIRD:-sim-smix-android-03}"
-# E2E_ANDROID_36 is the API 36 AVD the release tier runs its API-sensitive
-# scripts on a second time (the others are API 33).
-E2E_ANDROID_36="${SMIX_E2E_ANDROID_36:-sim-smix-android-36}"
+# All three are API 36 (google_apis) and the simulators iOS 27: the suite
+# runs on what consumers run, once, rather than on an older image with the
+# newer one as a second pass.
 E2E_IOS="${SMIX_E2E_IOS:-sim-smix-02}"
 E2E_IOS_SECOND="${SMIX_E2E_IOS_SECOND:-C1774CF6-8E56-463E-AD53-9CFF5930B2DE}"
 E2E_IOS_THIRD="${SMIX_E2E_IOS_THIRD:-CA88A8A3-8371-4527-A1A8-437F2E7C9A53}"
