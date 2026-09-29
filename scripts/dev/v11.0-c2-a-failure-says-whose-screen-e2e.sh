@@ -39,19 +39,22 @@ fail() { printf '[c2-whose-screen] FAIL: %s\n' "$*" >&2; exit 1; }
 cannot_judge() { printf '[c2-whose-screen] CANNOT JUDGE: %s\n' "$*" >&2; exit 2; }
 
 SERIAL="" WE_UPPED=0 WE_BOOTED=0
-# Settings, and the search page that sits on its task: it belongs to
-# another package (com.android.settings.intelligence on the AOSP image,
+# The search page that sits on Settings' task: it belongs to another
+# package (com.android.settings.intelligence on the AOSP image,
 # com.google.android.settings.intelligence on google_apis), and a page one
-# left there comes back in front when Settings is launched.
-settings_gone() {
+# left there comes back in front when Settings is launched. Settings itself
+# is left running: stopped, it starts cold, and on a loaded emulator its
+# window was still unreadable when the step gave up five seconds later.
+search_page_gone() {
   local pkg
-  for pkg in com.android.settings com.android.settings.intelligence com.google.android.settings.intelligence; do
+  for pkg in com.android.settings.intelligence com.google.android.settings.intelligence; do
     adb -s "$SERIAL" shell am force-stop "$pkg" >/dev/null 2>&1 || true
   done
 }
 cleanup() {
   if [ -n "$SERIAL" ]; then
-    settings_gone
+    adb -s "$SERIAL" shell am force-stop com.android.settings >/dev/null 2>&1 || true
+    search_page_gone
   fi
   if [ "$WE_UPPED" = 1 ]; then
     local said
@@ -129,7 +132,23 @@ run_leg() { # $1 leg, $2 app id, $3.. judge flags
 # symptom lives.
 FAILED=""
 run_leg probe "$APPID"
-settings_gone
+search_page_gone
+# The subject in place before the leg: Settings in front with a window the
+# runner can read. What this leg judges is what a failure says about the
+# screen, and a Settings still drawing its first frame is a screen with no
+# app on it yet.
+adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1 || true
+settings_readable=0
+for _ in $(seq 1 60); do
+  if curl -s -m 5 "http://localhost:$PORT/windows" | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+rows=d if isinstance(d,list) else d.get("windows",[])
+sys.exit(0 if any((r.get("package") or r.get("pkg"))=="com.android.settings" for r in rows) else 1)' 2>/dev/null; then
+    settings_readable=1; break
+  fi
+  sleep 0.5
+done
+[ "$settings_readable" = 1 ] || cannot_judge "a11y: Settings never had a readable window in 30 s — the subject was not in place"
 run_leg a11y com.android.settings --no-system-first "$WORK/a11y.tree.json"
 [ -z "$FAILED" ] || fail "the failure does not say whose screen it happened on in:$FAILED"
 
