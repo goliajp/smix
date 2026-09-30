@@ -2,7 +2,7 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [12.0.0] — 2026-09-29
+## [12.0.0] — 2026-09-30
 
 A major release for two changes to the Rust API (below); flows, the CLI and
 the SDKs keep working. What answers differently, and what the Rust change
