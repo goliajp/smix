@@ -21,10 +21,17 @@
 #
 #     bash scripts/lib/android-runner-log.sh --selftest
 
+# Both reads carry a deadline. A device that left mid-gate held
+# `logcat -d` open for as long as anyone would wait — 106 minutes of a
+# release run's tier, on an emulator that was no longer listed.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deadline.sh"
+ANDROID_LOG_READ_SECS="${ANDROID_LOG_READ_SECS:-30}"
+
 # The device's own clock, in epoch seconds with milliseconds: logcat's
 # window is on the device's clock, which need not be the host's.
 android_device_now() {
-  adb -s "$1" shell 'echo $EPOCHREALTIME' 2>/dev/null | tr -d '\r' | awk 'NF { print; exit }'
+  with_deadline "$ANDROID_LOG_READ_SECS" adb -s "$1" shell 'echo $EPOCHREALTIME' 2>/dev/null \
+    | tr -d '\r' | awk 'NF { print; exit }'
 }
 
 collect_android_runner_log() {
@@ -36,9 +43,10 @@ collect_android_runner_log() {
     echo 0
     return 2
   fi
-  if ! lines="$(adb -s "$serial" logcat -d -v threadtime -T "$since" \
-      -s smix-route:I AndroidRuntime:E TestRunner:* 2>&1)"; then
-    printf 'could not read the device log:\n%s\n' "$lines" >>"$out"
+  if ! lines="$(with_deadline "$ANDROID_LOG_READ_SECS" adb -s "$serial" logcat -d -v threadtime \
+      -T "$since" -s smix-route:I AndroidRuntime:E TestRunner:* 2>&1)"; then
+    printf 'could not read the device log (no answer within %s s, or adb refused):\n%s\n' \
+      "$ANDROID_LOG_READ_SECS" "$lines" >>"$out"
     echo 0
     return 2
   fi
@@ -63,6 +71,7 @@ case "$FAKE_ADB" in
   lines) printf '09-29 10:00:01.000  1  2 I smix-route: route=/clear-text status=200 tookMs=40\n09-29 10:00:02.000  1  2 E AndroidRuntime: FATAL EXCEPTION\n' ;;
   none) : ;;
   broken) echo "error: device 'emulator-5554' not found" >&2; exit 1 ;;
+  hang) exec sleep 30 ;;
   clock) printf '1790000000.123456\r\n' ;;
 esac
 FAKE
@@ -83,6 +92,7 @@ FAKE
   check "a quiet runner is zero lines, not a failure" 0 0 "since: 1790000000.123" none 1790000000.123
   check "an unreadable log says so" 2 0 "could not read the device log" broken 1790000000.123
   check "no window is not a reading" 2 0 "no window to read" lines ""
+  ANDROID_LOG_READ_SECS=1 check "a device that never answers ends the read" 2 0 "no answer within 1 s" hang 1790000000.123
   : >"$work/args"
   PATH="$work/bin:$PATH" FAKE_ADB=lines FAKE_ADB_ARGS="$work/args" \
     collect_android_runner_log emulator-5554 1790000000.123 "$work/out.txt" >/dev/null
@@ -95,5 +105,5 @@ FAKE
     echo "android-runner-log selftest: FAIL ($fails)" >&2
     exit 1
   fi
-  echo "android-runner-log selftest: 11 checks"
+  echo "android-runner-log selftest: 12 checks"
 fi
