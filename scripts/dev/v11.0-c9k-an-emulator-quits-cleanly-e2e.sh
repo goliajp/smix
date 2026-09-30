@@ -107,8 +107,10 @@ wait "$CALLER" 2>/dev/null || true
 # Witness that the signal landed mid-boot: `sim boot` waits up to 180 s
 # and the caller then sleeps thirty, so an ended group is the only way
 # back this fast. Without this, a signal that went nowhere would pass the
-# judgement below.
-[ $((SECONDS - T0)) -lt 20 ] || fail "the caller's group was not ended — the SIGINT went nowhere"
+# judgement below. Under 30 is the whole of the claim — a caller the
+# signal missed sleeps thirty after the boot — and 28 leaves room for
+# smix's own exit on a loaded machine: a release run's tier took over 20.
+[ $((SECONDS - T0)) -lt 28 ] || fail "the caller's group was not ended — the SIGINT went nowhere ($((SECONDS - T0)) s)"
 booted "$SERIAL" || fail "$SERIAL did not finish booting after its caller was ended"
 sleep 5
 listed "$SERIAL" || fail "the emulator died with its caller's process group"

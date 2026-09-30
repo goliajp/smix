@@ -73,7 +73,9 @@ FIELD_ID="fixture_input"
 FOCUS_ID="${FOCUS_ID:-fixture_input}"
 
 field_text() {
-  curl -s --max-time 10 "$R/tree" | python3 -c '
+  # A whole-tree read has taken over 10 s on a loaded emulator; a timeout
+  # here read as an empty answer and ended the script in a traceback.
+  curl -s --max-time 30 "$R/tree" | python3 -c '
 import json, sys
 def walk(n):
     if "'"$FIELD_ID"'" in (n.get("identifier") or ""):
@@ -109,8 +111,16 @@ log "key-events, named"
 
 step "3. a focused field, longer than the old fifty-delete bound"
 adb -s "$SERIAL" shell am force-stop dev.smix.fixture >/dev/null 2>&1 || true
-adb -s "$SERIAL" shell am start -n dev.smix.fixture/.MainActivity >/dev/null 2>&1
-sleep 3
+# Waited for, not slept on: a cold start after the force-stop took longer
+# than a flat 3 s under a release run's load, and the tap then found no
+# field on a screen that had not been drawn yet.
+adb -s "$SERIAL" shell am start -W -n dev.smix.fixture/.MainActivity >/dev/null 2>&1
+drawn=0
+for _ in $(seq 1 20); do
+  if curl -s --max-time 30 "$R/tree" | grep -q "\"$FIELD_ID"; then drawn=1; break; fi
+  sleep 1
+done
+[ "$drawn" = 1 ] || fail "the fixture's main screen never showed $FIELD_ID in the tree"
 # A tap that found nothing fails here, naming the id.
 #
 # Both of these discarded their result with `|| true`. The second one
