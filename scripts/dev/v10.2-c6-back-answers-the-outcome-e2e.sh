@@ -13,7 +13,7 @@
 # binary built before the fix, the blocked screen below answers
 # `{"ok":true}` while nothing has moved at all.
 #
-# Three things are checked, and the first two are the halves of one
+# Four things are checked, and the first three are the halves of one
 # claim: a back that cannot happen must be refused, and a back that
 # happens must not be.
 #   - the blocked screen: back is swallowed by the app while a label
@@ -21,6 +21,8 @@
 #   - the Compose screen: back leaves it → ok:true, settledBy=screenChanged,
 #     corroborated by the tree afterwards showing the main screen's own
 #     button (evidence that does not come from the verdict)
+#   - a detail closed inside one Compose activity → screenChanged, with
+#     the tree afterwards holding the list and not the detail
 #   - the routes that used to compute an answer and drop it: a tap, a
 #     key, a fill, a clear and four rotations all carry `ok` now, and
 #     the rotation one is read back rather than assumed — it is what
@@ -147,6 +149,41 @@ if curl -s -m 30 "http://localhost:$PORT/tree" | grep -q "open-compose"; then
 else
   fail "nav-back said it arrived and the main screen's button is not in the tree"
 fi
+
+# ---- a back inside one activity -----------------------------------------
+# A detail drawn over a list in the same Compose activity. Every bounded
+# reading of the app's window is the same with the detail open and
+# closed, and a consumer's back that closed one was answered gaveUp.
+step "a back that closes a screen inside one activity"
+# Started directly: the main screen has no room left for another button
+# on a phone-sized display, and moving the ones there moves other gates.
+adb -s "$SERIAL" shell am start -W -S -n "$APPID/.NavActivity" >"$WORK/nav.log" 2>&1 \
+  || fail "could not start the nav screen: $(tail -3 "$WORK/nav.log")"
+cat >"$WORK/detail.yaml" <<FLOW
+appId: $APPID
+---
+- tapOn:
+    id: "nav_card_3"
+- assertVisible:
+    id: "nav_detail_title"
+FLOW
+SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$SERIAL" "$WORK/detail.yaml" >"$WORK/detail.log" 2>&1 \
+  || fail "could not open the nav detail: $(tail -5 "$WORK/detail.log")"
+inner="$(post /back)"
+inner_ok="$(field "$inner" ok)"
+inner_by="$(field "$inner" settledBy)"
+log "  inner-back=ok:$inner_ok settledBy=$inner_by"
+log "  saw: $(field "$inner" saw)"
+after="$(curl -s -m 30 "http://localhost:$PORT/tree")"
+# Corroboration from the tree, not the verdict: the detail is gone and
+# the list it was drawn over is still there.
+if printf '%s' "$after" | grep -q "nav_detail_title"; then
+  fail "inner-back: the detail is still in the tree, so this case proves nothing"
+fi
+printf '%s' "$after" | grep -q "nav_card_3" \
+  || fail "inner-back: the list is not in the tree either — the back left the activity"
+[ "$inner_ok" = "True" ] || fail "inner-back: the detail closed and this answered ok=$inner_ok settledBy=$inner_by"
+[ "$inner_by" = "screenChanged" ] || fail "inner-back: expected settledBy=screenChanged, got '$inner_by'"
 
 # ---- the answers that used to be computed and dropped ----------------
 step "an act route's answer reaches the host"
