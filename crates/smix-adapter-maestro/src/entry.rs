@@ -833,7 +833,7 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         Step::Scroll => "scroll".into(),
         Step::HideKeyboard => "hideKeyboard".into(),
         Step::AssertNotVisible { .. } => "assertNotVisible".into(),
-        Step::Back => "back".to_string(),
+        Step::Back(_) => "back".to_string(),
         Step::KillApp { app_id } => match app_id {
             Some(id) => format!("killApp {id}"),
             None => "killApp (current)".to_string(),

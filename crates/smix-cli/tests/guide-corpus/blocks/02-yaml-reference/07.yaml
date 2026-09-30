@@ -3,3 +3,6 @@
 - pressKey: VOLUME_UP                    # Android; iOS fails the step by name
 - pressKey: Back                         # the same as `- back`
 - back                                   # navigation back
+- back:
+    optional: true                       # skipped, not failed, if the screen never moved
+    label: "close the detail"            # name reports use for the step

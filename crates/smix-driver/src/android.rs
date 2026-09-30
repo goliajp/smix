@@ -646,13 +646,12 @@ impl Driver for AndroidDriver {
     }
 
     async fn back(&self) -> Result<(), ExpectationFailure> {
-        // Kotlin /back → UiDevice.pressBack (KEYCODE_BACK).
+        // Kotlin /back injects KEYCODE_BACK and reads whether the screen
+        // moved. Its refusal keeps its branch, as it does on iOS.
         self.runner.back().await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::back: {e}"),
-                ..Default::default()
-            })
+            let mut f = crate::transport_to_failure(e);
+            f.message = format!("AndroidDriver::back: {}", f.message);
+            f
         })
     }
 

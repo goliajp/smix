@@ -1,6 +1,6 @@
 # Migrating to smix 12.0.0
 
-12.0.0 is a major release because of one change to the Rust API. Flows,
+12.0.0 is a major release because of two changes to the Rust API. Flows,
 the CLI and the SDKs need no change to keep working.
 
 If you only write YAML or drive smix from the CLI, read **What answers
@@ -31,11 +31,31 @@ differently** and stop. **Rust API** is for code that calls the crates.
   count that navigation as its own and answer `ok: true` for a key the app
   swallowed. It now answers by what the key did, and takes up to 1.5 s
   longer when the screen is still moving.
+- **A `back` that did not go back fails with `TIMEOUT`, not `DRIVER_ERROR`.**
+  `TIMEOUT` is for the key going in and the screen reading the same for the
+  whole wait. `DRIVER_ERROR` stays for a back whose outcome smix could not
+  read. The runner's own word (`gaveUp`, `couldNotSee`) is in the message
+  now, with its readings.
+- **`back` takes `optional:` and `label:`**, as maestro's does. Until now a
+  mapping after `back` was accepted and ignored, so `optional: true` did
+  nothing. An optional back that did not go back is reported as skipped;
+  one smix could not read still fails.
+- **An Android `back` inside one Compose activity answers `ok: true`.**
+  Closing a screen drawn over another in the same activity used to answer
+  `gaveUp`: the runner's quick readings stop above the Compose content. When
+  they see no change, the whole tree before the key and after the wait
+  decides. Such a back returns after the full 2 s wait rather than as soon
+  as the screen changes.
 - **A keyboard wait that runs out on iOS** still names the minimization
   setting when it is on, but as a fact about the simulator and not as the
   reason for the timeout: a keyboard appears with it on as well.
 
 ## Rust API
+
+`smix_adapter_maestro::Step::Back` carries the step's options:
+`Step::Back(BlockOptions)` where it was the unit variant `Step::Back`. Build
+a plain one with `Step::Back(BlockOptions::default())` and match it with
+`Step::Back(_)` or `Step::Back(opts)`.
 
 `smix_runner_client::route_limits::Route` gains a public field,
 `android_looks: u64` — how many polls the Android handler can reach, each

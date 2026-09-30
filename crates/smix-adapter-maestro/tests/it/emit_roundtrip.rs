@@ -84,7 +84,11 @@ fn emit_core_steps_round_trip() {
             expect_visible: false,
         },
         Step::WaitForAnimationToEnd { ceiling_ms: 400 },
-        Step::Back,
+        Step::Back(Default::default()),
+        Step::Back(smix_adapter_maestro::BlockOptions {
+            label: Some("close the detail".into()),
+            optional: true,
+        }),
         Step::PressKey(smix_sdk::KeyName::Return),
         Step::EraseText(10),
         Step::Swipe {

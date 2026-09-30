@@ -1738,6 +1738,25 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
         // The runner named its refusal, so the hint can name the next
         // step — and the two keyboard cases send a reader in opposite
         // directions, which is the whole reason the name exists.
+        // Back went in and every look afterwards read the screen it
+        // left: a judgement about the screen, and the one refusal of
+        // `/back` a flow's `optional:` may skip. `couldNotSee` and
+        // `notInjected` say nothing about the screen and stay below.
+        RunnerTransportError::RefusedNaming { endpoint, kind, .. }
+            if endpoint == "/back" && kind == "gaveUp" =>
+        {
+            (
+                FailureCode::Timeout,
+                Some(
+                    "the back key went in and the screen read the same for the whole \
+                     wait — the `saw` above holds the readings before and after. If the \
+                     screenshot shows the screen did go back, the change was below what \
+                     the runner reads; if not, the app kept the key (a dialog, a \
+                     handler that swallows back)."
+                        .to_string(),
+                ),
+            )
+        }
         RunnerTransportError::RefusedNaming { kind, .. } => (
             FailureCode::DriverError,
             Some(match kind.as_str() {

@@ -488,7 +488,15 @@ would need measuring again.
 - pressKey: VOLUME_UP                    # Android; iOS fails the step by name
 - pressKey: Back                         # the same as `- back`
 - back                                   # navigation back
+- back:
+    optional: true                       # skipped, not failed, if the screen never moved
+    label: "close the detail"            # name reports use for the step
 ```
+
+A `back` passes when the screen after it is not the screen before it. One
+that went in and changed nothing fails with `TIMEOUT`; `optional: true`
+turns that into a skip. A back whose outcome smix could not read fails
+with `DRIVER_ERROR` either way.
 
 Key names are read when the flow is read, and one table reads them for
 the flow, `smix press-key` and the MCP tool alike: maestro's spellings
