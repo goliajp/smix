@@ -268,4 +268,56 @@ class BackSettleTest {
         repeat(40) { assertNull(settle.observe(Reading.Screen(screen(bars, unreadApp)))) }
         assertEquals(BackSettle.Verdict.CouldNotSee, settle.atDeadline())
     }
+
+    // The whole-tree second opinion behind a `gaveUp`. Measured on the
+    // fixture's nav screen: the detail closed, and every bounded reading
+    // of the app's window was 842070012 before and after.
+
+    @Test
+    fun aDeepReadingThatMovedTurnsAGaveUpIntoAnArrival() {
+        val deepBefore = screen(bars, app.copy(structure = 7000))
+        assertEquals(
+            BackSettle.Verdict.ArrivedScreenChanged,
+            deepVerdict(deepBefore, Reading.Screen(screen(bars, app.copy(structure = 7001)))),
+        )
+    }
+
+    @Test
+    fun aDeepReadingThatHeldIsAGaveUp() {
+        val deepBefore = screen(bars, app.copy(structure = 7000))
+        assertEquals(BackSettle.Verdict.GaveUp, deepVerdict(deepBefore, Reading.Screen(deepBefore)))
+    }
+
+    @Test
+    fun noSteadyDeepReadingBeforeTheKeyCannotSee() {
+        assertEquals(BackSettle.Verdict.CouldNotSee, deepVerdict(null, Reading.Screen(screen())))
+    }
+
+    @Test
+    fun anUnreadableDeepReadingNowCannotSee() {
+        assertEquals(BackSettle.Verdict.CouldNotSee, deepVerdict(screen(), Reading.Unreadable))
+    }
+
+    @Test
+    fun aDeepReadingWithAnUnreadWindowCannotSayItHeld() {
+        val unread = screen(bars, app.copy(structure = null))
+        assertEquals(BackSettle.Verdict.CouldNotSee, deepVerdict(unread, Reading.Screen(unread)))
+    }
+
+    @Test
+    fun aTreeThatChangesByItselfIsNoEvidence() {
+        // Two whole-tree readings before the key that disagree: a screen
+        // changing on its own, which cannot say what the key did.
+        assertNull(
+            steadyDeepReading(
+                Reading.Screen(screen(bars, app.copy(structure = 7000))),
+                Reading.Screen(screen(bars, app.copy(structure = 7002))),
+            ),
+        )
+        assertEquals(
+            screen(),
+            steadyDeepReading(Reading.Screen(screen()), Reading.Screen(screen())),
+        )
+        assertNull(steadyDeepReading(Reading.Unreadable, Reading.Screen(screen())))
+    }
 }

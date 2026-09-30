@@ -251,3 +251,40 @@ class BeforeSettle(private val stillMs: Long) {
         return if (atMs - heldSinceMs >= stillMs) now else null
     }
 }
+
+/**
+ * The second opinion a `gaveUp` has to pass: the whole tree before the
+ * key against the whole tree now.
+ *
+ * The readings taken every 50ms are bounded, and on a Compose window the
+ * bound ends at the view that hosts Compose — every Compose app's window
+ * reads the same there, so a back that closed a screen drawn over another
+ * in the same activity read as a key that went nowhere. Two unbounded
+ * readings cost too much to take every poll; one before the key and one
+ * at the deadline decide only what the bounded ones could not.
+ *
+ * [deepBefore] is null when the whole tree would not hold still across
+ * two readings before the key: a tree that changes by itself is no
+ * evidence that the key changed it, nor that it did not.
+ */
+internal fun deepVerdict(deepBefore: ScreenReading?, deepNow: Reading): BackSettle.Verdict {
+    val then = deepBefore ?: return BackSettle.Verdict.CouldNotSee
+    val now = (deepNow as? Reading.Screen)?.reading ?: return BackSettle.Verdict.CouldNotSee
+    val compared = comparableWindows(then, now) ?: return BackSettle.Verdict.ArrivedScreenChanged
+    return when {
+        compared == 0 -> BackSettle.Verdict.CouldNotSee
+        then.windows.any { it.structure == null } -> BackSettle.Verdict.CouldNotSee
+        else -> BackSettle.Verdict.GaveUp
+    }
+}
+
+/**
+ * The whole-tree reading taken before the key, or null when two of them
+ * in a row disagree or either could not be read.
+ */
+internal fun steadyDeepReading(first: Reading, second: Reading): ScreenReading? {
+    val a = (first as? Reading.Screen)?.reading ?: return null
+    val b = (second as? Reading.Screen)?.reading ?: return null
+    val compared = comparableWindows(a, b) ?: return null
+    return if (compared == 0) null else b
+}

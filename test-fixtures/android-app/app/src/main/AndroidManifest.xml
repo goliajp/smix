@@ -53,5 +53,8 @@
         <activity
             android:name=".CodeActivity"
             android:exported="true" />
+        <activity
+            android:name=".NavActivity"
+            android:exported="true" />
     </application>
 </manifest>

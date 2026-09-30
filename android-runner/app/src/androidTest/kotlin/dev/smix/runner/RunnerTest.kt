@@ -23,7 +23,6 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.CountDownLatch as JCountDownLatch
 import java.util.concurrent.TimeUnit
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import android.net.Uri
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Configurator
@@ -251,6 +250,15 @@ class SmixHttpServer(
     private val STRUCTURE_DEPTH_CAP = 4
     private val STRUCTURE_WINDOW_BUDGET = 40
 
+    /// The whole-tree reading `/back` takes before the key and at its
+    /// deadline — see `deepVerdict`. Bounded only so a runaway tree
+    /// cannot hold the route.
+    private val DEEP_WINDOW_BUDGET = 5000
+
+    /// How many more whole-tree readings `/back` takes, looking for two in
+    /// a row that agree, before it gives up on having one to judge with.
+    private val DEEP_STEADY_TRIES = 3
+
     // NanoHTTPD serves each connection on its own thread, so the body
     // drained in `serve` reaches that request's handler and no other.
     private val drainedBody = ThreadLocal<String>()
@@ -464,10 +472,9 @@ class SmixHttpServer(
                 """{"present":false,"why":"no app was named and no application window holds the focus; ask /probe?app=<applicationId>"}""",
             )
         }
-        val uri = Uri.parse("content://$app.smixprobe")
         val body = try {
             val ctx = InstrumentationRegistry.getInstrumentation().context
-            val hello = ctx.contentResolver.call(uri, "hello", null, null)
+            val hello = ProbeCall.call(ctx, app, "hello")
             if (hello == null) {
                 """{"present":false,"why":"$app has no smix probe in this build"}"""
             } else {
@@ -475,7 +482,7 @@ class SmixHttpServer(
                 // -1 for "never looked". Not a boolean: the caller decides
                 // how still is still enough, and a boolean would bake that
                 // threshold in here where nobody can see it.
-                val quiet = ctx.contentResolver.call(uri, "idle", null, null)
+                val quiet = ProbeCall.call(ctx, app, "idle")
                     ?.getLong("quietMs") ?: -1L
                 val roots = hello.getInt("roots", 0)
                 val version = hello.getString("version") ?: "?"
@@ -509,8 +516,7 @@ class SmixHttpServer(
         }
         val body = try {
             val ctx = InstrumentationRegistry.getInstrumentation().context
-            val b = ctx.contentResolver
-                .call(Uri.parse("content://$app.smixprobe"), "tree", null, null)
+            val b = ProbeCall.call(ctx, app, "tree")
             if (b == null) "[]" else {
                 // The screen's size travels with the tree because the
                 // consumer normalises against the root's rectangle, and the
@@ -726,6 +732,17 @@ class SmixHttpServer(
         val before = clock.stage("before") {
             awaitStillScreen(still, clock.budget(BACK_BEFORE_MS))
         }
+        val deepBefore = clock.stage("deepBefore") {
+            var last = readScreen(deep = true)
+            var steady: ScreenReading? = null
+            for (attempt in 1..DEEP_STEADY_TRIES) {
+                val next = readScreen(deep = true)
+                steady = steadyDeepReading(last, next)
+                if (steady != null) break
+                last = next
+            }
+            steady
+        }
         val injected = injectBackKey()
         val settle = BackSettle(before)
         val started = android.os.SystemClock.elapsedRealtime()
@@ -733,16 +750,25 @@ class SmixHttpServer(
         val verdict = if (!injected) {
             BackSettle.Verdict.NotInjected
         } else {
-            clock.stage("settle") {
+            // A stage the route's limit left no time for looked at
+            // nothing, and "the screen never changed" needs a look.
+            val bounded = clock.stage("settle") {
                 awaitBackVerdict(settle, clock.budget(BACK_SETTLE_MS)) { looks += 1 }
-            } ?: BackSettle.Verdict.GaveUp
+            } ?: BackSettle.Verdict.CouldNotSee
+            if (bounded == BackSettle.Verdict.GaveUp) {
+                clock.stage("deep") { deepVerdict(deepBefore, readScreen(deep = true)) }
+                    ?: BackSettle.Verdict.CouldNotSee
+            } else {
+                bounded
+            }
         }
         val took = android.os.SystemClock.elapsedRealtime() - started
         val body = RunnerWire.backBody(
             ok = verdict.ok,
             settledBy = verdict.settledBy,
-            saw = "${settle.saw()} beforeLooks=${still.looks} looks=$looks tookMs=$took " +
-                "budgetMs=$BACK_SETTLE_MS",
+            saw = "${settle.saw()} deepBefore=${deepBefore?.brief() ?: "<unsteady>"} " +
+                "beforeLooks=${still.looks} looks=$looks tookMs=$took " +
+                "budgetMs=$BACK_SETTLE_MS ${clock.stagesText()}",
             injected = injected,
         )
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
@@ -784,8 +810,14 @@ class SmixHttpServer(
     /// `couldNotSee`. Hashing the whole set removes the choice, and
     /// `currentPackageName` is read once, as a reading rather than as a
     /// decision about which window matters.
-    private fun readScreen(): Reading {
-        val windows = instrumentation.uiAutomation.windows
+    private fun readScreen(deep: Boolean = false): Reading {
+        // The whole-tree reading is for seeing inside the app's windows;
+        // windows arriving and leaving are the bounded reading's to see.
+        // Leaving the status bar out keeps a notification landing during
+        // the wait from reading as the key's doing.
+        val windows = instrumentation.uiAutomation.windows.filter {
+            !deep || it.type == AccessibilityWindowInfo.TYPE_APPLICATION
+        }
         if (windows.isEmpty()) return Reading.Unreadable
         // A window whose root will not read stays in the reading, with
         // the parts that did not read left empty. Dropping it is what
@@ -815,7 +847,11 @@ class SmixHttpServer(
                     WindowReading(
                         window.id,
                         pkg = root.packageName?.toString(),
-                        structure = structureHash(root, STRUCTURE_WINDOW_BUDGET),
+                        structure = if (deep) {
+                            structureHash(root, DEEP_WINDOW_BUDGET, Int.MAX_VALUE, fresh = true)
+                        } else {
+                            structureHash(root, STRUCTURE_WINDOW_BUDGET, STRUCTURE_DEPTH_CAP, fresh = false)
+                        },
                     )
                 } finally {
                     root.recycle()
@@ -850,16 +886,27 @@ class SmixHttpServer(
     /// Bounded because this runs every 50ms: four levels and a shared
     /// budget of 120 nodes across every window are enough to tell two
     /// screens apart and cheap enough to ask for forty times in a row.
-    private fun structureHash(root: AccessibilityNodeInfo, budget: Int): Int {
+    ///
+    /// `fresh` refreshes every node before reading it. The accessibility
+    /// cache hands back children as they were when last fetched, and
+    /// refreshing the root does not reach them: measured on the fixture's
+    /// nav screen, a whole-tree walk took 12ms and read the detail that a
+    /// back had just closed as still there.
+    private fun structureHash(root: AccessibilityNodeInfo, budget: Int, depthCap: Int, fresh: Boolean): Int {
         var hash = 17
         var seen = 0
         fun walk(node: AccessibilityNodeInfo, depth: Int) {
             if (seen >= budget) return
             seen += 1
+            if (fresh && !node.refresh()) {
+                // gone between the parent's read and this one
+                hash = hash * 31 + 1
+                return
+            }
             val name = node.viewIdResourceName ?: node.className?.toString() ?: ""
             hash = hash * 31 + name.hashCode()
             hash = hash * 31 + node.childCount
-            if (depth >= STRUCTURE_DEPTH_CAP) return
+            if (depth >= depthCap) return
             for (i in 0 until node.childCount) {
                 if (seen >= budget) return
                 val child = node.getChild(i) ?: continue

@@ -2,7 +2,6 @@ package dev.smix.runner
 
 import android.app.Instrumentation
 import android.graphics.Rect
-import android.net.Uri
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import org.json.JSONArray
@@ -37,8 +36,7 @@ class HitReader(private val instrumentation: Instrumentation) {
 
     /// The probe's roots for `app`, or null when it carries no probe.
     private fun probeRoots(app: String): List<HitChain.Node>? = try {
-        instrumentation.context.contentResolver
-            .call(Uri.parse("content://$app.smixprobe"), "tree", null, null)
+        ProbeCall.call(instrumentation.context, app, "tree")
             ?.getString("tree")
             ?.let { HitChain.nodesFromProbe(JSONArray(it)) }
     } catch (_: Exception) {
