@@ -4,7 +4,7 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [12.0.0] — 2026-09-29
 
-A major release for one change to the Rust API (below); flows, the CLI and
+A major release for two changes to the Rust API (below); flows, the CLI and
 the SDKs keep working. What answers differently, and what the Rust change
 asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
 
@@ -17,6 +17,13 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
   no longer build a `Route` with a struct literal or match `Longest`
   exhaustively, so a field or variant added later is not a breaking change.
   Read a route's wait with `route_wait` / `wait_for_request`.
+- **Rust API: `smix_adapter_maestro::Step::Back` is `Step::Back(BlockOptions)`**,
+  carrying the `label:` and `optional:` a flow can now give it.
+- **A `back` that did not go back fails with `TIMEOUT`.** It was
+  `DRIVER_ERROR` for every refusal. `TIMEOUT` is the key going in and the
+  screen reading the same for the whole wait; `DRIVER_ERROR` stays for a
+  back smix could not read. The runner's own word and readings are in the
+  message.
 
 ### Fixed
 
@@ -26,6 +33,31 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
   Compose root whose window was still attached, and a stopped activity's
   window stays attached. `tapOn` then looked for the front screen's
   elements in the one behind it. Only roots that are shown are read now.
+- **The Android runner survives the app it reads dying.** The runner asked
+  the app's probe through a stable provider reference, and Android kills
+  every holder of a stable reference when the provider's process dies. A
+  `stopApp` that landed while the runner was reading the probe — most often
+  right as `launchApp` started the app again — took the runner down with
+  it (`depends on provider … in dying proc`), and every later step found no
+  runner. The probe is now asked over an unstable connection released after
+  each call; a death mid-call reads as "the probe did not answer".
+- **An Android `back` inside one Compose activity is seen.** A detail drawn
+  over a list in the same activity closed, and `back` answered `gaveUp`:
+  the runner's quick readings end at the view that hosts Compose, so every
+  Compose window reads the same there, open detail or not. When they see no
+  change by the deadline, a whole-tree reading of the app's windows before
+  the key and one after decide; a tree that would not hold still before the
+  key cannot decide either way and answers `couldNotSee`. A back the app
+  swallows still answers `gaveUp`.
+- **An Android `back` that ran out of route time says it did not look.**
+  It answered `gaveUp` — "the screen never changed" — from no look at all.
+- **The Swift package builds `SmixIndigoHID` again.** Since 10.1.0 the
+  target imported `SmixDeveloperDir`, which the package manifest consumers
+  resolve never declared, so a consumer depending on the `SmixIndigoHID`
+  product could not compile it. The manifest declares it now.
+- **`back: { optional: true }` is applied.** The mapping after `back` was
+  accepted and ignored. `label:` and `optional:` are read as maestro reads
+  them, and an optional back that did not go back is reported as skipped.
 - **The capsule guard asks Device Hub the right question on Xcode 27.**
   Device Hub shows only the simulator selected in it, and shows that one
   again the moment it boots — so booting the simulator Device Hub is
