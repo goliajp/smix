@@ -273,6 +273,8 @@ jobs:
         run: python3 scripts/dev/gen-selector-matrix.py --check
       - name: fact scan
         run: python3 scripts/dev/fact-scan.py
+      - name: the published swift package builds what the repo builds
+        run: python3 scripts/dev/two-swift-manifests-agree.py
       - name: workflow scan
         run: python3 scripts/dev/workflow-scan.py
       # Reads the corpus and the Android gate, both of which ship.

@@ -188,6 +188,7 @@ SOURCE_GATES=(
   every-verb-reads-a-locale-map
   every-cell-is-declared
   fact-scan
+  two-swift-manifests-agree
   workflow-scan
   android-gate-scan
   gate-subject-diversity

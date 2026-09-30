@@ -84,6 +84,7 @@ LOCAL = {
     "every cell is declared": "every-cell-is-declared",
     "selector matrix in the guide": "gen-selector-matrix",
     "fact scan": "fact-scan",
+    "the published swift package builds what the repo builds": "two-swift-manifests-agree",
     "workflow scan": "workflow-scan",
     "gate subject diversity": "gate-subject-diversity",
     "route context scan": "route-context-scan",

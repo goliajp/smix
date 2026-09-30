@@ -32,8 +32,12 @@ let package = Package(
       path: "swift-bridge/Sources/SmixRunnerCore"
     ),
     .target(
+      name: "SmixDeveloperDir",
+      path: "swift-bridge/Sources/SmixDeveloperDir"
+    ),
+    .target(
       name: "SmixIndigoHID",
-      dependencies: ["SmixRunnerCore"],
+      dependencies: ["SmixRunnerCore", "SmixDeveloperDir"],
       path: "swift-bridge/Sources/SmixIndigoHID"
     ),
 
