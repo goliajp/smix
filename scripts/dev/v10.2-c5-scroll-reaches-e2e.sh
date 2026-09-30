@@ -325,6 +325,33 @@ FLOW
     fail "ios: the OCR chain did not stop the scroll"
   fi
   log "ios ocr=reached (a chain whose only usable layer is ocrText)"
+
+  # Cards taller than one swipe's glide leaves room for: judged while the
+  # list was still moving, a card read as short, the next swipe went out
+  # on top of the glide, and the card was carried past every position
+  # where it was wholly in view. Against 11.0.0 this failed after 36
+  # swipes on every run; the tap and the card's own label are the proof
+  # that the scroll stopped on it.
+  cat >"$WORK/ios-tall.yaml" <<FLOW
+appId: $IOS_APPID
+---
+- launchApp:
+    arguments: ["-tall-cards"]
+- scrollUntilVisible:
+    element:
+      id: "tall_card_6"
+    direction: DOWN
+- tapOn:
+    id: "tall_card_6"
+- assertVisible: "tapped card 6"
+FLOW
+  rc=0
+  out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX_RUN" --device "$IOS_UDID" "$WORK/ios-tall.yaml" 2>&1)" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$out" | tail -20 >&2
+    fail "ios: a card taller than a swipe's glide was never stopped on"
+  fi
+  log "ios tall=reached (the scroll waited out each glide before judging)"
   LEGS_RUN=$((LEGS_RUN + 1))
 }
 
