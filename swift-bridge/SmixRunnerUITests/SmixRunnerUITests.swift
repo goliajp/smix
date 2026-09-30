@@ -2298,12 +2298,26 @@ final class SmixRunnerUITests: XCTestCase {
         var tried: [String] = []
         let outcome: HideKeyboardRoute.Outcome? = smixGuarded("hide-keyboard") {
           guard app.keyboards.firstMatch.exists else { return .alreadyGone }
+          func onScreen() -> Bool {
+            let kb = app.keyboards.firstMatch
+            return kb.exists
+              && HideKeyboardRoute.keyboardOnScreen(keyboard: kb.frame, app: app.frame)
+          }
+          func focusName() -> String {
+            let focused = app.descendants(matching: .any)
+              .matching(NSPredicate(format: "hasKeyboardFocus == true"))
+              .firstMatch
+            return focused.exists
+              ? (focused.identifier.isEmpty ? focused.label : focused.identifier)
+              : "nothing reports keyboard focus"
+          }
+          guard onScreen() else { return .offScreen(focus: focusName()) }
           // The host stops listening at `deadline`. A strategy started after
           // it answers nobody: on a slow simulator the whole chain passed
           // 15 s and the host reported a step that "may have acted".
           func spent() -> Bool { deadline.map { Date() >= $0 } ?? false }
           func stopped() -> HideKeyboardRoute.Outcome {
-            app.keyboards.firstMatch.exists
+            onScreen()
               ? .stillPresent(tried: (tried.isEmpty
                   ? "stopped before trying anything"
                   : "tried \(tried.joined(separator: ", ")); stopped there")
@@ -2322,7 +2336,9 @@ final class SmixRunnerUITests: XCTestCase {
             while true {
               Thread.sleep(forTimeInterval: 0.05)
               let began = budget.look()
-              if !app.keyboards.firstMatch.exists { return true }
+              // Gone, or minimized below the display: either way nothing
+              // on screen is covered any more.
+              if !onScreen() { return true }
               if budget.spent(by: began) { return false }
             }
           }
@@ -2396,14 +2412,8 @@ final class SmixRunnerUITests: XCTestCase {
           // Name what still holds the keyboard up, because "it did not
           // close" and "this field is still first responder" send the
           // caller to different places.
-          let focused = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "hasKeyboardFocus == true"))
-            .firstMatch
-          let who = focused.exists
-            ? (focused.identifier.isEmpty ? focused.label : focused.identifier)
-            : "nothing reports keyboard focus"
           return .stillPresent(
-            tried: "tried \(tried.joined(separator: ", ")); focus: \(who)")
+            tried: "tried \(tried.joined(separator: ", ")); focus: \(focusName())")
         }
         // A caught exception is not evidence the keyboard is up.
         return outcome ?? .couldNotTell(

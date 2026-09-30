@@ -51,6 +51,14 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
   swallows still answers `gaveUp`.
 - **An Android `back` that ran out of route time says it did not look.**
   It answered `gaveUp` — "the screen never changed" — from no look at all.
+- **`hideKeyboard` on iOS succeeds when the keyboard is below the screen.**
+  A simulator that minimizes its keyboard keeps one in the tree, below the
+  display, while a field has focus. `hideKeyboard` counted it as up, tapped
+  keys nobody could reach, and failed with `keyboard_did_not_close`. A
+  keyboard none of which is on screen covers nothing, so the step succeeds
+  and says the keyboard is minimized and which field keeps focus; a
+  strategy that leaves the keyboard below the screen counts as having
+  dismissed it.
 - **The Swift package builds `SmixIndigoHID` again.** Since 10.1.0 the
   target imported `SmixDeveloperDir`, which the package manifest consumers
   resolve never declared, so a consumer depending on the `SmixIndigoHID`
@@ -165,10 +173,11 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
 - **A keyboard wait that runs out no longer blames the keyboard
   minimization setting.** 11.0.0 said that with
   `com.apple.keyboard.preferences AutomaticMinimizationEnabled` on "a
-  focused field shows no keyboard and this wait cannot succeed". On iOS 27
-  a focused field shows the keyboard with it on — after relaunching the
-  app and after rebooting the simulator — so the sentence could put a
-  timeout with another cause on the setting. The failure still mentions
+  focused field shows no keyboard and this wait cannot succeed". With it on,
+  one iOS 27 simulator showed the keyboard for a focused field — after
+  relaunching the app and after rebooting — and another (24A434) kept it
+  below the screen, so the sentence could put a timeout with another cause
+  on the setting. The failure still mentions
   the setting when it is on, and how to delete it, as a fact about the
   simulator rather than as the reason; the timeout is reported as before.
 - **An Android route that polls answers before the host stops waiting.**
