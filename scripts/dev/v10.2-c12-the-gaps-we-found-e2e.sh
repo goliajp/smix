@@ -205,7 +205,7 @@ FLOW
   # the accessibility reader there is right, not a defect. `.MainActivity`
   # is View-based (measured: `roots: 0`), so it would fail this for a
   # reason that has nothing to do with what is being judged.
-  adb -s "$AND_SERIAL" shell am start -n "$AND_APPID/.InteropActivity" >/dev/null 2>&1 \
+  adb -s "$AND_SERIAL" shell am start -W -n "$AND_APPID/.InteropActivity" >/dev/null 2>&1 \
     || fail "could not bring the Compose screen to the front"
 
   # Polled: the activity is resumed before Compose has composed, and a

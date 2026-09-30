@@ -85,7 +85,7 @@ if ! curl -s -m 5 "http://localhost:$PORT/health" >/dev/null 2>&1; then
 fi
 
 adb -s "$SERIAL" shell am force-stop "$APPID" >/dev/null 2>&1 || true
-adb -s "$SERIAL" shell am start -n "$APPID/.InteropActivity" >/dev/null 2>&1 \
+adb -s "$SERIAL" shell am start -W -n "$APPID/.InteropActivity" >/dev/null 2>&1 \
   || fail "could not start the interop screen"
 
 # Each reader asked by name, through the CLI a consumer has.

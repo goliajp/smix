@@ -174,7 +174,7 @@ for height in $HEIGHTS; do
     || fail "could not set the display to ${WIDTH}x${height}"
   SIZE_CHANGED=1
   device 20 adb -s "$SERIAL" shell am force-stop "$APPID" >/dev/null 2>&1 || true
-  device 20 adb -s "$SERIAL" shell am start -n "$APPID/.ScrollActivity" >/dev/null 2>&1 \
+  device 20 adb -s "$SERIAL" shell am start -W -n "$APPID/.ScrollActivity" >/dev/null 2>&1 \
     || fail "could not start the scrolling screen at ${WIDTH}x${height}"
 
   # Polled, not read once: straight after the start the probe answers

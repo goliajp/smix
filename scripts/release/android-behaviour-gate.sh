@@ -162,7 +162,7 @@ RUNNER_LOG_SINCE="$(android_device_now "$SERIAL")"
 # A search page left on top of Settings (see settings_home below) would
 # keep Settings from being the resumed activity.
 adb -s "$SERIAL" shell am force-stop "$FLOW_APP" >/dev/null 2>&1
-adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1 \
+adb -s "$SERIAL" shell am start -W -a android.settings.SETTINGS >/dev/null 2>&1 \
   || die "could not foreground $APP on $SERIAL"
 
 # `am start` returns when the intent is dispatched, not when the window
@@ -280,7 +280,7 @@ await_settings() {
 # being the resumed activity. Stopping that app takes its page away.
 settings_home() {
   adb -s "$SERIAL" shell am force-stop "$FLOW_APP" >/dev/null 2>&1
-  adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1
+  adb -s "$SERIAL" shell am start -W -a android.settings.SETTINGS >/dev/null 2>&1
   await_settings
 }
 settings_home
@@ -359,7 +359,7 @@ FIXTURE_APK="$(bash "$REPO_ROOT/scripts/dev/build-android-fixture.sh" 2>/dev/nul
   || die "A4: the fixture app did not build"
 adb -s "$SERIAL" install -r "$FIXTURE_APK" >/dev/null 2>&1 \
   || die "A4: could not install the fixture on $SERIAL"
-adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
+adb -s "$SERIAL" shell am start -W -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
   || die "A4: could not foreground $FIXTURE_APP_ID on $SERIAL"
 
 # A window is attached a moment before its root becomes readable, and
@@ -420,7 +420,7 @@ PY
 # received, so it says what arrived rather than what smix believes it
 # sent.
 adb -s "$SERIAL" shell am force-stop "$FIXTURE_APP_ID" >/dev/null 2>&1
-adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
+adb -s "$SERIAL" shell am start -W -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
   || die "A5: could not foreground $FIXTURE_APP_ID"
 await_node A5 "$FIXTURE_APP_ID" fixture_input "the screen arriving"
 
@@ -451,7 +451,7 @@ python3 "$REPO_ROOT/scripts/release/android-a5-verdict.py" \
 # maestro treats it as a no-op when there is no keyboard, and a flow
 # written once for both platforms cannot ask "is a keyboard up" first.
 adb -s "$SERIAL" shell am force-stop "$FIXTURE_APP_ID" >/dev/null 2>&1
-adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
+adb -s "$SERIAL" shell am start -W -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
   || die "A6: could not foreground $FIXTURE_APP_ID"
 await_node A6 "$FIXTURE_APP_ID" fixture_input "the screen arriving"
 
@@ -485,7 +485,7 @@ esac
 # The subject is the finding. A gate that only ever drives the toolkit
 # with the simplest semantics cannot see a predicate that holds only
 # there.
-adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.ComposeActivity" >/dev/null 2>&1 \
+adb -s "$SERIAL" shell am start -W -n "$FIXTURE_APP_ID/.ComposeActivity" >/dev/null 2>&1 \
   || die "A7: could not foreground the Compose screen"
 
 # Composition is not done when am start returns, and a fixed wait that is
@@ -591,7 +591,7 @@ python3 "$REPO_ROOT/scripts/release/android-a10-verdict.py" \
 # fill in that app stopped working, and they reported it against the
 # release meant to make fills reliable.
 adb -s "$SERIAL" shell am force-stop "$FIXTURE_APP_ID" >/dev/null 2>&1
-adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
+adb -s "$SERIAL" shell am start -W -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
   || die "A11: could not foreground the view screen"
 await_node A11 "$FIXTURE_APP_ID" fixture_input "the screen arriving"
 
@@ -621,7 +621,7 @@ python3 "$REPO_ROOT/scripts/release/android-a11-verdict.py" \
 # reading that as "there is no way to wait for the keyboard", reached for
 # a pause. Asked with both expectations, because a tree that never
 # carries it would pass the "gone" half forever.
-adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
+adb -s "$SERIAL" shell am start -W -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
   || die "A12: could not foreground $FIXTURE_APP_ID on $SERIAL"
 # The one `am start` in this gate that had no `await_node` after it. Five
 # others do; this one went straight on to `hide-keyboard`, so on a device

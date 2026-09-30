@@ -172,7 +172,7 @@ log "  stay-awake-on=$on_reads          (settings get stay_on_while_plugged_in)"
 
 # --- 3. the frontmost app, and that it changes -----------------------
 step "the resumed activity is read, and follows what is in front"
-adb -s "$SERIAL" shell am start -n "$APPID/.ComposeActivity" >/dev/null 2>&1
+adb -s "$SERIAL" shell am start -W -n "$APPID/.ComposeActivity" >/dev/null 2>&1
 sleep 2
 front="$(smix_sim frontmost "$ALIAS" --json)"
 echo "$front" | grep -q "\"package\":\"$APPID\"" \
@@ -213,8 +213,17 @@ echo "$empty_out" | grep -q "0 of 0 report" \
   || fail "after clearing the buffer, crashes says: $empty_out"
 log "  empty-buffer=0-reports    (and exit 0)"
 
-adb -s "$SERIAL" shell am start -n "$APPID/.MainActivity" >/dev/null 2>&1
-sleep 2
+# Waited for, not slept on: under a release run's load the app was not
+# yet running two seconds after `am start`, `am crash` had nothing to
+# crash, and the buffer was judged for a crash that never happened.
+adb -s "$SERIAL" shell am start -W -n "$APPID/.MainActivity" >/dev/null 2>&1
+running=""
+for _ in $(seq 1 20); do
+  running="$(adb -s "$SERIAL" shell pidof "$APPID" 2>/dev/null | tr -d '\r')"
+  [ -n "$running" ] && break
+  sleep 1
+done
+[ -n "$running" ] || fail "$APPID never started, so there is no crash to read"
 adb -s "$SERIAL" shell am crash "$APPID" >/dev/null 2>&1
 # The buffer lags the crash by a few seconds — measured 2026-09-23, a
 # read one second after `am crash` still showed nothing while the main
