@@ -80,13 +80,17 @@ e2e_stop_emulator "$SERIAL" || fail "the registration boot of $AVD did not quit"
 SERIAL=""
 
 step "1. smix boots it from a caller whose process group is then ended"
-# `set -m` gives the subshell a process group of its own, as a terminal
-# or a harness gives each command; the SIGINT below is what Ctrl-C or a
-# deadline sends to that group.
-set -m
-( "$SMIX" sim boot "$ALIAS" >"$WORK/boot.log" 2>&1; sleep 30 ) &
+# The caller gets a process group of its own, as a terminal or a harness
+# gives each command; the SIGINT below is what Ctrl-C or a deadline sends
+# to that group. Made directly rather than with `set -m`: inside the
+# release tier `set -m` failed to make the group ("child setpgid ...
+# Operation not permitted"), and a job started by a shell without job
+# control inherits SIGINT ignored, so the signal went nowhere three runs
+# in a row while this passed alone. INT is put back to its default for
+# the same reason.
+perl -e '$SIG{INT} = "DEFAULT"; setpgrp(0, 0); exec @ARGV or die "exec: $!\n"' \
+  bash -c '"$0" sim boot "$1" >"$2" 2>&1; sleep 30' "$SMIX" "$ALIAS" "$WORK/boot.log" &
 CALLER=$!
-set +m
 # The caller is ended while `smix sim boot` is still waiting for the
 # boot to finish — the moment a person reaches for Ctrl-C. It used to end
 # at whatever point the boot had reached, which on a loaded machine was
@@ -101,6 +105,10 @@ done
 listed "emulator-$PORT" || { cat "$WORK/boot.log" >&2; fail "emulator-$PORT never appeared"; }
 SERIAL="emulator-$PORT"
 WE_BOOTED=yes
+# The signal below is only a test of anything if the caller leads its own
+# group; a group that was never made is this script's failure, said so.
+[ "$(ps -o pgid= -p "$CALLER" | tr -d ' ')" = "$CALLER" ] \
+  || fail "the caller $CALLER does not lead its own process group — the SIGINT below would test nothing"
 T0=$SECONDS
 kill -INT -- "-$CALLER" 2>/dev/null || true
 wait "$CALLER" 2>/dev/null || true

@@ -81,7 +81,7 @@ done
 # --- put Settings home on screen ---
 log "launch Settings home"
 adb -s "$SERIAL" shell am force-stop dev.smix.fixture >/dev/null 2>&1 || true
-adb -s "$SERIAL" shell am start -n dev.smix.fixture/.MainActivity >/dev/null 2>&1
+adb -s "$SERIAL" shell am start -W -n dev.smix.fixture/.MainActivity >/dev/null 2>&1
 sleep 2
 
 # The fixture, not the system Settings app.

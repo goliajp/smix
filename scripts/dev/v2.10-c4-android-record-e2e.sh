@@ -76,7 +76,7 @@ for i in $(seq 1 90); do sleep 2; curl -sf --max-time 2 "$R/health" >/dev/null 2
 
 log "launch Settings to record against"
 adb -s "$SERIAL" shell am force-stop dev.smix.fixture >/dev/null 2>&1 || true
-adb -s "$SERIAL" shell am start -n dev.smix.fixture/.MainActivity >/dev/null 2>&1
+adb -s "$SERIAL" shell am start -W -n dev.smix.fixture/.MainActivity >/dev/null 2>&1
 sleep 2
 
 log "record a tap + fill"

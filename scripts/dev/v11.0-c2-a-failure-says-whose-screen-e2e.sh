@@ -137,7 +137,7 @@ search_page_gone
 # runner can read. What this leg judges is what a failure says about the
 # screen, and a Settings still drawing its first frame is a screen with no
 # app on it yet.
-adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1 || true
+adb -s "$SERIAL" shell am start -W -a android.settings.SETTINGS >/dev/null 2>&1 || true
 settings_readable=0
 for _ in $(seq 1 60); do
   if curl -s -m 5 "http://localhost:$PORT/windows" | python3 -c 'import json,sys
