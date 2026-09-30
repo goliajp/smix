@@ -109,4 +109,26 @@ final class HideKeyboardOutcomeTests: XCTestCase {
                    "an exception is not evidence the keyboard is still up")
     XCTAssertNotEqual(json["error"] as? String, "keyboard_did_not_close")
   }
+
+  func test_a_keyboard_below_the_screen_is_success_that_names_the_focus() async throws {
+    let json = try await parse(HideKeyboardRoute.outcome(.offScreen(focus: "input-camera-name")))
+    XCTAssertEqual(json["ok"] as? Bool, true)
+    let saw = json["saw"] as? String ?? ""
+    XCTAssertTrue(saw.contains("below the screen") && saw.contains("input-camera-name"), saw)
+  }
+
+  func test_on_screen_is_any_overlap_with_the_app() {
+    let app = CGRect(x: 0, y: 0, width: 402, height: 874)
+    // the consumer's minimized keyboard
+    XCTAssertFalse(HideKeyboardRoute.keyboardOnScreen(
+      keyboard: CGRect(x: 0, y: 918, width: 402, height: 226), app: app))
+    // flush with the bottom edge: touching is not showing
+    XCTAssertFalse(HideKeyboardRoute.keyboardOnScreen(
+      keyboard: CGRect(x: 0, y: 874, width: 402, height: 226), app: app))
+    XCTAssertTrue(HideKeyboardRoute.keyboardOnScreen(
+      keyboard: CGRect(x: 0, y: 538, width: 402, height: 336), app: app))
+    XCTAssertTrue(HideKeyboardRoute.keyboardOnScreen(
+      keyboard: CGRect(x: 0, y: 860, width: 402, height: 226), app: app))
+    XCTAssertFalse(HideKeyboardRoute.keyboardOnScreen(keyboard: .zero, app: app))
+  }
 }

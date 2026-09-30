@@ -48,7 +48,12 @@ differently** and stop. **Rust API** is for code that calls the crates.
   as the screen changes.
 - **A keyboard wait that runs out on iOS** still names the minimization
   setting when it is on, but as a fact about the simulator and not as the
-  reason for the timeout: a keyboard appears with it on as well.
+  reason for the timeout: a keyboard has been seen both shown and kept below
+  the screen with it on.
+- **`hideKeyboard` on iOS succeeds when the keyboard is below the screen**
+  (minimized) instead of failing with `keyboard_did_not_close`. Focus stays
+  on the field; the answer says which. A flow that pressed Enter to get
+  past this can go back to `hideKeyboard`.
 
 ## Rust API
 

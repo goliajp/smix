@@ -51,6 +51,12 @@ public enum HideKeyboardRoute {
   public enum Outcome: Equatable, Sendable {
     /// There was no keyboard. The intent is already satisfied.
     case alreadyGone
+    /// A keyboard is in the tree and none of it is on screen — a simulator
+    /// that minimizes its keyboard keeps one below the display while a
+    /// field holds focus. Nothing is covered, so the intent is satisfied;
+    /// the answer says so, and which field still has focus, because the
+    /// keys of that keyboard cannot be pressed and focus did not move.
+    case offScreen(focus: String)
     /// There was one, and it is gone now.
     case dismissed
     /// There was one, every strategy ran, and it is still there.
@@ -63,6 +69,10 @@ public enum HideKeyboardRoute {
     switch o {
     case .alreadyGone, .dismissed:
       return success(ok: true)
+    case .offScreen(let focus):
+      let f = jsonEscape(focus)
+      return envelope(.ok, Data(
+        #"{"ok":true,"saw":"the keyboard is below the screen (minimized) and covers nothing; focus stays on \#(f)"}"#.utf8))
     case .stillPresent(let tried):
       let t = jsonEscape(tried)
       return envelope(.ok, Data(
@@ -72,6 +82,16 @@ public enum HideKeyboardRoute {
       return envelope(.ok, Data(
         #"{"ok":false,"error":"keyboard_state_unknown","saw":"\#(w)"}"#.utf8))
     }
+  }
+
+  /// Whether any of the keyboard's frame is inside the app's. A keyboard
+  /// the tree reports and the display does not show is not one to dismiss:
+  /// its keys cannot be tapped and it hides nothing. Measured on a
+  /// consumer's iOS 27 simulator: keyboard at y=918 on an 874-point screen,
+  /// `exists` true, every strategy run against it and failing.
+  public static func keyboardOnScreen(keyboard: CGRect, app: CGRect) -> Bool {
+    let shown = keyboard.intersection(app)
+    return !shown.isNull && shown.width > 0 && shown.height > 0
   }
 
   public static func success(ok: Bool) -> HTTPResponse {
