@@ -28,6 +28,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
+source "$ROOT/scripts/lib/judged-run.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
 ALIAS="${SMIX_C7_ANDROID:-$E2E_ANDROID}"
 # shellcheck source=../lib/gate-port.sh
@@ -149,7 +150,7 @@ for target in card overlay; do
   adb -s "$SERIAL" shell am start -W -S -n "$APPID/.InteropActivity" >/dev/null 2>&1 \
     || fail "could not restart the interop screen"
   rc=0
-  SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$TAPS/$target.yaml" >"$TAPS/$target.log" 2>&1 || rc=$?
+  SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$SERIAL" "$TAPS/$target.yaml" >"$TAPS/$target.log" 2>&1 || rc=$?
   if [ "$rc" -ne 0 ]; then
     tail -8 "$TAPS/$target.log" >&2
     fail "the tap on interop_$target did not pass (exit $rc)"
