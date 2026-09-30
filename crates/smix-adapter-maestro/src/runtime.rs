@@ -951,7 +951,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::ClearKeychain => "clearKeychain",
         Step::HideKeyboard => "hideKeyboard",
         Step::PressKey(_) => "pressKey",
-        Step::Back => "back",
+        Step::Back(_) => "back",
         Step::Scroll => "scroll",
         Step::ScrollUntilVisible { .. } => "scrollUntilVisible",
         Step::Swipe { .. } => "swipe",
@@ -1979,9 +1979,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 }
                 Ok(RunStepReport::Ok)
             }
-            Step::Back => {
-                self.app.go_back().await?;
-                Ok(RunStepReport::Ok)
+            Step::Back(opts) => {
+                let result = self.app.go_back().await.map(|()| RunStepReport::Ok);
+                block_outcome("back", opts, result.map_err(RunError::from))
             }
             Step::PressKey(key) => {
                 // Every key goes to the device, the hardware buttons
@@ -4396,7 +4396,7 @@ mod step_attribution_tests {
 
     #[test]
     fn a_failure_says_which_step_and_which_verb() {
-        let step = Step::Back;
+        let step = Step::Back(Default::default());
         let err = attribute_to_step(sdk_failure("not visible — { id=\"x\" }"), 3, &step, "back");
         let RunError::Sdk(f) = err else {
             panic!("the variant must be preserved");
@@ -4431,7 +4431,7 @@ mod step_attribution_tests {
         // The rule is which step kind it is, not what the text looks
         // like. An app whose own copy starts with "step " must not
         // silently lose its attribution.
-        let step = Step::Back;
+        let step = Step::Back(Default::default());
         let RunError::Sdk(f) =
             attribute_to_step(sdk_failure("step counter not visible"), 7, &step, "back")
         else {
@@ -4440,11 +4440,41 @@ mod step_attribution_tests {
         assert_eq!(f.message, "step 7 (back): step counter not visible");
     }
 
+    fn back_failure(code: FailureCode) -> Result<RunStepReport, RunError> {
+        Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+            code: Some(code),
+            message: "back".into(),
+            ..Default::default()
+        })))
+    }
+
+    #[test]
+    fn an_optional_back_skips_a_screen_that_never_moved_and_nothing_else() {
+        let optional = crate::BlockOptions {
+            label: None,
+            optional: true,
+        };
+        assert!(matches!(
+            block_outcome("back", &optional, back_failure(FailureCode::Timeout)),
+            Ok(RunStepReport::Skipped { .. })
+        ));
+        // smix could not read what the key did: not a judgement to skip
+        assert!(block_outcome("back", &optional, back_failure(FailureCode::DriverError)).is_err());
+        assert!(
+            block_outcome(
+                "back",
+                &crate::BlockOptions::default(),
+                back_failure(FailureCode::Timeout)
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn an_authoring_error_is_left_alone() {
         // It names its own cause and carries no message field to write
         // into; the stderr line gives it its step.
-        let step = Step::Back;
+        let step = Step::Back(Default::default());
         let err = attribute_to_step(
             RunError::UnknownDirection("nope".into()),
             2,

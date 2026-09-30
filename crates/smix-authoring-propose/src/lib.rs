@@ -378,7 +378,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::InputText(_) => "inputText",
         Step::InputTextInto { .. } => "inputTextInto",
         Step::PressKey(_) => "pressKey",
-        Step::Back => "back",
+        Step::Back(_) => "back",
         Step::RunFlow(_) => "runFlow",
         Step::RunFlowConditional { .. } => "runFlowConditional",
         Step::RunFlowInline { .. } => "runFlowInline",

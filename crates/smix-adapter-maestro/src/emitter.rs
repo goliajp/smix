@@ -153,7 +153,17 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
             );
             Ok(single("waitForAnimationToEnd", Value::Mapping(inner)))
         }
-        Step::Back => Ok(Value::String("back".into())),
+        Step::Back(opts) if opts.is_default() => Ok(Value::String("back".into())),
+        Step::Back(opts) => {
+            let mut inner = Mapping::new();
+            if let Some(label) = &opts.label {
+                inner.insert(Value::String("label".into()), Value::String(label.clone()));
+            }
+            if opts.optional {
+                inner.insert(Value::String("optional".into()), Value::Bool(true));
+            }
+            Ok(single("back", Value::Mapping(inner)))
+        }
         Step::PressKey(k) => Ok(single("pressKey", Value::String(k.as_str().into()))),
         Step::EraseText(n) => Ok(single("eraseText", Value::Number(Number::from(*n)))),
         Step::Swipe { from, to } => {
@@ -357,7 +367,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::InputText(_) => "inputText",
         Step::InputTextInto { .. } => "inputTextInto",
         Step::PressKey(_) => "pressKey",
-        Step::Back => "back",
+        Step::Back(_) => "back",
         Step::RunFlow(_) => "runFlow",
         Step::RunFlowConditional { .. } => "runFlowConditional",
         Step::RunFlowInline { .. } => "runFlowInline",

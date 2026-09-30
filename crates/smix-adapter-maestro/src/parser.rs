@@ -1376,6 +1376,23 @@ fn parse_block_env(v: &Value, field: &str) -> Result<Vec<(String, String)>, Pars
         .collect()
 }
 
+/// `back`, bare or with maestro's `{ label, optional }`. A mapping used
+/// to be accepted and dropped whole, so `optional: true` on a back read
+/// as written and changed nothing.
+fn parse_back(value: &Value) -> Result<Step, ParseError> {
+    match value {
+        Value::Null => Ok(Step::Back(BlockOptions::default())),
+        Value::Mapping(map) => {
+            reject_unknown_keys(map, "back", "back", &["label", "optional"], &[])?;
+            Ok(Step::Back(parse_block_options(map, "back")?))
+        }
+        other => Err(ParseError::InvalidValue {
+            field: "back".into(),
+            reason: format!("expected nothing or a mapping of label / optional, got {other:?}"),
+        }),
+    }
+}
+
 fn parse_block_options(
     map: &serde_norway::Mapping,
     field: &str,
@@ -3276,7 +3293,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         // they are, so `- back` has to work here and not only after a
         // migrate — VERB_TABLE renames it to pressKey, and the row is the
         // only thing that said what it presses.
-        "back" => Ok(Step::Back),
+        "back" => parse_back(value),
         "runFlow" => parse_run_flow(value),
         "scrollUntilVisible" => parse_scroll_until_visible(value),
         "eraseText" => parse_erase_text(value),

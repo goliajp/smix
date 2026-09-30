@@ -2845,3 +2845,33 @@ fn press_key_takes_maestro_spellings_including_back() {
         ]
     );
 }
+
+// `back` with maestro's `{ label, optional }`. The mapping used to be
+// accepted and dropped, so `optional: true` read as written and did nothing.
+
+#[test]
+fn back_reads_its_label_and_optional() {
+    let flow = parse_flow_yaml(
+        "appId: com.x\n---\n- back\n- back:\n    optional: true\n    label: close it\n",
+    )
+    .expect("parse");
+    assert_eq!(
+        flow.steps,
+        vec![
+            Step::Back(BlockOptions::default()),
+            Step::Back(BlockOptions {
+                label: Some("close it".into()),
+                optional: true,
+            }),
+        ]
+    );
+}
+
+#[test]
+fn back_refuses_a_key_it_does_not_read() {
+    let err = parse_flow_yaml("appId: com.x\n---\n- back:\n    timeout: 5000\n")
+        .expect_err("an unread key must not pass silently");
+    let msg = format!("{err}");
+    assert!(msg.contains("timeout") && msg.contains("optional"), "got: {msg}");
+}
+

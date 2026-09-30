@@ -441,8 +441,9 @@ pub enum Step {
     /// read when the flow is, through [`smix_sdk::KeyName::from_name`].
     PressKey(smix_sdk::KeyName),
     /// Navigation back (maestro `back`): iOS navbar-back / edge swipe,
-    /// Android KEYCODE_BACK. Not a keyboard key.
-    Back,
+    /// Android KEYCODE_BACK. Not a keyboard key. `optional` turns a back
+    /// the screen never answered into a skip, as it does on a block.
+    Back(BlockOptions),
     /// Recursively run a referenced yaml. The parser keeps the raw
     /// (potentially relative) path string here; [`parse_flow_file`]
     /// resolves it against the invoking yaml's directory and expands

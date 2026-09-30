@@ -2236,10 +2236,13 @@ impl HttpRunnerClient {
                 None => eprintln!("smix: back settled by {why}"),
             }
         }
+        // The branch travels with the refusal: `gaveUp` is a screen that
+        // was read and never moved, `couldNotSee` a screen nobody could
+        // read, and a flow's `optional:` may skip the first only.
         OkEnvelope {
             ok: body.ok,
-            error: None,
-            saw: None,
+            error: body.settled_by,
+            saw: body.saw,
         }
         .require_ok("/back")?;
         Ok(())

@@ -396,6 +396,35 @@ async fn back_and_hide_keyboard_passthroughs() {
     d.hide_keyboard().await.unwrap();
 }
 
+/// The runner's word for a back that did not land decides the code: a
+/// screen read unchanged is `TIMEOUT`, one nobody could read stays
+/// `DRIVER_ERROR`, and the word and readings reach the message.
+#[tokio::test]
+async fn a_refused_back_keeps_its_branch() {
+    for (settled, code) in [
+        ("gaveUp", FailureCode::Timeout),
+        ("couldNotSee", FailureCode::DriverError),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/back"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": false,
+                "settledBy": settled,
+                "saw": "before=windows=1:app:5 last=windows=1:app:5",
+            })))
+            .mount(&server)
+            .await;
+        let f = driver_for(&server).back().await.expect_err("refused");
+        assert_eq!(f.code, code, "{settled}: {}", f.message);
+        assert!(
+            f.message.contains(settled) && f.message.contains("before=windows"),
+            "{settled}: {}",
+            f.message
+        );
+    }
+}
+
 #[tokio::test]
 async fn wait_for_resolves_immediately_on_hit() {
     let server = MockServer::start().await;
