@@ -504,10 +504,20 @@ mod tests {
             glide: Vec::new(),
             swipes: 0,
         };
-        let r = run(&mut eyes, &sel(), SwipeDirection::Down, &ScrollUntil::default()).await;
+        let r = run(
+            &mut eyes,
+            &sel(),
+            SwipeDirection::Down,
+            &ScrollUntil::default(),
+        )
+        .await;
         assert!(r.is_ok(), "{r:?}");
         assert_eq!(eyes.swipes, 1, "one swipe, then the glide was waited out");
-        assert!((eyes.y - 0.47).abs() < 1e-9, "stopped where the glide did: {}", eyes.y);
+        assert!(
+            (eyes.y - 0.47).abs() < 1e-9,
+            "stopped where the glide did: {}",
+            eyes.y
+        );
     }
 
     #[tokio::test(start_paused = true)]

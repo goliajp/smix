@@ -2872,6 +2872,8 @@ fn back_refuses_a_key_it_does_not_read() {
     let err = parse_flow_yaml("appId: com.x\n---\n- back:\n    timeout: 5000\n")
         .expect_err("an unread key must not pass silently");
     let msg = format!("{err}");
-    assert!(msg.contains("timeout") && msg.contains("optional"), "got: {msg}");
+    assert!(
+        msg.contains("timeout") && msg.contains("optional"),
+        "got: {msg}"
+    );
 }
-
