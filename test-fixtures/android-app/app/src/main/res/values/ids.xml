@@ -8,6 +8,7 @@
     <item name="fixture_interop_label" type="id" />
     <item name="fixture_interop_input" type="id" />
     <item name="fixture_interop_disabled" type="id" />
+    <item name="fixture_interop_player" type="id" />
     <item name="fixture_ask_camera" type="id" />
     <item name="fixture_code_email" type="id" />
     <item name="fixture_code" type="id" />

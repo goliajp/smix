@@ -1,6 +1,7 @@
 package dev.smix.fixture
 
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -8,12 +9,19 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
@@ -43,10 +51,18 @@ import androidx.compose.ui.viewinterop.AndroidView
 ///    first row is cut by the viewport's top edge. Its layout rectangle
 ///    and the part of it on screen are different numbers, which is the
 ///    whole of the second defect.
+///  - **player card**: a Compose card whose whole face is a hosted View,
+///    with a Compose button drawn over a corner of it — a consumer's
+///    camera card. The probe hung hosted Views over every Compose node, so
+///    a tap on the card and a tap on the button were both reported as
+///    landing on the player, and missing. Last on the screen, so nothing
+///    above it moves.
 class InteropActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            var cardTaps by remember { mutableIntStateOf(0) }
+            var overlayTaps by remember { mutableIntStateOf(0) }
             Column(modifier = Modifier.semantics { testTagsAsResourceId = true }) {
                 Text("interop screen", modifier = Modifier.testTag("interop_title"))
 
@@ -125,6 +141,32 @@ class InteropActivity : ComponentActivity() {
                         )
                     }
                 }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .testTag("interop_card"),
+                ) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            View(ctx).apply {
+                                id = R.id.fixture_interop_player
+                                setBackgroundColor(android.graphics.Color.DKGRAY)
+                                setOnClickListener { cardTaps += 1 }
+                            }
+                        },
+                    )
+                    androidx.compose.material3.Button(
+                        onClick = { overlayTaps += 1 },
+                        modifier = Modifier.align(Alignment.TopEnd).testTag("interop_overlay"),
+                    ) { Text("next") }
+                }
+                Text(
+                    "card $cardTaps overlay $overlayTaps",
+                    modifier = Modifier.testTag("interop_card_count"),
+                )
             }
         }
     }
