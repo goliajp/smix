@@ -133,4 +133,29 @@ python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$SERIAL" --port "$PORT"
   --min-both 16 --min-bounds-compared 16 --focus compose_input >&2 \
   || fail "two-paths-agree is red on the Compose screen"
 
+log "--- a tap on a card whose face is a hosted View, and on a button drawn over it"
+# The probe hung every hosted View over every Compose node, so both taps
+# were judged to land on the player and failed as TAP_MISSED while the
+# app did what they asked. The app's own counts are the proof of where
+# each landed; the tap's verdict is what is under test.
+TAPS="$(mktemp -d)"
+for target in card overlay; do
+  case "$target" in
+    card) want="card 1 overlay 0" ;;
+    overlay) want="card 0 overlay 1" ;;
+  esac
+  printf 'appId: %s\n---\n- tapOn:\n    id: "interop_%s"\n- assertVisible: "%s"\n' \
+    "$APPID" "$target" "$want" >"$TAPS/$target.yaml"
+  adb -s "$SERIAL" shell am start -W -S -n "$APPID/.InteropActivity" >/dev/null 2>&1 \
+    || fail "could not restart the interop screen"
+  rc=0
+  SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$TAPS/$target.yaml" >"$TAPS/$target.log" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    tail -8 "$TAPS/$target.log" >&2
+    fail "the tap on interop_$target did not pass (exit $rc)"
+  fi
+  log "  interop_$target: tapped, and the app counted it ($want)"
+done
+rm -rf "$TAPS"
+
 log "C7-PROBE-E2E-PASS on $SERIAL"

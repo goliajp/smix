@@ -51,6 +51,14 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
   swallows still answers `gaveUp`.
 - **An Android `back` that ran out of route time says it did not look.**
   It answered `gaveUp` — "the screen never changed" — from no look at all.
+- **An Android tap on a Compose node that hosts a View is judged a hit.**
+  The probe hung every `AndroidView`'s View off the root, after all the
+  Compose nodes, so the tap's verdict took the View as drawn over
+  everything: a tap on a card whose face is a video player, and a tap on a
+  button Compose draws over the player, were both reported as landing on
+  the player and failed as `TAP_MISSED` while the app did what they asked.
+  A hosted View now sits under the Compose node that holds it, beneath that
+  node's own children. Needs the probe from this release.
 - **`scrollUntilVisible` stops on a target taller than a swipe's glide.**
   A swipe leaves a list gliding, and the scroll judged the target on the
   first look after it — mid-glide, where a card on its way in reads as

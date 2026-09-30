@@ -181,12 +181,13 @@ object SemanticsProbe {
         val compose = attached()
         val composed = compose.mapNotNull { root ->
             val node = root.semanticsRoot().toProbeNode() ?: return@mapNotNull null
-            // The Views this root hosts, as children of it. `AndroidView`
-            // content has no semantics node of its own, so it is reachable
-            // only from the View side — and a probe that leaves it out sees
-            // LESS than the accessibility path it replaces.
+            // The Views this root hosts, each under the node that holds it
+            // (see [HostedNesting]). `AndroidView` content has no semantics
+            // node of its own, so it is reachable only from the View side —
+            // and a probe that leaves it out sees LESS than the
+            // accessibility path it replaces.
             val hosted = root.view.hostedViews()
-            root.view.rootView to (if (hosted.isEmpty()) node else node.copy(children = node.children + hosted))
+            root.view.rootView to (if (hosted.isEmpty()) node else HostedNesting.nest(node, hosted))
         }
         val windows = WindowInspector.getGlobalWindowViews()
         return StackOrder.bottomFirst(composed + windowsWithoutCompose(compose), { it.first }, windows)
