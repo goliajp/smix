@@ -46,6 +46,11 @@ differently** and stop. **Rust API** is for code that calls the crates.
   they see no change, the whole tree before the key and after the wait
   decides. Such a back returns after the full 2 s wait rather than as soon
   as the screen changes.
+- **`scrollUntilVisible` waits for the list to stop after each swipe**
+  before judging the target, so it takes a little longer per swipe and
+  makes fewer swipes in the same timeout. A flow that used
+  `visibilityPercentage` below 100 only to stop on a tall item can go back
+  to the default.
 - **A keyboard wait that runs out on iOS** still names the minimization
   setting when it is on, but as a fact about the simulator and not as the
   reason for the timeout: a keyboard has been seen both shown and kept below

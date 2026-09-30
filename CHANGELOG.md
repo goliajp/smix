@@ -51,6 +51,16 @@ asks of a caller, is in [docs/migrating-to-12.md](docs/migrating-to-12.md).
   swallows still answers `gaveUp`.
 - **An Android `back` that ran out of route time says it did not look.**
   It answered `gaveUp` — "the screen never changed" — from no look at all.
+- **`scrollUntilVisible` stops on a target taller than a swipe's glide.**
+  A swipe leaves a list gliding, and the scroll judged the target on the
+  first look after it — mid-glide, where a card on its way in reads as
+  short of the mark. The next swipe went out on top of the glide and
+  carried the card from partly below the screen to partly above it, past
+  every position where it was wholly in view: a 379-point card on an
+  874-point screen was never stopped on in 36 swipes, with or without
+  `centerElement`. After each swipe the scroll now waits for two looks
+  that agree on where everything is (up to 2 s, so a screen that never
+  stops moving can still be scrolled) before it judges.
 - **`hideKeyboard` on iOS succeeds when the keyboard is below the screen.**
   A simulator that minimizes its keyboard keeps one in the tree, below the
   display, while a field has focus. `hideKeyboard` counted it as up, tapped

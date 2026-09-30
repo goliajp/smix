@@ -38,6 +38,11 @@ pub struct ScrollUntil {
 /// frame, short enough to cost nothing on a list that is already still.
 const SETTLE_INTERVAL: Duration = Duration::from_millis(150);
 
+/// The longest a scroll waits, after one swipe, for the screen to stop
+/// moving before it judges anyway. A screen with an auto-advancing
+/// carousel never stops, and it must still be scrollable.
+const SETTLE_LIMIT: Duration = Duration::from_millis(2_000);
+
 /// Two readings of the same box, near enough that the content is not
 /// moving. A thousandth of the frame is under two pixels on any screen
 /// there is.
@@ -112,6 +117,27 @@ pub(crate) struct Look {
     pub seen: Option<NormBox>,
     /// What was on screen, for the failure a timeout produces.
     pub visible: ScreenFacts,
+    /// Where everything on screen is, as one number — equal between two
+    /// looks when nothing has moved. Text is left out: a clock ticking is
+    /// not content gliding.
+    pub layout: u64,
+}
+
+/// [`Look::layout`] for `tree`: every node's box, to the pixel.
+pub(crate) fn layout_of(tree: &smix_screen::A11yNode) -> u64 {
+    use std::hash::{Hash, Hasher};
+    fn walk(n: &smix_screen::A11yNode, h: &mut std::collections::hash_map::DefaultHasher) {
+        for v in [n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h] {
+            (v.round() as i64).hash(h);
+        }
+        n.children.len().hash(h);
+        for c in &n.children {
+            walk(c, h);
+        }
+    }
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    walk(tree, &mut h);
+    h.finish()
 }
 
 #[async_trait]
@@ -130,9 +156,31 @@ pub(crate) async fn run<E: Eyes>(
     let mut swipes = 0u32;
     let mut recentered = 0u32;
     let mut previous: Option<NormBox> = None;
+    // Set by a swipe, cleared by two looks that agree on the layout. A
+    // swipe leaves the content gliding, and a look taken mid-glide judged
+    // a target that had not finished arriving as short of the mark, so
+    // the next swipe went out on top of the glide and carried the target
+    // past the whole stretch where it was wholly in view — a 379-point
+    // card on an 874-point screen was never stopped on, in 35 swipes.
+    let mut settling: Option<u64> = None;
+    let mut settle_began: Option<tokio::time::Instant> = None;
     loop {
         let began = budget.look();
         let look = eyes.look().await?;
+        if let Some(since) = settle_began {
+            let steady = settling == Some(look.layout);
+            // Out of time, this look is judged as it is: a first look after
+            // a swipe has nothing to be compared with, and calling it
+            // "still moving" would be a claim no second look made.
+            if !steady && since.elapsed() < SETTLE_LIMIT && !budget.spent_by(began) {
+                settling = Some(look.layout);
+                previous = look.seen;
+                tokio::time::sleep(SETTLE_INTERVAL).await;
+                continue;
+            }
+            settle_began = None;
+            settling = None;
+        }
         // In place, but not where it was a moment ago: the content is
         // still gliding. A swipe leaves a list moving, and a tap sent
         // into the glide is spent stopping it rather than pressing what
@@ -172,6 +220,7 @@ pub(crate) async fn run<E: Eyes>(
         }
         eyes.swipe(direction).await?;
         swipes += 1;
+        settle_began = Some(tokio::time::Instant::now());
     }
 }
 
@@ -186,6 +235,7 @@ impl Eyes for DriverEyes<'_> {
     async fn look(&mut self) -> Result<Look, ExpectationFailure> {
         let tree = self.driver.tree(None).await?;
         let visible = screen_facts(&tree, 10);
+        let layout = layout_of(&tree);
         if let Some(node) = resolve_selector_compiled(&tree, self.selector, &self.ctx)
             && self.driver.confirm_on_screen(&[node]).await?
         {
@@ -194,6 +244,7 @@ impl Eyes for DriverEyes<'_> {
                     return Ok(Look {
                         seen: Some(b),
                         visible,
+                        layout,
                     });
                 }
                 // A node with no area is not on screen in any sense a
@@ -223,12 +274,14 @@ impl Eyes for DriverEyes<'_> {
                 return Ok(Look {
                     seen: Some(seen),
                     visible,
+                    layout,
                 });
             }
         }
         Ok(Look {
             seen: None,
             visible,
+            layout,
         })
     }
 
@@ -313,6 +366,7 @@ mod tests {
             next.map(|seen| Look {
                 seen,
                 visible: ScreenFacts::default(),
+                layout: layout_for(seen),
             })
         }
         async fn swipe(&mut self, _: SwipeDirection) -> Result<(), ExpectationFailure> {
@@ -341,6 +395,7 @@ mod tests {
             Ok(Look {
                 seen: Some(self.seen),
                 visible: ScreenFacts::default(),
+                layout: layout_for(Some(self.seen)),
             })
         }
         async fn swipe(&mut self, _: SwipeDirection) -> Result<(), ExpectationFailure> {
@@ -365,6 +420,11 @@ mod tests {
         let r = run(&mut eyes, &sel(), SwipeDirection::Down, &until).await;
         assert!(r.is_ok(), "{r:?}");
         assert_eq!(eyes.looks, 2);
+    }
+
+    /// A scripted look's layout: the target's box is all that moves.
+    fn layout_for(seen: Option<NormBox>) -> u64 {
+        seen.map_or(0, |b| (b.y * 1e6) as u64 ^ ((b.h * 1e6) as u64) << 32)
     }
 
     fn sel() -> Selector {
@@ -392,6 +452,64 @@ mod tests {
         (r, eyes.swipes)
     }
 
+    /// A list with momentum: a swipe moves the content over the looks
+    /// that follow it, and a swipe sent while it is still moving adds to
+    /// what is left of the last one.
+    struct Gliding {
+        y: f64,
+        h: f64,
+        glide: Vec<f64>,
+        swipes: u32,
+    }
+
+    #[async_trait]
+    impl Eyes for Gliding {
+        async fn look(&mut self) -> Result<Look, ExpectationFailure> {
+            if !self.glide.is_empty() {
+                self.y -= self.glide.remove(0);
+            }
+            let seen = (self.y < 1.0 && self.y + self.h > 0.0).then_some(nb(self.y, self.h));
+            Ok(Look {
+                seen,
+                visible: ScreenFacts::default(),
+                layout: (self.y * 1e6) as i64 as u64,
+            })
+        }
+        async fn swipe(&mut self, _: SwipeDirection) -> Result<(), ExpectationFailure> {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            // measured on a consumer's list: a 0.4-screen swipe carried the
+            // content 0.77 of a screen before it stopped
+            let fling = [0.35, 0.25, 0.12, 0.05];
+            for (i, step) in fling.iter().enumerate() {
+                if i < self.glide.len() {
+                    self.glide[i] += step;
+                } else {
+                    self.glide.push(*step);
+                }
+            }
+            self.swipes += 1;
+            Ok(())
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_target_is_judged_once_the_glide_that_brings_it_has_stopped() {
+        // A 379-point card on an 874-point screen, starting below it. One
+        // swipe glides it to 0.47, wholly in. Judged mid-glide at 0.89 it
+        // read as short, the next swipe went out on top of the glide, and
+        // the card went from partly below the screen to partly above it.
+        let mut eyes = Gliding {
+            y: 1.24,
+            h: 0.43,
+            glide: Vec::new(),
+            swipes: 0,
+        };
+        let r = run(&mut eyes, &sel(), SwipeDirection::Down, &ScrollUntil::default()).await;
+        assert!(r.is_ok(), "{r:?}");
+        assert_eq!(eyes.swipes, 1, "one swipe, then the glide was waited out");
+        assert!((eyes.y - 0.47).abs() < 1e-9, "stopped where the glide did: {}", eyes.y);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn a_target_partly_in_is_swiped_until_it_is_wholly_in() {
         let (r, swipes) = go(
@@ -415,7 +533,8 @@ mod tests {
         let (r, swipes) = go(vec![Ok(None)], until).await;
         let f = r.expect_err("a target that never appears must fail");
         assert_eq!(f.code, FailureCode::ElementNotFound);
-        assert!(swipes >= 7, "swiped for the whole timeout, got {swipes}");
+        // each swipe is followed by two looks that agree before the next
+        assert!(swipes >= 4, "swiped for the whole timeout, got {swipes}");
         assert!(
             f.message.contains(&format!("{swipes} swipes")),
             "{}",

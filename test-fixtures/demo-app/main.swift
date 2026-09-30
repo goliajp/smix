@@ -588,6 +588,39 @@ struct ContentView: View {
   }
 }
 
+/// Cards 43% of the screen tall, in the shape of a consumer's camera list.
+///
+/// One swipe carries a list with momentum further than a card's
+/// wholly-visible stretch is long, so a scroll that judges a card while
+/// the list is still gliding sends the next swipe on top of the glide and
+/// carries the card past every position where it was wholly in view.
+struct TallCardsView: View {
+  @State private var tapped = "nothing tapped"
+
+  var body: some View {
+    GeometryReader { g in
+      VStack(spacing: 0) {
+        Text(tapped)
+          .padding(8)
+          .accessibilityIdentifier("tall_result")
+        ScrollView {
+          VStack(spacing: 12) {
+            ForEach(0..<12, id: \.self) { i in
+              Button { tapped = "tapped card \(i)" } label: {
+                Text("card \(i)")
+                  .frame(maxWidth: .infinity, maxHeight: .infinity)
+                  .background(Color.blue.opacity(0.15))
+              }
+              .frame(height: g.size.height * 0.43)
+              .accessibilityIdentifier("tall_card_\(i)")
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 final class AppDelegate: NSObject, UIApplicationDelegate {
   func application(
     _ application: UIApplication,
@@ -611,7 +644,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   ) {
     guard let windowScene = scene as? UIWindowScene else { return }
     let window = UIWindow(windowScene: windowScene)
-    let root = UIHostingController(rootView: ContentView())
+    // `-tall-cards` opens the tall-card list instead of the main screen:
+    // its own way in, so no row is added to the main list the corpus
+    // flows scroll.
+    let root: UIViewController = CommandLine.arguments.contains("-tall-cards")
+      ? UIHostingController(rootView: TallCardsView())
+      : UIHostingController(rootView: ContentView())
     window.rootViewController = root
     window.makeKeyAndVisible()
     self.window = window
