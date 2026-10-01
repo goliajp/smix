@@ -44,6 +44,7 @@ DRIVES_THE_APP = {
     "POST /swipe-once",
     "POST /tap-at-norm-coord",
     "POST /tap-by-id",
+    "POST /hittable",
     "POST /find-text-by-ocr",
     "POST /swipe-at-norm-coord",
     "POST /hide-keyboard",

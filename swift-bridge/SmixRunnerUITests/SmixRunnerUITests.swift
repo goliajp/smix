@@ -2596,6 +2596,19 @@ final class SmixRunnerUITests: XCTestCase {
       // XCUIElement.tap() goes through XCTRunnerDaemonSession against the
       // resolved element handle, so the gesture lands on the actual SwiftUI
       // hit-target regardless of window scene topology.
+      // POST /hittable handler. A live hit test at the element's hit point,
+      // asked only when the tree says something is drawn over it.
+      hittableHandler: { identifier in
+        let app = await resolveApp()  // Per-request target-app rebind.
+        let answer: HittableRoute.Answer? = smixGuarded("hittable") {
+          let el = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", identifier))
+            .firstMatch
+          guard el.exists else { return .absent }
+          return .found(hittable: el.isHittable)
+        }
+        return answer ?? .unknown(why: "XCUITest raised while hit-testing \(identifier)")
+      },
       tapByIdHandler: { identifier in
         let app = await resolveApp()  // Per-request target-app rebind.
         // Resolve element + swipe-scroll into view + compute the

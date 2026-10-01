@@ -181,6 +181,7 @@ pub const ROUTES: &[Route] = &[
     r("/probe", NONE, ms(0), false),
     r("/probe/tree", NONE, ms(0), false),
     r("/find", ms(0), NONE, true),
+    r("/hittable", ms(0), NONE, true),
     // Android: the screenshot pacer (3 s) and the recogniser latch (5 s).
     r("/find-text-by-ocr", ms(0), ms(8_000), true),
     // iOS: the system-popup walk's 11 s budget.

@@ -227,7 +227,8 @@ public enum TreeRoute {
     truncated: inout Bool,
     logSink: ((String) -> Void)?,
     inActionContainer: Bool = false,
-    modalPresent: Bool = false
+    modalPresent: Bool = false,
+    coveredBy: [CGRect] = []
   ) -> [String: Any] {
     var out: [String: Any] = [:]
     let rawRawType = elementTypeName(d.elementTypeRawValue)
@@ -292,6 +293,17 @@ public enum TreeRoute {
     if modalPresent {
       out["hittable"] = inActionContainer
     }
+    // Drawn under something a window holds above it. A page sheet is not
+    // an alert, dialog or sheet to XCUITest — it is a second container the
+    // window draws after the content it covers — so the rule above never
+    // fired, and a tap at a form row under a sheet ticked the sheet row
+    // drawn at the same place and was reported as done. Geometry only says
+    // "something is over this"; the host asks the runner about the element
+    // itself before refusing, because a container drawn on top can let
+    // touches through.
+    if covers(coveredBy, d.frame) {
+      out["hittable"] = false
+    }
 
     // Mark child recursion "in action container" once we hit an alert /
     // dialog / sheet at any depth. Use the ORIGINAL
@@ -306,19 +318,38 @@ public enum TreeRoute {
       truncated = true
       out["children"] = [[String: Any]]()
     } else {
-      out["children"] = d.children.map {
+      out["children"] = d.children.indices.map { i in
         nodeToDict(
-          $0,
+          d.children[i],
           rootFrame: rootFrame,
           depth: depth + 1,
           truncated: &truncated,
           logSink: logSink,
           inActionContainer: childInActionContainer,
-          modalPresent: modalPresent
+          modalPresent: modalPresent,
+          coveredBy: coveredBy
+            + (rawRawType == "window" ? drawnAfter(d.children, i, rootFrame) : [])
         )
       }
     }
     return out
+  }
+
+  /// The frames of a window's children drawn after child `i` — what a
+  /// window shows over everything before it. Empty and off-screen ones
+  /// cover nothing.
+  static func drawnAfter(_ children: [A11ySnapshotData], _ i: Int, _ rootFrame: CGRect) -> [CGRect] {
+    children[(i + 1)...].map(\.frame).filter { f in
+      let shown = rootFrame.isNull || rootFrame.isEmpty ? f : f.intersection(rootFrame)
+      return !shown.isNull && shown.width > 0 && shown.height > 0
+    }
+  }
+
+  /// Whether a node's centre lies under any of `layers`.
+  static func covers(_ layers: [CGRect], _ frame: CGRect) -> Bool {
+    guard frame.width > 0, frame.height > 0 else { return false }
+    let centre = CGPoint(x: frame.midX, y: frame.midY)
+    return layers.contains { $0.contains(centre) }
   }
 
   /// `visible` heuristic. Snapshots are dead frames so no live `isHittable`

@@ -654,6 +654,7 @@ public actor SmixRunnerServer {
   /// found (no element matching the identifier) or when a smixGuarded
   /// NSException surfaces.
   public typealias TapByIdHandler = @Sendable (_ identifier: String) async -> Bool
+  public typealias HittableHandler = @Sendable (_ identifier: String) async -> HittableRoute.Answer
 
   /// POST /find-text-by-ocr handler. Apple Vision OCR (VNRecognize
   /// TextRequest) over the current XCUIScreen screenshot. Returns the
@@ -1453,6 +1454,7 @@ public actor SmixRunnerServer {
     hideKeyboardHandler: HideKeyboardHandler? = nil,
     inputTextHandler: InputTextHandler? = nil,
     tapAtCoordHandler: TapAtCoordHandler? = nil,
+    hittableHandler: HittableHandler? = nil,
     tapByIdHandler: TapByIdHandler? = nil,
     findTextByOcrHandler: FindTextByOcrHandler? = nil,
     screenshotHandler: ScreenshotHandler? = nil,
@@ -2075,6 +2077,31 @@ public actor SmixRunnerServer {
     // .confirmationDialog/.fullScreenCover dismiss buttons that the default
     // host-HID-at-coord path can't trigger. Parallel to /tap-at-norm-coord;
     // /tap itself is left untouched.
+    if let hittableHandler {
+      // OK MEANS: reading — XCUITest said whether a touch at the element would reach it; nothing was touched.
+      // LONGEST WAIT /hittable: 0 ms — one live query, no wait of its own
+      await server.appendRoute("POST /hittable") { request in
+        let body: Data
+        do {
+          body = try await request.bodyData
+        } catch {
+          return TapByIdRoute.badRequest(reason: "failed to read body: \(error)")
+        }
+        let req: TapByIdRoute.TapByIdRequest
+        do {
+          req = try TapByIdRoute.decode(body)
+        } catch {
+          return TapByIdRoute.badRequest(reason: "\(error)")
+        }
+        return await Self.contextGuardedResponse(request: request,
+          fallback: HittableRoute.response(
+            .unknown(why: "the request context was lost before the element was looked at"))
+        ) {
+          HittableRoute.response(await hittableHandler(req.id))
+        }
+      }
+    }
+
     if let tapByIdHandler {
       // OK MEANS: injected — the touch was dispatched at the element with that identifier, or there was no such element.
       // LONGEST WAIT /tap-by-id: 7000 ms — existence waits of 2 s and 3 s, and the 2 s scroll settle
