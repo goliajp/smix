@@ -621,6 +621,41 @@ struct TallCardsView: View {
   }
 }
 
+/// A form with a page sheet over it, rows of each where the other's are.
+///
+/// A consumer tapped a form row by its id while a sheet was up; the tap
+/// landed on the sheet row drawn at the same place, and smix answered ok.
+/// Each layer counts its own taps, so where a touch went is read from the
+/// app rather than from smix's answer.
+struct SheetOverFormView: View {
+  @State private var formTaps = 0
+  @State private var sheetTaps = 0
+  @State private var sheetShown = false
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Text("form \(formTaps) sheet \(sheetTaps)")
+        .accessibilityIdentifier("sheet_counts")
+      Button("Open the sheet") { sheetShown = true }
+        .accessibilityIdentifier("sheet_open")
+      List(0..<12, id: \.self) { i in
+        Button("form row \(i)") { formTaps += 1 }
+          .accessibilityIdentifier("form_row_\(i)")
+      }
+    }
+    .sheet(isPresented: $sheetShown) {
+      VStack(spacing: 0) {
+        Text("form \(formTaps) sheet \(sheetTaps)")
+          .accessibilityIdentifier("sheet_counts_inside")
+        List(0..<12, id: \.self) { i in
+          Button("sheet row \(i)") { sheetTaps += 1 }
+            .accessibilityIdentifier("sheet_row_\(i)")
+        }
+      }
+    }
+  }
+}
+
 final class AppDelegate: NSObject, UIApplicationDelegate {
   func application(
     _ application: UIApplication,
@@ -647,9 +682,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     // `-tall-cards` opens the tall-card list instead of the main screen:
     // its own way in, so no row is added to the main list the corpus
     // flows scroll.
-    let root: UIViewController = CommandLine.arguments.contains("-tall-cards")
-      ? UIHostingController(rootView: TallCardsView())
-      : UIHostingController(rootView: ContentView())
+    let root: UIViewController
+    if CommandLine.arguments.contains("-tall-cards") {
+      root = UIHostingController(rootView: TallCardsView())
+    } else if CommandLine.arguments.contains("-sheet-over-form") {
+      root = UIHostingController(rootView: SheetOverFormView())
+    } else {
+      root = UIHostingController(rootView: ContentView())
+    }
     window.rootViewController = root
     window.makeKeyAndVisible()
     self.window = window

@@ -1038,3 +1038,51 @@ async fn a_runner_without_the_live_route_leaves_the_tree_answer_standing() {
         "the tree found it and nothing live contradicted it"
     );
 }
+
+/// A target the tree marks as covered, with an identifier to ask about.
+fn tree_with_covered_login() -> A11yNode {
+    let mut root = tree_with_login();
+    root.children[0].identifier = Some("login".into());
+    root.children[0].hittable = Some(false);
+    root
+}
+
+/// The tree's "covered" is geometry; the runner's hit test on the element
+/// decides. A layer drawn on top that lets touches through must not cost a
+/// tap, and one that does not must refuse it without touching.
+#[tokio::test]
+async fn a_covered_target_is_tapped_only_when_the_runner_says_a_touch_reaches_it() {
+    for (reaches, taps) in [(true, 1u64), (false, 0u64)] {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/tree"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(tree_with_covered_login()))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/hittable"))
+            .and(body_json(serde_json::json!({"id": "login"})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"ok": true, "exists": true, "hittable": reaches}),
+            ))
+            .expect(1..)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tap-at-norm-coord"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(landed_on("login", "Login")))
+            .expect(taps)
+            .mount(&server)
+            .await;
+        let d = driver_for(&server);
+        let r = d.tap(&text_sel("Login"), None).await;
+        if reaches {
+            r.expect("a touch reaches it, so it is tapped");
+        } else {
+            let f = r.expect_err("covered and unreachable");
+            assert_eq!(f.code, FailureCode::NotVisible, "{}", f.message);
+            assert!(f.message.contains("cannot be touched"), "{}", f.message);
+        }
+        server.verify().await;
+    }
+}

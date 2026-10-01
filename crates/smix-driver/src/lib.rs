@@ -526,6 +526,7 @@ impl IosDriver {
                     if let Some(n) = node
                         && let TouchVerdict::Refuse(why) =
                             smix_runner_client::touch_verdict(n.hittable)
+                        && !self.reachable_after_all(n).await
                     {
                         return Err(ExpectationFailure::new(
                             FailureInit {
@@ -930,6 +931,20 @@ impl IosDriver {
             .await
             .map_err(transport_to_failure)?;
         Ok(())
+    }
+
+    /// Whether a target the tree marks as covered can be touched anyway.
+    ///
+    /// The tree's mark is geometry — something drawn later lies over the
+    /// target's centre — which is right for a sheet and wrong for a layer
+    /// that lets touches through. With an identifier to ask about, the
+    /// runner hit-tests the element itself and that answer decides; without
+    /// one, or without an answer, the mark stands.
+    async fn reachable_after_all(&self, n: &smix_screen::A11yNode) -> bool {
+        let Some(id) = n.identifier.as_deref().filter(|s| !s.is_empty()) else {
+            return false;
+        };
+        matches!(self.runner.element_hittable(id).await, Ok(Some(true)))
     }
 
     /// `POST /back` passthru.

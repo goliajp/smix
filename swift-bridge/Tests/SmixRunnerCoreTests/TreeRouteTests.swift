@@ -352,3 +352,68 @@ private extension CGRect {
     self.init(x: x, y: y, width: w, height: h)
   }
 }
+
+final class TreeRouteLayerTests: XCTestCase {
+  private func mkData(
+    type: UInt, identifier: String = "", frame: CGRect,
+    children: [TreeRoute.A11ySnapshotData] = []
+  ) -> TreeRoute.A11ySnapshotData {
+    TreeRoute.A11ySnapshotData(
+      elementTypeRawValue: type, identifier: identifier, label: "", value: nil,
+      frame: frame, isEnabled: true, isSelected: false, hasFocus: false, children: children)
+  }
+
+  // MARK: - a window's later layers cover its earlier ones
+
+  private func node(_ d: [String: Any], id: String) -> [String: Any]? {
+    if (d["identifier"] as? String) == id { return d }
+    for c in (d["children"] as? [[String: Any]]) ?? [] {
+      if let found = node(c, id: id) { return found }
+    }
+    return nil
+  }
+
+  /// The fixture's page sheet, as XCUITest snapshots it: the form, then a
+  /// container the window draws after it holding the sheet.
+  private func sheetOverForm(sheetFrame: CGRect) -> TreeRoute.A11ySnapshotData {
+    let screen = CGRect(x: 0, y: 0, width: 402, height: 874)
+    let formRow = mkData(type: 75, identifier: "form_row_3",
+                         frame: CGRect(x: 16, y: 293.7, width: 370, height: 52))
+    let sheetRow = mkData(type: 75, identifier: "sheet_row_3",
+                          frame: CGRect(x: 16, y: 273.3, width: 370, height: 52))
+    let form = mkData(type: 1, frame: screen, children: [formRow])
+    let presentation = mkData(type: 1, frame: sheetFrame, children: [sheetRow])
+    let window = mkData(type: 4, frame: screen, children: [form, presentation])
+    return mkData(type: 2, frame: screen, children: [window])
+  }
+
+  func test_a_row_under_a_page_sheet_is_not_hittable() {
+    var truncated = false
+    let screen = CGRect(x: 0, y: 0, width: 402, height: 874)
+    let d = TreeRoute.nodeToDictForTesting(
+      sheetOverForm(sheetFrame: screen), rootFrame: screen, truncated: &truncated)
+    XCTAssertEqual(node(d, id: "form_row_3")?["hittable"] as? Bool, false)
+    XCTAssertNil(node(d, id: "sheet_row_3")?["hittable"],
+                 "the layer on top is not covered by anything")
+  }
+
+  func test_a_layer_covers_only_where_it_is() {
+    var truncated = false
+    let screen = CGRect(x: 0, y: 0, width: 402, height: 874)
+    // a banner across the bottom: the row near the top is not under it
+    let d = TreeRoute.nodeToDictForTesting(
+      sheetOverForm(sheetFrame: CGRect(x: 0, y: 780, width: 402, height: 94)),
+      rootFrame: screen, truncated: &truncated)
+    XCTAssertNil(node(d, id: "form_row_3")?["hittable"])
+  }
+
+  func test_a_window_with_one_child_covers_nothing() {
+    var truncated = false
+    let screen = CGRect(x: 0, y: 0, width: 402, height: 874)
+    let row = mkData(type: 75, identifier: "row", frame: CGRect(x: 16, y: 300, width: 370, height: 52))
+    let window = mkData(type: 4, frame: screen, children: [mkData(type: 1, frame: screen, children: [row])])
+    let d = TreeRoute.nodeToDictForTesting(
+      mkData(type: 2, frame: screen, children: [window]), rootFrame: screen, truncated: &truncated)
+    XCTAssertNil(node(d, id: "row")?["hittable"])
+  }
+}
