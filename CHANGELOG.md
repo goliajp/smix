@@ -2,6 +2,38 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [12.1.0] — 2026-10-02
+
+### Fixed
+
+- **`hideKeyboard` on iOS closes a keyboard that is still on its way in.**
+  12.0.0 let `hideKeyboard` succeed when the keyboard was below the screen,
+  and took one look to decide that. Right after typing, a simulator that
+  minimizes its keyboard holds it still below the screen for about a second
+  and then shows it in one step, so a `hideKeyboard` straight after
+  `inputText` answered "minimized" without trying anything and the keyboard
+  came up and stayed. A keyboard below the screen now counts as minimized
+  only after it has kept the same frame for 2.5 seconds; one that comes up
+  meanwhile is dismissed as before. The step can take up to 4 seconds longer
+  when the keyboard really is minimized.
+- **An iOS tap at an element covered by a page sheet is refused.** A page
+  sheet is not an alert, dialog or sheet element to XCUITest: it is a
+  second container the window draws after the content it covers, and smix
+  only refused taps under those three types. A `tapOn` aimed at a row under
+  the sheet sent the touch, which landed on whatever the sheet drew at that
+  point, and the step succeeded. An element whose centre lies under a layer
+  the window draws after it is now marked not hittable in the tree, and a
+  tap at it fails with `NOT_VISIBLE` and touches nothing — unless XCUITest,
+  asked about that element by its identifier, says a touch there reaches
+  it, which is how a layer that lets touches through is told apart.
+
+### Added
+
+- **Runner route `POST /hittable`** and
+  `smix_runner_client::HttpRunnerClient::element_hittable`: whether XCUITest
+  says a touch at the element with a given identifier would reach it.
+  Nothing is touched.
+
 ## [12.0.0] — 2026-09-30
 
 A major release for two changes to the Rust API (below); flows, the CLI and
