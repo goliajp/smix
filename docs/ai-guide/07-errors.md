@@ -112,6 +112,8 @@ is not a verdict on whatever your script was checking.
 - Element may be covered by a system popup → `smix system-popups` to check
 - May be below fold → `scrollUntilVisible`
 - May be hidden by overlay → check `assertNotVisible: { id: "modal-overlay" }` first
+- On iOS, may be under a page sheet or another presented layer → close it
+  first, or aim at an element on the sheet
 
 ### NOT_ENABLED
 
@@ -456,10 +458,14 @@ them as landed — if you are on a build old enough not to, check
 whether the screen is landscape while `xcrun simctl io <udid>
 screenshot` still comes out portrait-shaped.
 
-**The element is covered.** smix cannot see this: the a11y snapshot
-carries no z-order, so a scrim over your button contains the tapped
-point exactly as the button does. `smix tree --json` shows both; the
-one drawn later wins and the tree does not say which that is.
+**The element is covered.** On iOS, smix sees a layer the window draws
+after your element — a page sheet, or any other presented container — and
+refuses the tap with `NOT_VISIBLE` unless XCUITest says a touch there
+reaches the element. It cannot see a scrim inside the same layer: the
+a11y snapshot carries no z-order there, so a scrim over your button
+contains the tapped point exactly as the button does. `smix tree --json`
+shows both; the one drawn later wins and the tree does not say which
+that is.
 
 **The element is not a touch responder.** An image or a label inside a
 button is in the tree and takes no touches. Aim at the ancestor that
