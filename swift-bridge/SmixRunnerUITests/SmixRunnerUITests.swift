@@ -2311,7 +2311,45 @@ final class SmixRunnerUITests: XCTestCase {
               ? (focused.identifier.isEmpty ? focused.label : focused.identifier)
               : "nothing reports keyboard focus"
           }
-          guard onScreen() else { return .offScreen(focus: focusName()) }
+          // Below the screen is either minimized or still on its way in, and
+          // one look cannot tell which: watch it until it settles somewhere.
+          // On its way in it does not move first — measured on a simulator
+          // that minimizes its keyboard, right after typing it sat still at
+          // y=918 for 0.9-1.0 s and then appeared on the screen in one step.
+          // So "unmoved" has to outlast that by a margin before it means
+          // minimized.
+          if !onScreen() {
+            let hold: TimeInterval = 2.5
+            let began = Date()
+            var looks: [(at: TimeInterval, sighting: HideKeyboardRoute.KeyboardSighting)] = []
+            var verdict: HideKeyboardRoute.OffScreenVerdict?
+            while verdict == nil {
+              let kb = app.keyboards.firstMatch
+              let sighting: HideKeyboardRoute.KeyboardSighting = !kb.exists
+                ? .gone
+                : HideKeyboardRoute.keyboardOnScreen(keyboard: kb.frame, app: app.frame)
+                  ? .onScreen : .offScreen(kb.frame)
+              looks.append((Date().timeIntervalSince(began), sighting))
+              verdict = HideKeyboardRoute.offScreenVerdict(looks, hold: hold)
+              if verdict != nil { break }
+              // Still moving after this long, or out of the host's time: not
+              // settled, so it is treated as a keyboard to dismiss.
+              if Date().timeIntervalSince(began) >= 4.0 { break }
+              if let deadline, Date() >= deadline { break }
+              Thread.sleep(forTimeInterval: 0.1)
+            }
+            switch verdict {
+            case .gone?:
+              return .alreadyGone
+            case .minimized(let f)?:
+              return .offScreen(
+                focus: focusName(),
+                seen: "at y=\(Int(f.minY)), \(Int(f.height)) tall, below an app "
+                  + "\(Int(app.frame.height)) tall, unmoved for \(hold) s")
+            case .onScreen?, nil:
+              break
+            }
+          }
           // The host stops listening at `deadline`. A strategy started after
           // it answers nobody: on a slow simulator the whole chain passed
           // 15 s and the host reported a step that "may have acted".

@@ -111,10 +111,12 @@ final class HideKeyboardOutcomeTests: XCTestCase {
   }
 
   func test_a_keyboard_below_the_screen_is_success_that_names_the_focus() async throws {
-    let json = try await parse(HideKeyboardRoute.outcome(.offScreen(focus: "input-camera-name")))
+    let json = try await parse(HideKeyboardRoute.outcome(
+      .offScreen(focus: "input-camera-name", seen: "at y=918, unmoved for 0.5 s")))
     XCTAssertEqual(json["ok"] as? Bool, true)
     let saw = json["saw"] as? String ?? ""
     XCTAssertTrue(saw.contains("below the screen") && saw.contains("input-camera-name"), saw)
+    XCTAssertTrue(saw.contains("y=918"), "where it was seen travels with the answer: \(saw)")
   }
 
   func test_on_screen_is_any_overlap_with_the_app() {
@@ -130,5 +132,43 @@ final class HideKeyboardOutcomeTests: XCTestCase {
     XCTAssertTrue(HideKeyboardRoute.keyboardOnScreen(
       keyboard: CGRect(x: 0, y: 860, width: 402, height: 226), app: app))
     XCTAssertFalse(HideKeyboardRoute.keyboardOnScreen(keyboard: .zero, app: app))
+  }
+
+  private let below = CGRect(x: 0, y: 918, width: 402, height: 226)
+
+  func test_a_keyboard_sliding_in_is_not_minimized() {
+    // the consumer's case: off the screen at first, then on it
+    let looks: [(at: TimeInterval, sighting: HideKeyboardRoute.KeyboardSighting)] = [
+      (0.0, .offScreen(CGRect(x: 0, y: 874, width: 402, height: 226))),
+      (0.1, .offScreen(CGRect(x: 0, y: 760, width: 402, height: 226))),
+    ]
+    XCTAssertNil(HideKeyboardRoute.offScreenVerdict(looks, hold: 0.5),
+                 "a keyboard that moved has not settled anywhere")
+    XCTAssertEqual(
+      HideKeyboardRoute.offScreenVerdict(looks + [(0.2, .onScreen)], hold: 0.5), .onScreen)
+  }
+
+  func test_a_keyboard_that_stays_below_the_screen_is_minimized() {
+    let looks: [(at: TimeInterval, sighting: HideKeyboardRoute.KeyboardSighting)] = [
+      (0.0, .offScreen(below)), (0.3, .offScreen(below)),
+    ]
+    XCTAssertNil(HideKeyboardRoute.offScreenVerdict(looks, hold: 0.5), "not held long enough yet")
+    XCTAssertEqual(
+      HideKeyboardRoute.offScreenVerdict(looks + [(0.6, .offScreen(below))], hold: 0.5),
+      .minimized(below))
+  }
+
+  func test_the_hold_counts_from_the_last_move() {
+    let looks: [(at: TimeInterval, sighting: HideKeyboardRoute.KeyboardSighting)] = [
+      (0.0, .offScreen(CGRect(x: 0, y: 1000, width: 402, height: 226))),
+      (0.4, .offScreen(below)), (0.7, .offScreen(below)),
+    ]
+    XCTAssertNil(HideKeyboardRoute.offScreenVerdict(looks, hold: 0.5))
+  }
+
+  func test_a_keyboard_that_left_is_gone() {
+    XCTAssertEqual(
+      HideKeyboardRoute.offScreenVerdict([(0.0, .offScreen(below)), (0.1, .gone)], hold: 0.5),
+      .gone)
   }
 }

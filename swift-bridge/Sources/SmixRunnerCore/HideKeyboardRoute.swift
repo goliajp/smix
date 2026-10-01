@@ -56,7 +56,7 @@ public enum HideKeyboardRoute {
     /// field holds focus. Nothing is covered, so the intent is satisfied;
     /// the answer says so, and which field still has focus, because the
     /// keys of that keyboard cannot be pressed and focus did not move.
-    case offScreen(focus: String)
+    case offScreen(focus: String, seen: String)
     /// There was one, and it is gone now.
     case dismissed
     /// There was one, every strategy ran, and it is still there.
@@ -69,10 +69,11 @@ public enum HideKeyboardRoute {
     switch o {
     case .alreadyGone, .dismissed:
       return success(ok: true)
-    case .offScreen(let focus):
+    case .offScreen(let focus, let seen):
       let f = jsonEscape(focus)
+      let w = jsonEscape(seen)
       return envelope(.ok, Data(
-        #"{"ok":true,"saw":"the keyboard is below the screen (minimized) and covers nothing; focus stays on \#(f)"}"#.utf8))
+        #"{"ok":true,"saw":"the keyboard is below the screen (minimized) and covers nothing — \#(w); focus stays on \#(f)"}"#.utf8))
     case .stillPresent(let tried):
       let t = jsonEscape(tried)
       return envelope(.ok, Data(
@@ -92,6 +93,49 @@ public enum HideKeyboardRoute {
   public static func keyboardOnScreen(keyboard: CGRect, app: CGRect) -> Bool {
     let shown = keyboard.intersection(app)
     return !shown.isNull && shown.width > 0 && shown.height > 0
+  }
+
+  /// One look at the keyboard while deciding whether an off-screen one
+  /// is minimized or still on its way in.
+  public enum KeyboardSighting: Equatable, Sendable {
+    case gone
+    case onScreen
+    case offScreen(CGRect)
+  }
+
+  public enum OffScreenVerdict: Equatable, Sendable {
+    /// It left while we looked: nothing to dismiss.
+    case gone
+    /// It came onto the screen: dismiss it as usual.
+    case onScreen
+    /// It stayed in one place below the screen for `hold`: minimized.
+    case minimized(CGRect)
+  }
+
+  /// What a run of looks at a keyboard first seen off the screen says, or
+  /// nil to keep looking.
+  ///
+  /// One look could not tell a minimized keyboard from one still sliding
+  /// in: right after typing, the keyboard's frame had not reached the
+  /// screen yet, `hideKeyboard` answered "minimized" without trying
+  /// anything, and the keyboard finished arriving and stayed up — three
+  /// runs of three in a consumer's flows. Minimized is a place it stays,
+  /// so it takes the same frame across `hold`.
+  public static func offScreenVerdict(
+    _ looks: [(at: TimeInterval, sighting: KeyboardSighting)], hold: TimeInterval
+  ) -> OffScreenVerdict? {
+    guard let last = looks.last else { return nil }
+    switch last.sighting {
+    case .gone: return .gone
+    case .onScreen: return .onScreen
+    case .offScreen(let frame):
+      var since = last.at
+      for look in looks.reversed() {
+        guard case .offScreen(let f) = look.sighting, f == frame else { break }
+        since = look.at
+      }
+      return last.at - since >= hold ? .minimized(frame) : nil
+    }
   }
 
   public static func success(ok: Bool) -> HTTPResponse {
