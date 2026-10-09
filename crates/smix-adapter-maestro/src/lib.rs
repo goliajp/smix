@@ -249,11 +249,13 @@ pub(crate) fn parse_annotation_from_kind(
     }
 }
 
+mod animations;
 mod annotate_bridge;
 mod apps_config;
 mod emitter;
 mod entry;
 mod expr;
+mod junit;
 mod output;
 mod parser;
 mod runtime;
@@ -1412,7 +1414,7 @@ pub enum ParseError {
     },
 }
 
-/// Reading back what `entry::emit_junit` writes.
+/// Reading back what `junit::emit_junit` writes.
 ///
 /// Beside the writer on purpose. Three host adapters read this — an XCTest
 /// helper, a JUnit rule, and whatever comes next — and a shape that drifts
