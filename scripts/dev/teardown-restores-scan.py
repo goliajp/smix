@@ -73,6 +73,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v11.0-c9m-a-field-that-submits-itself-e2e.sh",
     "v12.0-c1-a-keyboard-on-its-way-in-e2e.sh",
     "v12.0-c2-a-tap-under-a-sheet-e2e.sh",
+    "v12.2-c1-a-view-that-is-gone-e2e.sh",
     "smoke-chain-e2e.sh",
     "v11.0-c5-runner-brings-the-app-back-e2e.sh",
     "v11.0-c2-a-failure-says-whose-screen-e2e.sh",

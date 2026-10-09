@@ -56,5 +56,8 @@
         <activity
             android:name=".NavActivity"
             android:exported="true" />
+        <activity
+            android:name=".HiddenActivity"
+            android:exported="true" />
     </application>
 </manifest>

@@ -195,6 +195,7 @@ private fun collectHosted(v: View, composePackage: String, into: MutableList<Pro
     if (v !is ViewGroup) return
     for (i in v.touchOrder()) {
         val child = v.getChildAt(i) ?: continue
+        if (child.visibility != View.VISIBLE) continue
         // A Compose root inside an interop View answers for itself —
         // it registers with the probe like any other root, and walking
         // through it here would put every node in the tree twice.
@@ -217,6 +218,12 @@ private fun collectHosted(v: View, composePackage: String, into: MutableList<Pro
 internal fun View.asWindowRoot(): ProbeNode? = viewSubtree(this)
 
 private fun viewSubtree(v: View): ProbeNode? {
+    // Neither a GONE nor an INVISIBLE View is drawn or takes a touch, and
+    // neither has a size that says so: a parent skips a GONE child when it
+    // lays out, so the child keeps the size it had while it showed, and a
+    // parent that lays every child out by hand gives a GONE one the full
+    // size. `getGlobalVisibleRect` reads that size and not the visibility.
+    if (v.visibility != View.VISIBLE) return null
     val children = mutableListOf<ProbeNode>()
     if (v is ViewGroup) {
         for (i in v.touchOrder()) {
@@ -251,9 +258,8 @@ private fun viewSubtree(v: View): ProbeNode? {
         className = v.javaClass.name,
         layout = layout,
         clip = clip,
-        // A View in an attached hierarchy has a position; GONE gives it a
-        // zero-sized one, which the clipping above already reports as
-        // nothing showing.
+        // A View in an attached hierarchy has a position, and one that is
+        // not VISIBLE was turned away above.
         placed = true,
         focused = v.isFocused,
         enabled = v.isEnabled,
