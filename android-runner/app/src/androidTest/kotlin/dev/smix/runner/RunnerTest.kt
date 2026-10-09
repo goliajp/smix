@@ -2442,6 +2442,10 @@ object TreeBuilder {
             try {
                 val pkg = node.packageName?.toString()
                 val obj = nodeToJson(node, walk = !TreeWire.leavesHollow(window.type, pkg, hollow))
+                if (obj == null) {
+                    unreadable += 1
+                    continue
+                }
                 // A window's own type decides one role that no node class
                 // can: the input-method window is the software keyboard.
                 // Without this the tree had no keyboard in it at all,
@@ -2470,7 +2474,8 @@ object TreeBuilder {
         return intArrayOf(b.left, b.top, b.width(), b.height())
     }
 
-    private fun nodeToJson(node: AccessibilityNodeInfo, walk: Boolean = true): JSONObject {
+    /// `null` when the node no longer exists: its subtree is left out.
+    private fun nodeToJson(node: AccessibilityNodeInfo, walk: Boolean = true): JSONObject? {
         // Per-node refresh parity with the /tap-by-id walkFind path.
         // Chained NavHost transitions leave cached AccessibilityNodeInfo
         // descendants stale even after parent root.refresh(); a tree
@@ -2478,14 +2483,18 @@ object TreeBuilder {
         // state while screencap shows the next screen actually
         // rendered. Refreshing per-node forces the framework to re-sync
         // each child with current Compose semantics.
-        node.refresh()
+        //
+        // `refresh` answers false when the view behind the node is gone,
+        // and leaves the node holding what it last knew — reporting it
+        // would put something on the screen that is not.
+        if (!node.refresh()) return null
         val rect = Rect()
         node.getBoundsInScreen(rect)
         val childArr = JSONArray()
         for (i in 0 until if (walk) node.childCount else 0) {
             val child = node.getChild(i) ?: continue
             try {
-                childArr.put(nodeToJson(child))
+                nodeToJson(child)?.let { childArr.put(it) }
             } finally {
                 child.recycle()
             }
