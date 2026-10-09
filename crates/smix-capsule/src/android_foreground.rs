@@ -202,8 +202,7 @@ pub fn parse_windows(body: &str) -> Option<Vec<Window>> {
                     .and_then(serde_json::Value::as_str)
                     .unwrap_or_default()
                     .to_string(),
-                readable: w.get("rootReadable").and_then(serde_json::Value::as_bool)
-                    == Some(true),
+                readable: w.get("rootReadable").and_then(serde_json::Value::as_bool) == Some(true),
                 focused: w.get("focused").and_then(serde_json::Value::as_bool) == Some(true),
             })
             .collect(),
@@ -364,7 +363,10 @@ mod tests {
             );
         }
         let said = describe(&s.windows);
-        assert!(said.contains("android (a system window, focused)"), "{said}");
+        assert!(
+            said.contains("android (a system window, focused)"),
+            "{said}"
+        );
         assert!(
             said.contains("an app window whose root cannot be read"),
             "the unreadable window is listed: {said}"
