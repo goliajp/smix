@@ -692,9 +692,14 @@ the device in front of you is a no-op there, not an error.
 # internal idle-wait for performance (SmixQuiescenceSwizzle); this verb
 # has always been a bounded pause at the runtime layer.
 #
-# On Android a run zeroes the animation scales before it starts, so
-# this verb has little left to wait for; `--animations` restores the
-# device's own settings and with them the original reason for it.
+# On an Android emulator a run zeroes the three animation scales before
+# it starts, so this verb has little left to wait for, and puts them
+# back to exactly what they were when it ends — a scale the emulator
+# never had is deleted, not set to 1. A run that is killed before it
+# can put them back is made good by the next run on that emulator. A
+# physical Android device is left as it is, and the run says so.
+# `--animations` leaves every device's own settings alone, and with
+# them the original reason for this verb.
 #
 # On iOS nothing is quietened — no host-side lever exists — so this
 # verb keeps its full value there.
@@ -2828,7 +2833,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:12.1.0")
+    debugImplementation("jp.golia.smix:smix-probe:13.0.0")
 }
 ```
 
@@ -3507,7 +3512,9 @@ the field that carries that list. `smix runner up --force` rebuilds it.
 
 **Fixes**:
 - Wait for the screen before tapping (`extendedWaitUntil`, or
-  `waitForAnimationToEnd` if you are running with `--animations`)
+  `waitForAnimationToEnd` if you are running with `--animations` or on
+  a physical Android device, whose animation settings a run leaves
+  as they are)
 - If it reproduces on a still screen, the element's frame is wrong
   rather than stale — capture `smix tree --json` and check the frame
 
@@ -3706,7 +3713,36 @@ attempt that was already `--no-launch`.
 
 **Fix**: the log tail is in the message; start there. A cold rebuild
 after a version bump can genuinely need more than the default 300 s —
-`SMIX_RUNNER_UP_TIMEOUT_SECS` raises it.
+`SMIX_RUNNER_UP_TIMEOUT_SECS` raises it. On Android the same variable
+sets the wait (default 180 s).
+
+### "the runner's instrumentation ended … before it answered /health" (Android)
+
+The instrumentation that serves the runner exited during bring-up, so
+waiting longer cannot help and `runner up` stops at once with the log
+tail. When the log says another client already holds the device's
+UiAutomation connection, the message says that in words: Android allows
+one at a time, and `uiautomator events`, a second instrumentation or
+another tool's runner takes it.
+
+**Fix**: stop the other client and bring the runner up again.
+
+### "a window of … holds the focus" (Android)
+
+`runner up` found no application window it could read, and a window of
+another package — not system UI — holds the focus: a system dialog such
+as a password manager's "save password?" prompt, or an input method's own
+screen such as a stylus introduction. The message names the package, the
+platform's focused window, and every window the runner can see, including
+the ones whose contents it cannot read.
+
+smix does not dismiss it. A BACK key would answer the dialog for whoever
+uses the device, and on a physical device it could close something its
+owner opened.
+
+**Fix**: close it on the device and bring the runner up again. If it
+comes back on every run, turn the feature off in the device's own
+settings as part of preparing it.
 
 ### "nothing is listening for … any more"
 
