@@ -8,6 +8,9 @@
 
 use smix_adb::{Wakefulness, parse_wakefulness};
 
+/// The package the status bar, the shade and the lock screen belong to.
+const SYSTEM_UI: &str = "com.android.systemui";
+
 /// What the device said about its screen when no app could be read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScreenState {
@@ -19,7 +22,44 @@ pub struct ScreenState {
     pub system_ui_running: Option<bool>,
     /// The package a system "isn't responding" dialog names, when one is on screen.
     pub not_responding: Option<String>,
+    /// The title of the window holding the input focus (`mCurrentFocus=`
+    /// in `dumpsys window`); `None` when no window holds it or it could
+    /// not be read.
+    pub focus: Option<String>,
+    /// The package of the window the runner reports holding the focus,
+    /// when that is neither system UI nor unreadable — set by the caller,
+    /// which has the runner's window list.
+    pub in_front: Option<String>,
 }
+
+impl ScreenState {
+    /// The package of whatever is in front of the app: the runner's
+    /// focused window, or else the platform's focused activity. A focused
+    /// window title that is not `package/activity` names no package
+    /// (`NotificationShade` is system UI's), so it is not guessed at.
+    fn covering(&self) -> Option<&str> {
+        if let Some(p) = &self.in_front {
+            return Some(p);
+        }
+        let (package, _) = self.focus.as_deref()?.split_once('/')?;
+        (package != SYSTEM_UI).then_some(package)
+    }
+}
+
+/// The focused window's title out of `dumpsys window`: what follows the
+/// user id in `mCurrentFocus=Window{<hash> u<user> <title>}`.
+pub fn parse_current_focus(dump: &str) -> Option<String> {
+    let rest = dump
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("mCurrentFocus="))?
+        .trim()
+        .strip_prefix("Window{")?
+        .strip_suffix('}')?;
+    let mut words = rest.splitn(3, ' ');
+    let (_hash, user, title) = (words.next()?, words.next()?, words.next()?);
+    (user.starts_with('u') && !title.is_empty()).then(|| title.to_string())
+}
+
 
 /// `isKeyguardShowing=` out of `dumpsys window`.
 pub fn parse_keyguard_showing(dump: &str) -> Option<bool> {
@@ -54,10 +94,12 @@ pub fn read(serial: &str) -> ScreenState {
             .filter(|o| o.status.success())
             .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
     };
+    let window = dump(&["shell", "dumpsys", "window"]);
     ScreenState {
         wakefulness: dump(&["shell", "dumpsys", "power"]).and_then(|d| parse_wakefulness(&d)),
-        keyguard_showing: dump(&["shell", "dumpsys", "window"])
-            .and_then(|d| parse_keyguard_showing(&d)),
+        keyguard_showing: window.as_deref().and_then(parse_keyguard_showing),
+        focus: window.as_deref().and_then(parse_current_focus),
+        in_front: None,
         system_ui_running: crate::runner_android::adb(serial)
             .args(["shell", "pidof", "com.android.systemui"])
             .output()
@@ -117,6 +159,19 @@ pub fn no_app_refusal(port: u16, serial: &str, why: &str, screen: ScreenState) -
             wakefulness: Some(Wakefulness::Awake),
             keyguard_showing: Some(false),
             ..
+        } if screen.covering().is_some() => format!(
+            "{head}\nA window of {} holds the focus (the platform's focused window: \
+             {}): a system dialog, or an input method's own screen, is in front of \
+             the app, and the app's window cannot be read behind it. The runner is \
+             fine. smix does not dismiss it: a BACK key would answer it for whoever \
+             uses the device. Close it on the device and bring the runner up again.",
+            screen.covering().unwrap_or_default(),
+            screen.focus.as_deref().unwrap_or("not read"),
+        ),
+        ScreenState {
+            wakefulness: Some(Wakefulness::Awake),
+            keyguard_showing: Some(false),
+            ..
         } => format!(
             "{head}\nThe display is on and unlocked, so this is what a \
              crashed-and-restarted instrumentation looks like — the server is up, \
@@ -146,7 +201,47 @@ mod tests {
             keyguard_showing: k,
             system_ui_running: Some(true),
             not_responding: None,
+            focus: None,
+            in_front: None,
         }
+    }
+
+    /// A consumer's screen: a password manager's "save password?" prompt
+    /// in front of their app, and the refusal blamed the instrumentation.
+    #[test]
+    fn a_window_of_another_package_in_front_is_named_and_the_runner_is_not_blamed() {
+        let mut s = state(Some(Wakefulness::Awake), Some(false));
+        s.focus = Some("com.google.android.gms/com.google.android.gms.autofill.ui.AutofillSaveActivity".into());
+        let text = no_app_refusal(1, "emulator-5554", WHY, s.clone());
+        assert!(text.contains("A window of com.google.android.gms holds the focus"), "{text}");
+        assert!(!text.contains("crashed-and-restarted"), "{text}");
+        // the runner's own answer, when it has one, is the one named
+        s.in_front = Some("android".into());
+        let text = no_app_refusal(1, "emulator-5554", WHY, s);
+        assert!(text.contains("A window of android holds the focus"), "{text}");
+        assert!(text.contains("AutofillSaveActivity"), "the platform's title is evidence: {text}");
+    }
+
+    #[test]
+    fn system_ui_holding_the_focus_is_not_called_something_in_front() {
+        let mut s = state(Some(Wakefulness::Awake), Some(false));
+        for title in ["NotificationShade", "com.android.systemui/com.android.systemui.Foo"] {
+            s.focus = Some(title.into());
+            let text = no_app_refusal(1, "emulator-5554", WHY, s.clone());
+            assert!(text.contains("crashed-and-restarted"), "{title}: {text}");
+        }
+    }
+
+    #[test]
+    fn the_focused_window_is_read_from_a_real_dump() {
+        // measured on emulator-5554, API 36, with a permission dialog up
+        let dump = "  mCurrentFocus=Window{cdcd6de u0 com.google.android.permissioncontroller/com.android.permissioncontroller.permission.ui.GrantPermissionsActivity}\n  mFocusedApp=ActivityRecord{130209139 u0 x/y t1996}\n";
+        assert_eq!(
+            parse_current_focus(dump).as_deref(),
+            Some("com.google.android.permissioncontroller/com.android.permissioncontroller.permission.ui.GrantPermissionsActivity")
+        );
+        assert_eq!(parse_current_focus("  mCurrentFocus=null\n"), None);
+        assert_eq!(parse_current_focus("nothing\n"), None);
     }
 
     #[test]

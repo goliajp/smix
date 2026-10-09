@@ -3700,7 +3700,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         // this installs an APK.
                         let serial = resolve_android_serial(&device)?;
                         let opts = smix_capsule::runner_android::UpOptions {
-                            timeout_secs: 180,
+                            timeout_secs: smix_capsule::runner::up_timeout_secs(
+                                smix_capsule::runner::ANDROID_UP_TIMEOUT_SECS,
+                            )
+                            .map_err(CliError::Other)?,
                             force,
                             take_over,
                             app: bundle,

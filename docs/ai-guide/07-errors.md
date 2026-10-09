@@ -387,7 +387,8 @@ attempt that was already `--no-launch`.
 
 **Fix**: the log tail is in the message; start there. A cold rebuild
 after a version bump can genuinely need more than the default 300 s —
-`SMIX_RUNNER_UP_TIMEOUT_SECS` raises it.
+`SMIX_RUNNER_UP_TIMEOUT_SECS` raises it. On Android the same variable
+sets the wait (default 180 s).
 
 ### "nothing is listening for … any more"
 

@@ -265,7 +265,7 @@ pub fn runner_view_is_current(port: u16, foreground_package: &str) -> Result<(),
 /// Read from `/windows`, which is the route that exists to tell "not
 /// attached" from "attached but unreadable" apart. A runner too old to
 /// serve it is not judged — an unknown answer is not a failing one.
-fn automation_sees_an_app(port: u16) -> Result<(), String> {
+fn automation_sees_an_app(port: u16) -> Result<(), NoApp> {
     // The crate's own socket read rather than an HTTP client crate:
     // `read_health_bytes` next door does exactly this, and a dependency
     // for one GET is a dependency for something already written.
@@ -275,39 +275,34 @@ fn automation_sees_an_app(port: u16) -> Result<(), String> {
     let Ok(body) = get_body(port, "/windows") else {
         return Ok(());
     };
-    let Some(start) = body.find('{') else {
+    let Some(windows) = crate::android_foreground::parse_windows(&body) else {
         return Ok(());
     };
-    let Ok(doc) = serde_json::from_str::<serde_json::Value>(&body[start..]) else {
-        return Ok(());
-    };
-    let Some(windows) = doc.get("windows").and_then(|w| w.as_array()) else {
-        return Ok(());
-    };
-    let apps: Vec<&str> = windows
+    if windows
         .iter()
-        .filter(|w| {
-            w.get("type").and_then(serde_json::Value::as_u64) == Some(WINDOW_TYPE_APPLICATION)
-                && w.get("rootReadable").and_then(serde_json::Value::as_bool) == Some(true)
-        })
-        .filter_map(|w| w.get("package").and_then(serde_json::Value::as_str))
-        .collect();
-    if !apps.is_empty() {
+        .any(|w| w.kind == WINDOW_TYPE_APPLICATION && w.readable)
+    {
         return Ok(());
     }
-    let seen: Vec<&str> = windows
-        .iter()
-        .filter_map(|w| w.get("package").and_then(serde_json::Value::as_str))
-        .collect();
-    Err(format!(
-        "no readable application window is attached — only {}. \
-         Every tree it serves would carry those and nothing else",
-        if seen.is_empty() {
-            "nothing at all".to_string()
-        } else {
-            seen.join(", ")
-        }
-    ))
+    Err(NoApp {
+        why: format!(
+            "no readable application window is attached — the windows are {}. \
+             Every tree it serves would carry those and nothing else",
+            crate::android_foreground::describe(&windows)
+        ),
+        in_front: windows
+            .iter()
+            .find(|w| w.focused)
+            .map(|w| w.package.clone())
+            .filter(|p| !p.is_empty() && p != "com.android.systemui"),
+    })
+}
+
+/// Why the automation sees no application, and what holds the focus
+/// instead when the runner could name it.
+struct NoApp {
+    why: String,
+    in_front: Option<String>,
 }
 
 /// `adb forward` argv mapping a host port onto the runner's fixed
@@ -713,7 +708,7 @@ pub fn up_with_options(
     // `am instrument -w` blocks for the life of the server, so it is
     // spawned rather than awaited. Its stdout is the JUnit stream; the
     // useful signal is /health, not this log.
-    let child = adb(serial)
+    let mut child = adb(serial)
         .args([
             "shell",
             "am",
@@ -742,6 +737,19 @@ pub fn up_with_options(
     );
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
     while std::time::Instant::now() < deadline {
+        // `am instrument -w` returns when the instrumentation does, so an
+        // exit before /health ever answered is the runner having ended —
+        // waiting out the rest of the timeout cannot change that.
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(format!(
+                "the runner's instrumentation ended ({status}) before it answered /health \
+                 on {port}.{}\nLog tail:\n{}",
+                instrumentation_ended_because(&std::fs::read_to_string(&log).unwrap_or_default())
+                    .map(|why| format!(" {why}"))
+                    .unwrap_or_default(),
+                log_tail(&log)
+            ));
+        }
         // health-decider: whether the bring-up is finished, which has to
         // mean the automation can see something.
         if health_ok(port) {
@@ -771,8 +779,11 @@ pub fn up_with_options(
                 Ok(()) | Err(crate::android_bring_back::Unsettled::Screen(_)) => {}
                 Err(crate::android_bring_back::Unsettled::App(why)) => return Err(why),
             }
-            if let Err(why) = automation_sees_an_app(port) {
-                let screen = crate::android_screen_state::read(serial);
+            if let Err(NoApp { why, in_front }) = automation_sees_an_app(port) {
+                let screen = crate::android_screen_state::ScreenState {
+                    in_front,
+                    ..crate::android_screen_state::read(serial)
+                };
                 return Err(crate::android_screen_state::no_app_refusal(
                     port, serial, &why, screen,
                 ));
@@ -784,19 +795,39 @@ pub fn up_with_options(
     }
 
     Err(format!(
-        "runner did not become healthy within {timeout_secs}s. Log tail:\n{}",
-        std::fs::read_to_string(&log)
-            .unwrap_or_default()
-            .lines()
-            .rev()
-            .take(15)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>()
-            .join("\n")
+        "runner did not become healthy within {timeout_secs}s.{}\nLog tail:\n{}",
+        instrumentation_ended_because(&std::fs::read_to_string(&log).unwrap_or_default())
+            .map(|why| format!(" {why}"))
+            .unwrap_or_default(),
+        log_tail(&log)
     ))
 }
+
+/// The last lines of the instrumentation's log.
+fn log_tail(log: &Path) -> String {
+    let text = std::fs::read_to_string(log).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(15)..].join("\n")
+}
+
+/// A cause the instrumentation's own output names, said in words.
+///
+/// Android allows one UiAutomation connection at a time. Another client
+/// holding it — `uiautomator events`, a second instrumentation, another
+/// tool's runner — makes this one fail as it connects, and the log says
+/// so near its top, above a stack trace longer than any tail.
+fn instrumentation_ended_because(log: &str) -> Option<&'static str> {
+    log.lines()
+        .any(|line| UIAUTOMATION_TAKEN.iter().all(|needle| line.contains(needle)))
+        .then_some(
+            "Another UiAutomation client holds the device's accessibility connection — \
+             `uiautomator events`, another instrumentation, or another tool's runner — \
+             and Android allows one at a time. Stop it and bring the runner up again.",
+        )
+}
+
+/// What the platform writes when a UiAutomation connection is already taken.
+const UIAUTOMATION_TAKEN: &[&str] = &["UiAutomationService", "already registered"];
 
 /// Record this runner in the device's ledger.
 ///
@@ -1089,6 +1120,29 @@ pub fn runner_is_not_ours(running: Option<&str>, ours: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    /// The log of a runner brought up while `uiautomator events` held the
+    /// connection, emulator-5554, API 36: the cause is on line 4, above a
+    /// stack trace longer than the tail the error prints.
+    const TAKEN_LOG: &str = "dev.smix.runner.RunnerTest:\n\
+        Error in runServerForever(dev.smix.runner.RunnerTest):\n\
+        java.lang.IllegalStateException: UiAutomationService android.accessibilityservice.IAccessibilityServiceClient$Stub$Proxy@a551ee5already registered!\n\
+        \tat android.os.Parcel.createExceptionOrNull(Parcel.java:3381)\n\
+        INSTRUMENTATION_RESULT: shortMsg=Process crashed.\n";
+
+    #[test]
+    fn a_taken_uiautomation_connection_is_named() {
+        let why = instrumentation_ended_because(TAKEN_LOG).expect("named");
+        assert!(why.contains("Another UiAutomation client"), "{why}");
+    }
+
+    #[test]
+    fn a_crash_for_another_reason_is_not_called_a_taken_connection() {
+        let other = "java.lang.IllegalStateException: already registered!\n\
+            UiAutomationService started\n";
+        assert_eq!(instrumentation_ended_because(other), None);
+        assert_eq!(instrumentation_ended_because(""), None);
+    }
     use super::*;
     use std::io::Write;
 

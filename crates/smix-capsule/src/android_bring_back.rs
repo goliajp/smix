@@ -10,7 +10,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::android_foreground::{Screen, Step, Window, next_step};
+use crate::android_foreground::{Screen, Step, describe, next_step, parse_windows};
 use crate::runner_android::{adb, get_body, resumed_package};
 
 /// Why the screen could not be put right, split by what the caller can
@@ -33,6 +33,12 @@ pub(crate) enum Unsettled {
 const SETTLE: Duration = Duration::from_secs(20);
 const LOOK_AGAIN: Duration = Duration::from_millis(250);
 
+/// How long a window of another package may hold the focus in front of
+/// an unreadable app before it is reported. A dialog that closes by itself
+/// is gone well inside this; one waiting for an answer is not, and waiting
+/// out the whole settle for it only delays saying so.
+const COVERED_FOR: Duration = Duration::from_secs(3);
+
 /// Put the screen right for `app`, or say why it cannot be.
 ///
 /// `relaunch` is for a runner just brought up: it restarts the named app
@@ -47,6 +53,7 @@ pub(crate) fn settle(
     let deadline = Instant::now() + SETTLE;
     let mut collapsed = false;
     let mut started = false;
+    let mut covered_since: Option<Instant> = None;
     loop {
         // A runner too old to serve /windows, or a transport hiccup,
         // gives nothing to plan from. That is not a verdict: what came
@@ -55,12 +62,17 @@ pub(crate) fn settle(
             return Ok(());
         };
         let step = next_step(&screen, app, collapsed);
+        if !matches!(step, Step::Covered { .. }) {
+            covered_since = None;
+        }
         if let Some(name) = app
             && relaunch
             && !started
             && match step {
                 Step::Ready | Step::BringForward { .. } => true,
-                Step::CollapseShade | Step::NotYet | Step::Refuse(_) => false,
+                Step::CollapseShade | Step::NotYet | Step::Covered { .. } | Step::Refuse(_) => {
+                    false
+                }
             }
         {
             start_app(serial, port, name, true)?;
@@ -110,8 +122,15 @@ pub(crate) fn settle(
                     return Err(Unsettled::Screen(format!(
                         "no application window became readable within {}s (windows: {})",
                         SETTLE.as_secs(),
-                        names(&screen.windows)
+                        describe(&screen.windows)
                     )));
+                }
+                std::thread::sleep(LOOK_AGAIN);
+            }
+            Step::Covered { by } => {
+                let since = *covered_since.get_or_insert_with(Instant::now);
+                if since.elapsed() >= COVERED_FOR || Instant::now() >= deadline {
+                    return Err(Unsettled::Screen(covered(&by, &screen)));
                 }
                 std::thread::sleep(LOOK_AGAIN);
             }
@@ -127,12 +146,12 @@ fn instead_of(was: Option<&str>, name: &str) -> String {
     }
 }
 
-fn names(windows: &[Window]) -> String {
-    windows
-        .iter()
-        .map(|w| w.package.as_str())
-        .collect::<Vec<_>>()
-        .join(", ")
+/// What to say about a window of another package in front of the app.
+pub(crate) fn covered(by: &str, screen: &Screen) -> String {
+    format!(
+        "a window of {by} holds the focus and no application window can be read          behind it (windows: {}) — a system dialog or an input method's own screen is          in front of the app. smix does not dismiss it: a BACK key would answer it          for whoever uses the device. Close it on the device and bring the runner up          again",
+        describe(&screen.windows)
+    )
 }
 
 fn an_app_can_be_read(screen: &Screen) -> bool {
@@ -142,27 +161,7 @@ fn an_app_can_be_read(screen: &Screen) -> bool {
 /// The runner's windows and the platform's resumed activity, or `None`
 /// when the runner cannot be asked.
 fn read_screen(serial: &str, port: u16) -> Option<Screen> {
-    let body = get_body(port, "/windows").ok()?;
-    let start = body.find('{')?;
-    let doc: serde_json::Value = serde_json::from_str(&body[start..]).ok()?;
-    let windows = doc
-        .get("windows")?
-        .as_array()?
-        .iter()
-        .map(|w| Window {
-            kind: w
-                .get("type")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0),
-            package: w
-                .get("package")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
-            readable: w.get("rootReadable").and_then(serde_json::Value::as_bool) == Some(true),
-            focused: w.get("focused").and_then(serde_json::Value::as_bool) == Some(true),
-        })
-        .collect();
+    let windows = parse_windows(&get_body(port, "/windows").ok()?)?;
     Some(Screen {
         resumed: resumed_package(serial),
         windows,
