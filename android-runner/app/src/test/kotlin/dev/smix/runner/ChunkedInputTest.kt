@@ -15,6 +15,7 @@
 package dev.smix.runner
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChunkedInputTest {
@@ -275,5 +276,17 @@ class ChunkedLoopTest {
             listOf(ChunkedInput.Reading("abcd", present = true, focused = false)),
         )
         assertEquals(ChunkedInput.ChunkedResult.Done("abcd", chunks = 1, retyped = 0), r)
+    }
+
+    @Test
+    fun the_window_that_took_the_focus_is_named_when_it_is_not_the_fields_app() {
+        val said = ChunkedInput.focusNow("dev.smix.fixture", "com.google.android.inputmethod.latin")
+        assertTrue(said, said.contains("belongs to com.google.android.inputmethod.latin, not to dev.smix.fixture"))
+    }
+
+    @Test
+    fun nothing_is_added_while_the_fields_own_app_holds_the_focus() {
+        assertEquals("", ChunkedInput.focusNow("dev.smix.fixture", "dev.smix.fixture"))
+        assertEquals("", ChunkedInput.focusNow("dev.smix.fixture", null))
     }
 }

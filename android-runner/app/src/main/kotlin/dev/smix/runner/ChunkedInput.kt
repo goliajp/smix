@@ -202,6 +202,19 @@ object ChunkedInput {
         return obj.toString()
     }
 
+    /// What holds the input focus now, said only when it is not the
+    /// field's own app — empty otherwise. An input method's own screen (a
+    /// stylus introduction) or a system dialog that comes up while a field
+    /// is typed into takes the keys that follow, and the field's read-back
+    /// shows only that characters went missing.
+    fun focusNow(fieldPackage: String?, focusedPackage: String?): String {
+        if (focusedPackage == null || focusedPackage == fieldPackage) return ""
+        return " The window holding the input focus now belongs to $focusedPackage" +
+            (fieldPackage?.let { ", not to $it" } ?: "") +
+            ": something came up in front of the field while it was typed into, " +
+            "and keys sent since went to it."
+    }
+
     /// Why typing stopped part-way, for a field that went away or lost
     /// focus while text was still to be typed. Nothing more was sent in
     /// either case: `input text` goes where focus is, not to a node.
