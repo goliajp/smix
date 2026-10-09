@@ -31,9 +31,19 @@ object ProbeTarget {
     /// `named` is what the caller sent — the `App-Bundle-Id` header or
     /// `?app=`. Blank counts as unsent: `?app=` with nothing after it
     /// would otherwise address `content://.smixprobe`.
-    fun pick(rows: List<WindowRules.Row>, named: String?): String? {
+    fun pick(rows: List<WindowRules.Row>, named: String?): String? = pick({ rows }, named)
+
+    /// As above, reading the windows only when no name was sent.
+    ///
+    /// A window's package comes off its root, and reading an app window's
+    /// root is answered by that app's main thread. A flow names its app on
+    /// every request, and reading the windows anyway made each read of the
+    /// probe's tree wait for the app to be idle — measured on the fixture,
+    /// 3.5 s for a tree the probe itself served in 2 ms, while the app's
+    /// main thread was busy.
+    fun pick(rows: () -> List<WindowRules.Row>, named: String?): String? {
         if (!named.isNullOrBlank()) return named
-        return rows
+        return rows()
             .asSequence()
             // Only an ordinary app window can be the app under test.
             // The keyboard takes the focus while a field is being
