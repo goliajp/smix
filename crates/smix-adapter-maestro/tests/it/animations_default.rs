@@ -15,15 +15,20 @@
 //! to observe one call.
 
 const ENTRY: &str = include_str!("../../src/entry.rs");
+const ANIMATIONS: &str = include_str!("../../src/animations.rs");
 
 #[test]
 fn the_run_asks_for_quiet_when_the_flag_is_absent() {
     assert!(
-        ENTRY.contains("if !args.animations"),
-        "the run no longer keys device preparation off the flag"
+        ENTRY.contains("args.animations,"),
+        "the run no longer hands the flag to the animation step"
     );
     assert!(
-        ENTRY.contains("set_animations_quiet(true)"),
+        ANIMATIONS.contains("if keep_device_settings {\n        return Ok(false);"),
+        "the flag no longer keeps the device's own settings"
+    );
+    assert!(
+        ANIMATIONS.contains("set_animations_quiet(true)"),
         "the run no longer asks for quiet"
     );
 }
@@ -33,7 +38,7 @@ fn the_run_asks_for_quiet_when_the_flag_is_absent() {
 #[test]
 fn it_happens_before_the_app_comes_up() {
     let prepare = ENTRY
-        .find("set_animations_quiet(true)")
+        .find("crate::animations::quieten(")
         .expect("the run still prepares animations");
     let foreground = ENTRY
         .find(".foreground(&bundle_id)")
@@ -47,19 +52,19 @@ fn it_happens_before_the_app_comes_up() {
 
 /// Both platforms are asked. How far each can be pushed differs; being
 /// asked does not. A device is exempt by being somebody's phone, which
-/// is decided above the block and by serial, not by platform.
+/// is decided by serial, and only an Android serial can name one.
 #[test]
 fn neither_platform_is_exempt() {
-    let block_start = ENTRY
-        .find("if !args.animations")
-        .expect("the preparation block is still there");
-    let block = &ENTRY[block_start..block_start + 400];
-    assert!(
-        !block.contains("FlowPlatform::Ios") && !block.contains("FlowPlatform::Android"),
-        "the animation step gained a platform condition — the foreground \
-         call below it has one for its own reason, and this must not \
-         inherit it by proximity"
-    );
+    let ios = ANIMATIONS
+        .find("FlowPlatform::Ios => false")
+        .expect("an iOS device is never taken for somebody's phone");
+    let android = ANIMATIONS
+        .find("FlowPlatform::Android => !smix_sdk::android_serial_is_emulator(id)")
+        .expect("an Android device is somebody's phone by its serial alone");
+    let asked = ANIMATIONS
+        .find("set_animations_quiet(true)")
+        .expect("the run still asks for quiet");
+    assert!(ios < asked && android < asked);
 }
 
 /// What was quietened is put back when the run ends, after the flow
@@ -67,10 +72,10 @@ fn neither_platform_is_exempt() {
 #[test]
 fn the_run_puts_the_settings_back_after_the_flow() {
     let prepare = ENTRY
-        .find("set_animations_quiet(true)")
+        .find("crate::animations::quieten(")
         .expect("the run still prepares animations");
     let restore = ENTRY
-        .find("set_animations_quiet(false)")
+        .find("crate::animations::put_back(holder.app())")
         .expect("the run no longer puts the device's animation settings back");
     let flow_done = ENTRY
         .find("drop(adapter);")
@@ -85,8 +90,12 @@ fn the_run_puts_the_settings_back_after_the_flow() {
          so an interrupted run would skip it or have nothing to call it on"
     );
     assert!(
-        ENTRY.contains("holds_animations = true"),
+        ENTRY.contains("if holds_animations {"),
         "the restore is no longer keyed to the change having happened"
+    );
+    assert!(
+        ANIMATIONS.contains("set_animations_quiet(false)"),
+        "putting back no longer asks the device to restore"
     );
 }
 
@@ -94,20 +103,15 @@ fn the_run_puts_the_settings_back_after_the_flow() {
 /// and says so once.
 #[test]
 fn a_physical_android_device_is_left_as_it_is() {
+    let someones = ANIMATIONS
+        .find("if device_is_someones {")
+        .expect("the run no longer tells a phone apart");
+    let asked = ANIMATIONS
+        .find("set_animations_quiet(true)")
+        .expect("the run still asks for quiet");
+    assert!(someones < asked, "a phone is asked before it is left alone");
     assert!(
-        ENTRY.contains("!smix_sdk::android_serial_is_emulator(serial)"),
-        "the run no longer tells a phone from an emulator by its serial"
-    );
-    assert!(
-        ENTRY.contains("is a physical device; its own animation settings"),
+        ANIMATIONS.contains("is a physical device; its own animation settings"),
         "the run no longer says it left a phone's settings alone"
-    );
-    let block_start = ENTRY
-        .find("if !args.animations")
-        .expect("the preparation block is still there");
-    let block = &ENTRY[block_start..block_start + 200];
-    assert!(
-        block.contains("&& !device_is_someones"),
-        "the change is no longer withheld from a physical device"
     );
 }

@@ -365,44 +365,19 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
         FlowPlatform::Android => AppHolder::Loose(app),
     };
 
-    // 3. Quieten the device's animations, unless asked not to.
-    //
-    // Before foregrounding, so the app's first frame is already drawn
-    // under the settings the rest of the run uses. Both platforms,
-    // unlike the foreground call below: how far each can be pushed
-    // differs, but neither is exempt from being asked. A phone is: its
-    // animation scales are the owner's, and a run that wrote them and
-    // then died would have changed somebody's device for good.
-    let device_is_someones = match args.platform {
-        FlowPlatform::Ios => false,
-        FlowPlatform::Android => args
-            .udid
-            .as_deref()
-            .is_some_and(|serial| !smix_sdk::android_serial_is_emulator(serial)),
+    // 3. Quieten the device's animations, unless asked not to, before the
+    // app comes up. What was quietened is put back at the end, on every
+    // path out of here from this point on.
+    let Ok(holds_animations) = crate::animations::quieten(
+        holder.app(),
+        args.platform,
+        args.udid.as_deref(),
+        args.animations,
+    )
+    .await
+    else {
+        return 3;
     };
-    if device_is_someones && let Some(id) = args.udid.as_deref() {
-        eprintln!(
-            "animations: {id} is a physical device; its own animation settings \
-             are left as they are and the flow runs with them"
-        );
-    }
-    // What was quietened is put back at the end, on every path out of
-    // here from this point on — a flow that fails, and the signal
-    // cascade below, included.
-    let mut holds_animations = false;
-    if !args.animations
-        && !device_is_someones
-        && let Some(id) = args.udid.as_deref()
-    {
-        if let Err(e) = holder.app().set_animations_quiet(true).await {
-            eprintln!(
-                "error: could not quieten animations on {id}: {e}\n\
-                 hint: pass --animations to run with the device's own settings"
-            );
-            return 3;
-        }
-        holds_animations = true;
-    }
 
     // 4. foreground unless --no-launch (iOS only; Android brings app
     // to foreground via launchApp step).
@@ -545,23 +520,8 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
     let debug_records: Vec<crate::StepDebugRecord> = adapter.debug_records().to_vec();
     drop(adapter);
 
-    // Put the device's animation settings back. Under the same kind of
-    // deadline as the session close, so a ctrl-C still terminates when
-    // the device has gone; a device that is still there answers three
-    // `settings` writes well inside it.
     if holds_animations {
-        let restore = holder.app().set_animations_quiet(false);
-        match tokio::time::timeout(std::time::Duration::from_secs(10), restore).await {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => eprintln!(
-                "WARN: the device's animation settings were not put back: {e}\n\
-                 the next run on this device puts them back when it starts"
-            ),
-            Err(_) => eprintln!(
-                "WARN: putting the device's animation settings back timed out after 10s\n\
-                 the next run on this device puts them back when it starts"
-            ),
-        }
+        crate::animations::put_back(holder.app()).await;
     }
 
     // Release the session (best-effort). Errors here are
@@ -605,7 +565,7 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
             // different schema).
             match args.format {
                 OutputFormat::Json => emit_json_success(&args.flow, &report),
-                OutputFormat::Junit => emit_junit(&args.flow, Ok(&report)),
+                OutputFormat::Junit => crate::junit::emit_junit(&args.flow, Ok(&report)),
                 OutputFormat::Human => print_summary(&report),
             }
             0
@@ -614,7 +574,7 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
             eprintln!("error: {e}");
             match args.format {
                 OutputFormat::Json => emit_json_failure(&args.flow, &e),
-                OutputFormat::Junit => emit_junit(&args.flow, Err(&e)),
+                OutputFormat::Junit => crate::junit::emit_junit(&args.flow, Err(&e)),
                 OutputFormat::Human => {}
             }
             // POSIX-conventional exit codes for signal
@@ -626,69 +586,6 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
             }
         }
     }
-}
-
-/// Emit a JUnit XML `<testsuite>` with one `<testcase>` per yaml flow.
-/// Failures embed the smix error message + failure code in a
-/// `<failure>` sub-element.
-///
-/// The schema follows the surface-common Jenkins/GoCD JUnit variant
-/// (widely accepted by CI dashboards, GitHub Actions, GitLab).
-fn emit_junit(flow: &Path, outcome: Result<&crate::RunReport, &crate::RunError>) {
-    let flow_name = flow
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("smix-flow");
-    let (failures, xml_body, warnings_ct) = match outcome {
-        Ok(report) => (0, String::new(), report.warnings.len()),
-        Err(e) => {
-            let msg = xml_escape(&format!("{e}"));
-            let kind = xml_escape(&junit_failure_kind(e));
-            let cdata = format!("{e}");
-            (
-                1,
-                format!(
-                    "      <failure type=\"{kind}\" message=\"{msg}\"><![CDATA[{cdata}]]></failure>\n",
-                ),
-                0,
-            )
-        }
-    };
-    let flow_esc = xml_escape(flow_name);
-    let mut out = String::new();
-    out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-    out.push_str(&format!(
-        "<testsuite name=\"smix\" tests=\"1\" failures=\"{failures}\" errors=\"0\" skipped=\"0\">\n"
-    ));
-    out.push_str(&format!(
-        "  <testcase name=\"{flow_esc}\" classname=\"smix.flow\" time=\"0\">\n"
-    ));
-    out.push_str(&xml_body);
-    if warnings_ct > 0 {
-        out.push_str(&format!(
-            "      <system-err>{warnings_ct} warning(s) emitted</system-err>\n"
-        ));
-    }
-    out.push_str("  </testcase>\n");
-    out.push_str("</testsuite>\n");
-    println!("{out}");
-}
-
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-}
-
-fn junit_failure_kind(err: &crate::RunError) -> String {
-    // Kind categorization for junit `<failure type=...>`. Match on
-    // the RunError variant name via Debug for forward-compat with
-    // new variants (unknown → smix.error).
-    let dbg = format!("{err:?}");
-    let leading = dbg.split_once('(').map(|(a, _)| a).unwrap_or(&dbg);
-    format!("smix.{}", leading.to_lowercase())
 }
 
 // debug-output writer. MVP shape: writes one `run-summary.json` at run
