@@ -392,6 +392,34 @@ after a version bump can genuinely need more than the default 300 s —
 `SMIX_RUNNER_UP_TIMEOUT_SECS` raises it. On Android the same variable
 sets the wait (default 180 s).
 
+### "the runner's instrumentation ended … before it answered /health" (Android)
+
+The instrumentation that serves the runner exited during bring-up, so
+waiting longer cannot help and `runner up` stops at once with the log
+tail. When the log says another client already holds the device's
+UiAutomation connection, the message says that in words: Android allows
+one at a time, and `uiautomator events`, a second instrumentation or
+another tool's runner takes it.
+
+**Fix**: stop the other client and bring the runner up again.
+
+### "a window of … holds the focus" (Android)
+
+`runner up` found no application window it could read, and a window of
+another package — not system UI — holds the focus: a system dialog such
+as a password manager's "save password?" prompt, or an input method's own
+screen such as a stylus introduction. The message names the package, the
+platform's focused window, and every window the runner can see, including
+the ones whose contents it cannot read.
+
+smix does not dismiss it. A BACK key would answer the dialog for whoever
+uses the device, and on a physical device it could close something its
+owner opened.
+
+**Fix**: close it on the device and bring the runner up again. If it
+comes back on every run, turn the feature off in the device's own
+settings as part of preparing it.
+
 ### "nothing is listening for … any more"
 
 The runner answered earlier in this run and then stopped answering. That

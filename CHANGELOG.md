@@ -6,6 +6,46 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Fixed
 
+- **A view set GONE or INVISIBLE is not on screen.** The Android probe
+  walked Views without reading their visibility and took the size a View
+  last had for the size it has. A `LinearLayout` never lays out a GONE
+  child again, so a status line hidden after it showed kept its size and
+  text, and `assertNotVisible` on it waited out its timeout and failed. A
+  parent that lays out every child by hand gives a GONE empty-state layer
+  the whole list, and a tap on a row under it was reported as `TAP_MISSED`
+  on an unnamed element while the row took the touch. The accessibility
+  reader also leaves out a node whose view has gone.
+- **A scroll that runs out of time says what the time went on.**
+  `scrollUntilVisible` compared a target with where it had been before the
+  swipe that brought it in. When one look at the screen took longer than
+  two seconds, which a loaded machine reaches, the first sighting after a
+  swipe was always judged still moving, and a failure at the limit said
+  the target had been "still moving on every look". Only looks taken since
+  the last swipe are compared now, and the failure gives the time spent,
+  the number of looks and how long each took.
+- **Reading an Android probe's tree does not wait for the app to be idle.**
+  The probe routes read every window to work out which app to ask even
+  when the request named it, and an app window is answered by that app's
+  main thread. A flow names its app on every request; on a screen whose
+  main thread is busy, each read of the probe's tree waited seconds for a
+  tree the probe served in milliseconds.
+- **`runner up` on Android names what is in front of the app.** A window
+  of another package holding the focus — a password manager's save prompt,
+  a keyboard's stylus introduction — left no readable app window, and
+  `runner up` waited out its settle and then blamed a crashed
+  instrumentation. It now reports the package and the platform's focused
+  window after three seconds, and lists every window including those
+  whose contents cannot be read. It does not dismiss the window.
+- **`runner up` on Android stops once the instrumentation has ended.** An
+  instrumentation that exited before `/health` answered was waited on for
+  the whole 180 s; `runner up` now fails as soon as it exits and names a
+  UiAutomation connection another client already holds.
+  `SMIX_RUNNER_UP_TIMEOUT_SECS` now applies on Android, and on both
+  platforms a value that is not a whole number of seconds is refused
+  rather than ignored.
+- **A text input that did not land says where the focus went.** When
+  another app's window took the input focus while a field was typed into,
+  `text_did_not_land` and `focus_left` now name the package holding it.
 - **A run puts an Android emulator's animation scales back.** `smix run`
   zeroes `window_animation_scale`, `transition_animation_scale` and
   `animator_duration_scale` before its first step and nothing ever put
