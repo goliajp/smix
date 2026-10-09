@@ -164,9 +164,12 @@ pub(crate) async fn run<E: Eyes>(
     // card on an 874-point screen was never stopped on, in 35 swipes.
     let mut settling: Option<u64> = None;
     let mut settle_began: Option<tokio::time::Instant> = None;
+    let mut looked = Looked::default();
     loop {
         let began = budget.look();
+        let look_began = tokio::time::Instant::now();
         let look = eyes.look().await?;
+        looked.add(look_began.elapsed());
         if let Some(since) = settle_began {
             let steady = settling == Some(look.layout);
             // Out of time, this look is judged as it is: a first look after
@@ -186,20 +189,19 @@ pub(crate) async fn run<E: Eyes>(
         // into the glide is spent stopping it rather than pressing what
         // it landed on — measured on the Compose fixture, where the tap
         // reported success and the row's own label never changed.
-        let mut still_moving = false;
-        let last_share = match look.seen {
-            None => None,
+        let last = match look.seen {
+            None => Last::NotSeen,
             Some(b) => match verdict(b, &until.reach, direction, recentered) {
-                Verdict::Reached if previous.is_some_and(|p| same_place(p, b)) => return Ok(()),
-                Verdict::Reached => {
-                    still_moving = true;
-                    Some(visible_share(b))
-                }
+                Verdict::Reached => match previous {
+                    Some(p) if same_place(p, b) => return Ok(()),
+                    Some(_) => Last::Moving,
+                    None => Last::SeenOnce,
+                },
                 Verdict::Recenter => {
                     recentered += 1;
-                    Some(visible_share(b))
+                    Last::Short(visible_share(b))
                 }
-                Verdict::Short { share } => Some(share),
+                Verdict::Short { share } => Last::Short(share),
             },
         };
         previous = look.seen;
@@ -209,18 +211,56 @@ pub(crate) async fn run<E: Eyes>(
                 direction,
                 until,
                 swipes,
-                last_share,
-                still_moving,
+                budget.elapsed(),
+                looked,
+                last,
                 look.visible,
             ));
         }
-        if still_moving {
+        let look_again = match last {
+            // far enough in: look again rather than swipe it past
+            Last::Moving | Last::SeenOnce => true,
+            Last::NotSeen | Last::Short(_) => false,
+        };
+        if look_again {
             tokio::time::sleep(SETTLE_INTERVAL).await;
             continue;
         }
         eyes.swipe(direction).await?;
         swipes += 1;
+        // Where the target was before this swipe says nothing about whether
+        // it has stopped after it: only looks taken since are compared.
+        previous = None;
         settle_began = Some(tokio::time::Instant::now());
+    }
+}
+
+/// What the latest look made of the target.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Last {
+    NotSeen,
+    /// In view, but less of it than asked for, or not yet centred.
+    Short(f64),
+    /// Far enough in, on the first look since the last swipe: nothing to
+    /// compare it with yet.
+    SeenOnce,
+    /// Far enough in, and not where the look before found it.
+    Moving,
+}
+
+/// How many looks a scroll took and how long they took between them —
+/// on a loaded device a single look has taken six seconds, and a failure
+/// that does not say so reads as a list that would not scroll.
+#[derive(Clone, Copy, Debug, Default)]
+struct Looked {
+    count: u32,
+    total: Duration,
+}
+
+impl Looked {
+    fn add(&mut self, took: Duration) {
+        self.count += 1;
+        self.total += took;
     }
 }
 
@@ -303,38 +343,49 @@ fn ocr_texts(selector: &Selector) -> Vec<(&str, &[String])> {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // one failure, built from everything the loop knew
 fn not_reached(
     selector: &Selector,
     direction: SwipeDirection,
     until: &ScrollUntil,
     swipes: u32,
-    last_share: Option<f64>,
-    moving: bool,
+    spent: Duration,
+    looked: Looked,
+    last: Last,
     visible: ScreenFacts,
 ) -> ExpectationFailure {
-    let last = match (last_share, moving) {
-        // In place on every look and never twice in the same place: the
-        // content never stopped, and a tap into it would be spent
-        // stopping it.
-        (Some(_), true) => "it came into view and was still moving on every look".to_string(),
-        (Some(share), false) => format!(
+    let last = match last {
+        // In place, and not where the look before found it: the content
+        // had not stopped, and a tap into it would be spent stopping it.
+        Last::Moving => {
+            "it was in view and still moving: the last two looks found it in different places".to_string()
+        }
+        Last::SeenOnce => {
+            "the last look saw it in view once, after the limit, with no time left to look again and see it had stopped"
+                .to_string()
+        }
+        Last::Short(share) => format!(
             "the last look saw {:.0}% of it, and {:.0}% was asked for",
             share * 100.0,
             until.reach.visibility * 100.0
         ),
-        (None, _) => "the last look did not see it".to_string(),
+        Last::NotSeen => "the last look did not see it".to_string(),
     };
+    let each = looked.total.as_secs_f64() / f64::from(looked.count.max(1));
     let target = base_text_or_id(selector);
     let suggestions = smix_error::build_suggestions(target.as_deref(), &visible.elements);
     ExpectationFailure::new(
         FailureInit {
             code: Some(FailureCode::ElementNotFound),
             message: format!(
-                "scroll({}, '{}'): not reached after {} swipes in {:.1} s; {last}",
+                "scroll({}, '{}'): not reached after {} swipes in {:.1} s (limit {:.1} s; {} looks at the screen, {:.1} s each); {last}",
                 describe_selector(selector),
                 direction,
                 swipes,
+                spent.as_secs_f64(),
                 until.timeout.as_secs_f64(),
+                looked.count,
+                each,
             ),
             selector: Some(selector.clone()),
             suggestions,
@@ -420,6 +471,89 @@ mod tests {
         let r = run(&mut eyes, &sel(), SwipeDirection::Down, &until).await;
         assert!(r.is_ok(), "{r:?}");
         assert_eq!(eyes.looks, 2);
+    }
+
+    /// Looks that each take `each`, the way a read of the screen does on
+    /// a loaded machine; the scripted sightings run out into the last one.
+    struct SlowLooks {
+        each: Duration,
+        seen: Vec<Option<NormBox>>,
+        swipes: u32,
+    }
+
+    #[async_trait]
+    impl Eyes for SlowLooks {
+        async fn look(&mut self) -> Result<Look, ExpectationFailure> {
+            tokio::time::sleep(self.each).await;
+            let seen = if self.seen.len() > 1 {
+                self.seen.remove(0)
+            } else {
+                self.seen[0]
+            };
+            Ok(Look {
+                seen,
+                visible: ScreenFacts::default(),
+                layout: layout_for(seen),
+            })
+        }
+        async fn swipe(&mut self, _: SwipeDirection) -> Result<(), ExpectationFailure> {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            self.swipes += 1;
+            Ok(())
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_target_seen_once_after_a_swipe_is_not_called_moving() {
+        // Measured on a consumer's loaded machine: three swipes in twenty
+        // seconds, a look after each. The target came in on the look that
+        // began after the limit, and the failure said it had been "still
+        // moving on every look" — it had been compared with where it was
+        // before the swipe that brought it in, and seen once.
+        let mut eyes = SlowLooks {
+            each: Duration::from_millis(6_500),
+            seen: vec![None, None, None, Some(nb(0.4, 0.1))],
+            swipes: 0,
+        };
+        let until = ScrollUntil {
+            timeout: Duration::from_secs(20),
+            ..ScrollUntil::default()
+        };
+        let f = run(&mut eyes, &sel(), SwipeDirection::Down, &until)
+            .await
+            .expect_err("the limit passed before a second look");
+        assert_eq!(eyes.swipes, 3);
+        assert!(!f.message.contains("still moving"), "{}", f.message);
+        assert!(f.message.contains("saw it in view once"), "{}", f.message);
+        // what the time went on, so the next report says why
+        assert!(f.message.contains("4 looks"), "{}", f.message);
+        assert!(f.message.contains("6.5 s each"), "{}", f.message);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_target_seen_twice_in_one_place_after_a_swipe_is_reached() {
+        let mut eyes = SlowLooks {
+            each: Duration::from_secs(6),
+            seen: vec![None, Some(nb(0.4, 0.1))],
+            swipes: 0,
+        };
+        let r = run(&mut eyes, &sel(), SwipeDirection::Down, &ScrollUntil::default()).await;
+        assert!(r.is_ok(), "{r:?}");
+        assert_eq!(eyes.swipes, 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn where_a_target_was_before_a_swipe_does_not_confirm_it_after() {
+        // The swipe moved nothing — the end of the list — and the target
+        // is where it was. One look after the swipe is still one look.
+        let mut eyes = SlowLooks {
+            each: Duration::from_secs(3),
+            seen: vec![Some(nb(0.95, 0.14)), Some(nb(0.4, 0.1))],
+            swipes: 0,
+        };
+        let r = run(&mut eyes, &sel(), SwipeDirection::Down, &ScrollUntil::default()).await;
+        assert!(r.is_ok(), "{r:?}");
+        assert_eq!(eyes.swipes, 1);
     }
 
     /// A scripted look's layout: the target's box is all that moves.
