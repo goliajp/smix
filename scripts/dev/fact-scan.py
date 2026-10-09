@@ -209,7 +209,7 @@ PINS = [
         "default",
         "s",
         "crates/smix-capsule/src/runner.rs",
-        r"SMIX_RUNNER_UP_TIMEOUT_SECS[\s\S]{0,200}?unwrap_or\((\d+)\)",
+        r"(?:IOS|ANDROID)_UP_TIMEOUT_SECS: u64 = (\d+)",
         r"runner up|SMIX_RUNNER_UP_TIMEOUT_SECS|rebuild",
     ),
     # `scrollUntilVisible`'s limit, the other "default N s" in the guides.

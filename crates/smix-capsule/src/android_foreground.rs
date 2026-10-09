@@ -40,6 +40,14 @@ pub enum Step {
     /// No app window can be read and nothing is covering the screen: a
     /// window list between two apps. Look again.
     NotYet,
+    /// No app window can be read, and a window of another package — not
+    /// system UI — holds the focus: a system dialog or an input method's
+    /// own screen in front of the app. Nothing smix may dismiss; if it
+    /// does not go away by itself, the caller is told which it is.
+    Covered {
+        /// The package of the window holding the focus.
+        by: String,
+    },
     /// Bring the app the caller named to the front.
     BringForward {
         /// The package the caller named.
@@ -71,10 +79,22 @@ pub fn next_step(screen: &Screen, named: Option<&str>, collapsed_already: bool) 
         // Reading the second as the first announced a shade that was
         // never down, and the check after it then reported a crashed
         // instrumentation. Focus is what tells them apart.
-        let covered = screen
-            .windows
-            .iter()
-            .any(|w| w.package == SYSTEM_UI && w.focused);
+        //
+        // A focused window of any other package is neither: something is
+        // in front of the app — measured by a consumer as a password
+        // manager's "save password?" prompt and a keyboard's stylus
+        // introduction. Pressing BACK would answer the first for whoever
+        // uses the device, so it is named rather than dismissed.
+        let focused = screen.windows.iter().find(|w| w.focused);
+        let covered = match focused {
+            Some(w) if w.package == SYSTEM_UI => true,
+            Some(w) if w.readable && !w.package.is_empty() => {
+                return Step::Covered {
+                    by: w.package.clone(),
+                };
+            }
+            Some(_) | None => false,
+        };
         if !covered {
             return Step::NotYet;
         }
@@ -124,15 +144,70 @@ const WINDOW_TYPE_APPLICATION: u64 = 1;
 /// The package the shade, the status bar and the lock screen belong to.
 const SYSTEM_UI: &str = "com.android.systemui";
 
-fn describe(windows: &[Window]) -> String {
+/// Every window the runner reported, including the ones whose root it
+/// could not read: those carry no package, and leaving them out made a
+/// covered app read as an app that was not there.
+#[must_use]
+pub fn describe(windows: &[Window]) -> String {
     if windows.is_empty() {
         return "none at all".to_string();
     }
     windows
         .iter()
-        .map(|w| w.package.as_str())
+        .map(|w| {
+            let kind = kind_name(w.kind);
+            let focus = if w.focused { ", focused" } else { "" };
+            if w.package.is_empty() {
+                format!("{kind} whose root cannot be read{focus}")
+            } else {
+                format!("{} ({kind}{focus})", w.package)
+            }
+        })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// `AccessibilityWindowInfo.TYPE_*`, in words.
+fn kind_name(kind: u64) -> String {
+    match kind {
+        1 => "an app window".to_string(),
+        2 => "an input method window".to_string(),
+        3 => "a system window".to_string(),
+        4 => "an accessibility overlay".to_string(),
+        5 => "a split-screen divider".to_string(),
+        6 => "a magnification overlay".to_string(),
+        other => format!("a window of type {other}"),
+    }
+}
+
+/// The runner's `/windows` body as windows; `None` when it is not one.
+///
+/// A window whose root cannot be read has no package: the runner reads
+/// the package off the root.
+#[must_use]
+pub fn parse_windows(body: &str) -> Option<Vec<Window>> {
+    let start = body.find('{')?;
+    let doc: serde_json::Value = serde_json::from_str(&body[start..]).ok()?;
+    Some(
+        doc.get("windows")?
+            .as_array()?
+            .iter()
+            .map(|w| Window {
+                kind: w
+                    .get("type")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0),
+                package: w
+                    .get("package")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                readable: w.get("rootReadable").and_then(serde_json::Value::as_bool)
+                    == Some(true),
+                focused: w.get("focused").and_then(serde_json::Value::as_bool) == Some(true),
+            })
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -257,6 +332,53 @@ mod tests {
             Step::NotYet,
             "after a collapse too: nothing covers it, so there is nothing to refuse"
         );
+    }
+
+    /// A consumer's screens: a password manager's prompt and a keyboard's
+    /// stylus introduction in front of their app, and `runner up` blaming
+    /// a crashed instrumentation.
+    #[test]
+    fn a_window_of_another_package_holding_the_focus_is_named() {
+        let s = screen(
+            Some("com.qualcomm.insight"),
+            vec![
+                systemui(false),
+                Window {
+                    focused: true,
+                    ..win(SYSTEM, "android")
+                },
+                Window {
+                    kind: APP,
+                    package: String::new(),
+                    readable: false,
+                    focused: false,
+                },
+            ],
+        );
+        for (name, collapsed) in [(None, false), (Some("com.qualcomm.insight"), true)] {
+            assert_eq!(
+                next_step(&s, name, collapsed),
+                Step::Covered {
+                    by: "android".to_string()
+                }
+            );
+        }
+        let said = describe(&s.windows);
+        assert!(said.contains("android (a system window, focused)"), "{said}");
+        assert!(
+            said.contains("an app window whose root cannot be read"),
+            "the unreadable window is listed: {said}"
+        );
+    }
+
+    #[test]
+    fn the_runners_window_list_is_read_including_unreadable_windows() {
+        let body = r#"{"status":"ok","count":2,"windows":[{"index":0,"type":3,"focused":false,"rootReadable":true,"package":"com.android.systemui"},{"index":1,"type":1,"focused":true,"rootReadable":false,"package":null}]}"#;
+        let w = parse_windows(body).expect("a window list");
+        assert_eq!(w.len(), 2);
+        assert_eq!(w[0].package, "com.android.systemui");
+        assert!(w[1].focused && !w[1].readable && w[1].package.is_empty());
+        assert_eq!(parse_windows("not json"), None);
     }
 
     #[test]

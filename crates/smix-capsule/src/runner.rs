@@ -1302,9 +1302,33 @@ pub struct UpOptions {
     pub attach_without_relaunch: bool,
 }
 
+/// How long `runner up` waits on iOS when `SMIX_RUNNER_UP_TIMEOUT_SECS`
+/// does not say: a first run includes a full Swift build.
+pub const IOS_UP_TIMEOUT_SECS: u64 = 300;
+
+/// How long `runner up` waits on Android when `SMIX_RUNNER_UP_TIMEOUT_SECS`
+/// does not say.
+pub const ANDROID_UP_TIMEOUT_SECS: u64 = 180;
+
+/// `runner up`'s wait: `SMIX_RUNNER_UP_TIMEOUT_SECS` when it is set,
+/// `default` otherwise.
+///
+/// # Errors
+///
+/// When the variable is set to something that is not a whole number of
+/// seconds. It used to be passed over in silence, and the caller waited
+/// the default while believing they had changed it.
+pub fn up_timeout_secs(default: u64) -> Result<u64, String> {
+    match std::env::var("SMIX_RUNNER_UP_TIMEOUT_SECS") {
+        Err(_) => Ok(default),
+        Ok(v) => v.trim().parse().map_err(|_| {
+            format!("SMIX_RUNNER_UP_TIMEOUT_SECS={v:?} is not a whole number of seconds")
+        }),
+    }
+}
+
 /// Bring the runner up on `udid`. Blocks until `/health` answers 200 or
-/// the timeout (env `SMIX_RUNNER_UP_TIMEOUT_SECS`, default 300 — first
-/// run includes a full Swift build) expires.
+/// the timeout ([`up_timeout_secs`]) expires.
 ///
 /// `runner_project` — optional explicit path to `SmixRunner.xcodeproj`.
 /// When `None`, uses [`resolve_runner_project`] cascade against `root`.
@@ -1456,10 +1480,7 @@ pub fn up_on_with(
         }
     }
 
-    let timeout_secs: u64 = std::env::var("SMIX_RUNNER_UP_TIMEOUT_SECS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(300);
+    let timeout_secs = up_timeout_secs(IOS_UP_TIMEOUT_SECS)?;
     let log = root.join(format!(".smix/runner/runner-{udid}.log"));
 
     // At most twice: launch-then-wait, and if that never finishes,
