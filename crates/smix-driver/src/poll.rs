@@ -51,6 +51,12 @@ impl Budget {
         look.0.saturating_duration_since(self.start) >= self.limit
     }
 
+    /// How long since the budget began.
+    #[must_use]
+    pub fn elapsed(&self) -> Duration {
+        self.start.elapsed()
+    }
+
     /// The budget's length.
     #[must_use]
     pub fn limit(&self) -> Duration {
