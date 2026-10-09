@@ -156,4 +156,17 @@ class ProbeTargetTest {
             ),
         )
     }
+
+    @Test
+    fun theWindowsAreNotReadWhenTheCallerSpoke() {
+        var read = 0
+        val rows = {
+            read += 1
+            listOf(row(WindowRules.TYPE_APPLICATION, "dev.smix.fixture", 10, true))
+        }
+        assertEquals("dev.smix.fixture", ProbeTarget.pick(rows, named = "dev.smix.fixture"))
+        assertEquals("reading a window waits for its app's main thread", 0, read)
+        assertEquals("dev.smix.fixture", ProbeTarget.pick(rows, named = null))
+        assertEquals(1, read)
+    }
 }

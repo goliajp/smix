@@ -1060,7 +1060,7 @@ class SmixHttpServer(
     /// answer as asking about nothing, so here the focused window is
     /// allowed to speak. The rule itself is in [ProbeTarget].
     private fun probeTarget(session: IHTTPSession): String? =
-        ProbeTarget.pick(readWindowRows(), appUnderTest(session))
+        ProbeTarget.pick(::readWindowRows, appUnderTest(session))
 
     private fun serveSetOrientation(session: IHTTPSession): Response {
         // OK MEANS: outcome — the display is left in the rotation that
