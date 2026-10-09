@@ -2,9 +2,14 @@
 # internal idle-wait for performance (SmixQuiescenceSwizzle); this verb
 # has always been a bounded pause at the runtime layer.
 #
-# On Android a run zeroes the animation scales before it starts, so
-# this verb has little left to wait for; `--animations` restores the
-# device's own settings and with them the original reason for it.
+# On an Android emulator a run zeroes the three animation scales before
+# it starts, so this verb has little left to wait for, and puts them
+# back to exactly what they were when it ends — a scale the emulator
+# never had is deleted, not set to 1. A run that is killed before it
+# can put them back is made good by the next run on that emulator. A
+# physical Android device is left as it is, and the run says so.
+# `--animations` leaves every device's own settings alone, and with
+# them the original reason for this verb.
 #
 # On iOS nothing is quietened — no host-side lever exists — so this
 # verb keeps its full value there.
