@@ -1414,6 +1414,7 @@ class SmixHttpServer(
         val whichField = focused.viewIdResourceName
             ?: focused.className?.toString()
             ?: "an unnamed node"
+        val fieldPackage = focused.packageName?.toString()
         // In chunks, each read back before the next. One `input text` of
         // 120 characters came back short under load (2 of 10 whole at load
         // 11–15) while 64 held every time; a chunk read back on its own can
@@ -1442,6 +1443,7 @@ class SmixHttpServer(
         val done = when (result) {
             is ChunkedInput.ChunkedResult.Failed -> return chunkDidNotLand(
                 text, whichField, masked, before, result.held, result.chunk, result.of, result.retries,
+                ChunkedInput.focusNow(fieldPackage, focusedWindowPackage()),
             )
             is ChunkedInput.ChunkedResult.OutOfTime -> return errorJson(
                 Response.Status.INTERNAL_ERROR,
@@ -1464,7 +1466,8 @@ class SmixHttpServer(
             is ChunkedInput.ChunkedResult.FocusLeft -> return errorJson(
                 Response.Status.INTERNAL_ERROR,
                 "focus_left",
-                ChunkedInput.stoppedMessage(result, text, whichField, masked),
+                ChunkedInput.stoppedMessage(result, text, whichField, masked) +
+                    ChunkedInput.focusNow(fieldPackage, focusedWindowPackage()),
             )
             is ChunkedInput.ChunkedResult.Done -> result
         }
@@ -1699,6 +1702,7 @@ class SmixHttpServer(
         index: Int,
         of: Int,
         retries: Int,
+        focusNow: String,
     ): Response = errorJson(
         Response.Status.INTERNAL_ERROR,
         "text_did_not_land",
@@ -1714,8 +1718,20 @@ class SmixHttpServer(
                 "tail. The field held \"$before\" and holds \"$now\". Characters are " +
                 "missing from the middle, or there are characters this step did not " +
                 "type — neither is repaired by typing more."
-        },
+        } + focusNow,
     )
+
+    /// The package of the window holding the input focus, when the
+    /// runner can read it.
+    private fun focusedWindowPackage(): String? {
+        val window = instrumentation.uiAutomation.windows.firstOrNull { it.isFocused } ?: return null
+        val root = window.root ?: return null
+        return try {
+            root.packageName?.toString()
+        } finally {
+            root.recycle()
+        }
+    }
 
     /// Empty the focused field in one request.
     ///
