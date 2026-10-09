@@ -2,7 +2,25 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [13.0.0] — 2026-10-10
+
+A major release because a public Rust enum gained a variant (below); flows,
+the CLI and the SDKs keep working. What answers differently is in
+[docs/migrating-to-13.md](docs/migrating-to-13.md).
+
+### Breaking
+
+- **Rust API: `smix_capsule::android_foreground::Step` has a new variant,
+  `Covered`, and is `#[non_exhaustive]`.** It is what `runner up` decides
+  when a window of another package holds the focus in front of an app that
+  cannot be read. Code outside the crate matching `Step` needs a wildcard
+  arm, and a variant added later is not a breaking change.
+- **A run leaves a physical Android device's animation settings as they
+  are.** It used to set them to zero and never put them back. The run says
+  so in one line; flows on a phone run with the phone's own settings.
+- **A `SMIX_RUNNER_UP_TIMEOUT_SECS` that is not a whole number of seconds is
+  refused.** It used to be ignored in silence, so a caller waited the
+  default believing they had changed it. It now applies on Android too.
 
 ### Fixed
 

@@ -30,7 +30,11 @@ pub struct Screen {
 }
 
 /// The next thing to do.
+///
+/// `#[non_exhaustive]`: a screen this crate learns to tell apart is a new
+/// variant, and that should not cost callers outside it a major version.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Step {
     /// Nothing to put right: answer.
     Ready,
