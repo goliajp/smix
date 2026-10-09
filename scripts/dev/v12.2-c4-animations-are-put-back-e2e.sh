@@ -117,6 +117,8 @@ EOF
 SET="0.5 1.5 null"
 WANT="0.5 1.5 null "
 start_run() {
+  # raw run: the signals below go to smix's own pid, and what is judged is
+  # the device's settings, not the run's verdict
   SMIX_RUNNER_PORT="$PORT" "$SMIX" run --platform android --device "$SERIAL" "$WORK/$1.yaml" >"$WORK/$1.log" 2>&1 &
   RUN_PID=$!
 }
