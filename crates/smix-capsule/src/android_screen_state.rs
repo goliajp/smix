@@ -60,7 +60,6 @@ pub fn parse_current_focus(dump: &str) -> Option<String> {
     (user.starts_with('u') && !title.is_empty()).then(|| title.to_string())
 }
 
-
 /// `isKeyguardShowing=` out of `dumpsys window`.
 pub fn parse_keyguard_showing(dump: &str) -> Option<bool> {
     let value = dump
@@ -211,21 +210,35 @@ mod tests {
     #[test]
     fn a_window_of_another_package_in_front_is_named_and_the_runner_is_not_blamed() {
         let mut s = state(Some(Wakefulness::Awake), Some(false));
-        s.focus = Some("com.google.android.gms/com.google.android.gms.autofill.ui.AutofillSaveActivity".into());
+        s.focus = Some(
+            "com.google.android.gms/com.google.android.gms.autofill.ui.AutofillSaveActivity".into(),
+        );
         let text = no_app_refusal(1, "emulator-5554", WHY, s.clone());
-        assert!(text.contains("A window of com.google.android.gms holds the focus"), "{text}");
+        assert!(
+            text.contains("A window of com.google.android.gms holds the focus"),
+            "{text}"
+        );
         assert!(!text.contains("crashed-and-restarted"), "{text}");
         // the runner's own answer, when it has one, is the one named
         s.in_front = Some("android".into());
         let text = no_app_refusal(1, "emulator-5554", WHY, s);
-        assert!(text.contains("A window of android holds the focus"), "{text}");
-        assert!(text.contains("AutofillSaveActivity"), "the platform's title is evidence: {text}");
+        assert!(
+            text.contains("A window of android holds the focus"),
+            "{text}"
+        );
+        assert!(
+            text.contains("AutofillSaveActivity"),
+            "the platform's title is evidence: {text}"
+        );
     }
 
     #[test]
     fn system_ui_holding_the_focus_is_not_called_something_in_front() {
         let mut s = state(Some(Wakefulness::Awake), Some(false));
-        for title in ["NotificationShade", "com.android.systemui/com.android.systemui.Foo"] {
+        for title in [
+            "NotificationShade",
+            "com.android.systemui/com.android.systemui.Foo",
+        ] {
             s.focus = Some(title.into());
             let text = no_app_refusal(1, "emulator-5554", WHY, s.clone());
             assert!(text.contains("crashed-and-restarted"), "{title}: {text}");
@@ -238,7 +251,9 @@ mod tests {
         let dump = "  mCurrentFocus=Window{cdcd6de u0 com.google.android.permissioncontroller/com.android.permissioncontroller.permission.ui.GrantPermissionsActivity}\n  mFocusedApp=ActivityRecord{130209139 u0 x/y t1996}\n";
         assert_eq!(
             parse_current_focus(dump).as_deref(),
-            Some("com.google.android.permissioncontroller/com.android.permissioncontroller.permission.ui.GrantPermissionsActivity")
+            Some(
+                "com.google.android.permissioncontroller/com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
+            )
         );
         assert_eq!(parse_current_focus("  mCurrentFocus=null\n"), None);
         assert_eq!(parse_current_focus("nothing\n"), None);

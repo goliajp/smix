@@ -818,7 +818,11 @@ fn log_tail(log: &Path) -> String {
 /// so near its top, above a stack trace longer than any tail.
 fn instrumentation_ended_because(log: &str) -> Option<&'static str> {
     log.lines()
-        .any(|line| UIAUTOMATION_TAKEN.iter().all(|needle| line.contains(needle)))
+        .any(|line| {
+            UIAUTOMATION_TAKEN
+                .iter()
+                .all(|needle| line.contains(needle))
+        })
         .then_some(
             "Another UiAutomation client holds the device's accessibility connection — \
              `uiautomator events`, another instrumentation, or another tool's runner — \

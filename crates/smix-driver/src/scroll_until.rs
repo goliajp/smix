@@ -537,7 +537,13 @@ mod tests {
             seen: vec![None, Some(nb(0.4, 0.1))],
             swipes: 0,
         };
-        let r = run(&mut eyes, &sel(), SwipeDirection::Down, &ScrollUntil::default()).await;
+        let r = run(
+            &mut eyes,
+            &sel(),
+            SwipeDirection::Down,
+            &ScrollUntil::default(),
+        )
+        .await;
         assert!(r.is_ok(), "{r:?}");
         assert_eq!(eyes.swipes, 1);
     }
@@ -551,7 +557,13 @@ mod tests {
             seen: vec![Some(nb(0.95, 0.14)), Some(nb(0.4, 0.1))],
             swipes: 0,
         };
-        let r = run(&mut eyes, &sel(), SwipeDirection::Down, &ScrollUntil::default()).await;
+        let r = run(
+            &mut eyes,
+            &sel(),
+            SwipeDirection::Down,
+            &ScrollUntil::default(),
+        )
+        .await;
         assert!(r.is_ok(), "{r:?}");
         assert_eq!(eyes.swipes, 1);
     }
