@@ -49,10 +49,11 @@ pub use device_control::{DeviceControl, Permission};
 pub use ios_device::IosDeviceControl;
 
 // Android DeviceControl impl backed by smix-adb.
+mod android_animations;
 pub mod android_device;
 pub use android_device::{
-    ANDROID_ANIMATION_SCALES, AndroidDeviceControl, animation_settings_verified,
-    parse_resolved_activity,
+    ANDROID_ANIMATION_SCALES, AndroidDeviceControl, android_serial_is_emulator,
+    animation_settings_verified, parse_resolved_activity,
 };
 
 pub mod capsule;

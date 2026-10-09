@@ -832,8 +832,11 @@ pub trait DeviceControl: Send + Sync {
     /// Push the device's animations as low as this platform allows,
     /// then read the settings back and refuse if they did not take.
     ///
-    /// `quiet = true` is the default a run gets; `false` restores the
-    /// device's own settings for `--animations`.
+    /// `quiet = true` is what a run asks for at its start; `false` is
+    /// what it asks for at its end, and puts back what the device had
+    /// before the first `true` — recorded on the machine, so a run
+    /// that died by SIGKILL is made good by the next one. `--animations`
+    /// asks for neither.
     ///
     /// How low differs by platform and the difference is not papered
     /// over. Android zeroes three scales, which really is off. **iOS

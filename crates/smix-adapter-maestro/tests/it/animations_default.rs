@@ -46,7 +46,8 @@ fn it_happens_before_the_app_comes_up() {
 }
 
 /// Both platforms are asked. How far each can be pushed differs; being
-/// asked does not.
+/// asked does not. A device is exempt by being somebody's phone, which
+/// is decided above the block and by serial, not by platform.
 #[test]
 fn neither_platform_is_exempt() {
     let block_start = ENTRY
@@ -58,5 +59,55 @@ fn neither_platform_is_exempt() {
         "the animation step gained a platform condition — the foreground \
          call below it has one for its own reason, and this must not \
          inherit it by proximity"
+    );
+}
+
+/// What was quietened is put back when the run ends, after the flow
+/// has finished or been abandoned, and before the holder is consumed.
+#[test]
+fn the_run_puts_the_settings_back_after_the_flow() {
+    let prepare = ENTRY
+        .find("set_animations_quiet(true)")
+        .expect("the run still prepares animations");
+    let restore = ENTRY
+        .find("set_animations_quiet(false)")
+        .expect("the run no longer puts the device's animation settings back");
+    let flow_done = ENTRY
+        .find("drop(adapter);")
+        .expect("the run still drops the adapter once the flow is over");
+    let holder_consumed = ENTRY
+        .find("if let AppHolder::Session(session) = holder")
+        .expect("the run still closes the session at the end");
+    assert!(prepare < restore, "the restore comes before the change");
+    assert!(
+        flow_done < restore && restore < holder_consumed,
+        "the restore is not between the end of the flow and the session close, \
+         so an interrupted run would skip it or have nothing to call it on"
+    );
+    assert!(
+        ENTRY.contains("holds_animations = true"),
+        "the restore is no longer keyed to the change having happened"
+    );
+}
+
+/// A phone's animation scales are its owner's. A run leaves them alone
+/// and says so once.
+#[test]
+fn a_physical_android_device_is_left_as_it_is() {
+    assert!(
+        ENTRY.contains("!smix_sdk::android_serial_is_emulator(serial)"),
+        "the run no longer tells a phone from an emulator by its serial"
+    );
+    assert!(
+        ENTRY.contains("is a physical device; its own animation settings"),
+        "the run no longer says it left a phone's settings alone"
+    );
+    let block_start = ENTRY
+        .find("if !args.animations")
+        .expect("the preparation block is still there");
+    let block = &ENTRY[block_start..block_start + 200];
+    assert!(
+        block.contains("&& !device_is_someones"),
+        "the change is no longer withheld from a physical device"
     );
 }

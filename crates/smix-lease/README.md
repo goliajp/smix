@@ -41,6 +41,13 @@ the graceful path the holder never got to take.
   entitled to turn the device off, which is not the same question as
   whether it knows how to address it.
 - `store` — the I/O half: atomic writes, `ps`-backed process probes.
+- `held` — device settings a run changed and owes back (Android's
+  animation scales). One record per device under `held-settings/`: what
+  the device had before the first run changed it, and every run still
+  holding the change. The last to leave puts the originals back; a run
+  that died without leaving is pruned by the next one, which takes the
+  recorded originals over the leftovers it sees on the device.
+  `baseline` is the pure decision.
 
 Executing a cleanup plan lives in `smix-capsule::reconcile`, which owns the
 graceful teardowns this crate only names.
