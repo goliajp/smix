@@ -33,8 +33,10 @@ async fn main() {
             std::process::exit(1);
         }
     }
+    // what the device had before the first call, key by key; a key it
+    // did not have is deleted rather than written
     match dev.set_animations_quiet(&serial, false).await {
-        Ok(()) => println!("restore: written back on {serial}"),
+        Ok(()) => println!("restore: put back on {serial}"),
         Err(e) => println!("restore: FAILED on {serial}: {e}"),
     }
 }

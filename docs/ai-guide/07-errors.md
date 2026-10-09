@@ -188,7 +188,9 @@ the field that carries that list. `smix runner up --force` rebuilds it.
 
 **Fixes**:
 - Wait for the screen before tapping (`extendedWaitUntil`, or
-  `waitForAnimationToEnd` if you are running with `--animations`)
+  `waitForAnimationToEnd` if you are running with `--animations` or on
+  a physical Android device, whose animation settings a run leaves
+  as they are)
 - If it reproduces on a still screen, the element's frame is wrong
   rather than stale — capture `smix tree --json` and check the frame
 

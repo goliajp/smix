@@ -672,7 +672,10 @@ Documentation: docs/AI_GUIDE.md
         /// Android's three animation scales go to zero, iOS gets Reduce
         /// Motion (XCUITest cannot reach the app's own animation flag,
         /// so that is as far as it goes). Both are read back and the
-        /// run refuses if they did not take. Pass this when motion is
+        /// run refuses if they did not take. When the run ends the
+        /// scales are put back to what they were, including after an
+        /// interrupted run, by the next run on that device; a physical
+        /// Android device is left as it is. Pass this when motion is
         /// the subject — recording a demo, or an `assertScreenshot`
         /// baseline whose frames include a transition.
         #[arg(long, default_value_t = false)]

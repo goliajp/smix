@@ -370,16 +370,38 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
     // Before foregrounding, so the app's first frame is already drawn
     // under the settings the rest of the run uses. Both platforms,
     // unlike the foreground call below: how far each can be pushed
-    // differs, but neither is exempt from being asked.
-    if !args.animations
-        && let Some(id) = args.udid.as_deref()
-        && let Err(e) = holder.app().set_animations_quiet(true).await
-    {
+    // differs, but neither is exempt from being asked. A phone is: its
+    // animation scales are the owner's, and a run that wrote them and
+    // then died would have changed somebody's device for good.
+    let device_is_someones = match args.platform {
+        FlowPlatform::Ios => false,
+        FlowPlatform::Android => args
+            .udid
+            .as_deref()
+            .is_some_and(|serial| !smix_sdk::android_serial_is_emulator(serial)),
+    };
+    if device_is_someones && let Some(id) = args.udid.as_deref() {
         eprintln!(
-            "error: could not quieten animations on {id}: {e}\n\
-             hint: pass --animations to run with the device's own settings"
+            "animations: {id} is a physical device; its own animation settings \
+             are left as they are and the flow runs with them"
         );
-        return 3;
+    }
+    // What was quietened is put back at the end, on every path out of
+    // here from this point on — a flow that fails, and the signal
+    // cascade below, included.
+    let mut holds_animations = false;
+    if !args.animations
+        && !device_is_someones
+        && let Some(id) = args.udid.as_deref()
+    {
+        if let Err(e) = holder.app().set_animations_quiet(true).await {
+            eprintln!(
+                "error: could not quieten animations on {id}: {e}\n\
+                 hint: pass --animations to run with the device's own settings"
+            );
+            return 3;
+        }
+        holds_animations = true;
     }
 
     // 4. foreground unless --no-launch (iOS only; Android brings app
@@ -522,6 +544,25 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
     // in run-summary.json.
     let debug_records: Vec<crate::StepDebugRecord> = adapter.debug_records().to_vec();
     drop(adapter);
+
+    // Put the device's animation settings back. Under the same kind of
+    // deadline as the session close, so a ctrl-C still terminates when
+    // the device has gone; a device that is still there answers three
+    // `settings` writes well inside it.
+    if holds_animations {
+        let restore = holder.app().set_animations_quiet(false);
+        match tokio::time::timeout(std::time::Duration::from_secs(10), restore).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => eprintln!(
+                "WARN: the device's animation settings were not put back: {e}\n\
+                 the next run on this device puts them back when it starts"
+            ),
+            Err(_) => eprintln!(
+                "WARN: putting the device's animation settings back timed out after 10s\n\
+                 the next run on this device puts them back when it starts"
+            ),
+        }
+    }
 
     // Release the session (best-effort). Errors here are
     // warnings only: the flow's result is already captured. The

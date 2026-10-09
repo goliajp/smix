@@ -393,16 +393,24 @@ impl std::fmt::Display for LeaseDir {
 /// instead of sanitised, because a silently rewritten id would address a
 /// different device than the caller named.
 pub fn lease_path(dir: &LeaseDir, device_id: &str) -> Result<PathBuf, LeaseError> {
+    check_device_id(device_id)?;
+    Ok(dir.path().join(format!("{device_id}.json")))
+}
+
+/// The one definition of a device id that may become a filename; the
+/// held-settings records are named the same way.
+pub(crate) fn check_device_id(device_id: &str) -> Result<(), LeaseError> {
     let ok = !device_id.is_empty()
         && device_id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
-    if !ok {
-        return Err(LeaseError::BadDeviceId {
+    if ok {
+        Ok(())
+    } else {
+        Err(LeaseError::BadDeviceId {
             device_id: device_id.to_string(),
-        });
+        })
     }
-    Ok(dir.path().join(format!("{device_id}.json")))
 }
 
 /// Read a device's ledger. `Ok(None)` means no lease; a ledger that

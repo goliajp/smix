@@ -25,6 +25,7 @@
 //! of a teardown be tested without a device.
 
 mod carry;
+pub mod held;
 pub mod store;
 pub mod vanish;
 

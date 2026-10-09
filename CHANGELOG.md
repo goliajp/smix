@@ -2,6 +2,28 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **A run puts an Android emulator's animation scales back.** `smix run`
+  zeroes `window_animation_scale`, `transition_animation_scale` and
+  `animator_duration_scale` before its first step and nothing ever put
+  them back, so an app that reads `animator_duration_scale == 0` as the
+  reduce-motion preference stayed in reduced motion on the emulator after
+  one run. The scales are now put back to exactly what they were when the
+  run ends — after a failed flow and after Ctrl-C too — and a scale the
+  emulator never had is deleted rather than set to `1`, which it never
+  was. What they were is recorded on the machine, per device, with every
+  run holding the change; concurrent runs on one emulator restore once,
+  when the last of them leaves, and a run killed before it could restore
+  is made good by the next run on that emulator, which takes the recorded
+  originals over the zeros it finds. A physical Android device is no
+  longer written at all: its settings are its owner's, and the run says
+  it is leaving them as they are. `--animations` is unchanged.
+  `DeviceControl::set_animations_quiet(_, false)` on Android now restores
+  the recorded originals instead of writing `1`.
+
 ## [12.1.0] — 2026-10-02
 
 ### Fixed
