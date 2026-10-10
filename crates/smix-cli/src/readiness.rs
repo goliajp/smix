@@ -414,7 +414,7 @@ mod tests {
             downgradeable: None,
             capture_server_up: true,
             adb: Some(AdbFacts {
-                path: "/opt/homebrew/bin/adb".into(),
+                path: "~/homebrew/bin/adb".into(),
                 source: "PATH".into(),
                 cannot_start: Some("it carries the com.apple.quarantine attribute".into()),
             }),
@@ -539,7 +539,7 @@ mod tests {
             runner_up: true,
             capture_server_up: true,
             adb: Some(AdbFacts {
-                path: "/sdk/platform-tools/adb".into(),
+                path: "~/sdk/platform-tools/adb".into(),
                 source: "$ANDROID_HOME".into(),
                 cannot_start: None,
             }),

@@ -2,7 +2,20 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [14.0.0] — 2026-10-10
+
+A major release because a public Rust enum gained variants (below); flows,
+the CLI and the SDKs keep working. What answers differently is in
+[docs/migrating-to-14.md](docs/migrating-to-14.md).
+
+### Breaking
+
+- **Rust API: `smix_adb::AdbError` has three new variants and is
+  `#[non_exhaustive]`.** `CannotStart` (the adb in use does not start),
+  `TimedOut` (an adb command did not return within its limit) and `NoSdk`
+  (no Android SDK anywhere smix looks). Code outside the crate matching
+  `AdbError` needs a wildcard arm, and a variant added later is not a
+  breaking change.
 
 ### Fixed
 

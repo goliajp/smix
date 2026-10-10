@@ -55,6 +55,12 @@ EXCLUDED_AREAS = [
         "names the executable that died",
     ),
     (
+        "crates/smix-adb/src/binary.rs",
+        "where adb and the Android SDK live on disk — `ANDROID_HOME` and the "
+        "SDK's default location, and the quarantined Homebrew adb the start "
+        "check names; filesystem paths, not routes",
+    ),
+    (
         "crates/smix-selector/tests/it/perf_contract.rs",
         "names directories in this repo",
     ),
