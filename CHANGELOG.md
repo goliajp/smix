@@ -2,6 +2,31 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [13.1.0] — 2026-10-10
+
+### Fixed
+
+- **A look at a busy Android app does not wait for it.** A flow reads a
+  probe-carrying app through two trees side by side: the probe's, and the
+  accessibility tree with the app's own windows left hollow. The hollow
+  read still fetched each app window's root to learn whose it was, and a
+  root is answered by the app's main thread, so every look waited for the
+  app to be idle — 3.5 s on the fixture with its main thread held, about
+  six seconds a look on a consumer's screen that copies video frames. The
+  probe now names its windows by the id the accessibility service knows
+  them by, and those windows are reported from the window alone: 20 ms on
+  the same screen. An app built with an older probe is read as before;
+  rebuild it with this version's probe to get the difference.
+- **`runner up` on Android does not offer `--force` for a window in front
+  of the app.** Replacing the runner cannot move the window; the refusal
+  now says only what is in front and how to clear it. The platform's
+  focused-window title for an overlay starts with its window type
+  (`Sys2038:`), which was taken for part of the package name.
+- **`runner up` on Android says when the system gave up starting the
+  runner's process.** On a heavily loaded machine the activity manager can
+  kill a process that did not attach in time, and the failure showed only
+  `failed to attach` in a log tail.
+
 ## [13.0.0] — 2026-10-10
 
 A major release because a public Rust enum gained a variant (below); flows,

@@ -403,6 +403,11 @@ another tool's runner takes it.
 
 **Fix**: stop the other client and bring the runner up again.
 
+When the log says the process *failed to attach*, Android gave up starting
+it: the system allows a starting process a fixed time, and a heavily
+loaded machine or device can exceed it. Nothing is wrong with the runner;
+bring it up again once the load has come down.
+
 ### "a window of … holds the focus" (Android)
 
 `runner up` found no application window it could read, and a window of

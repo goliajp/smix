@@ -43,7 +43,8 @@ cleanup() {
       adb -s "$SERIAL" shell appops set "$APPID" SYSTEM_ALERT_WINDOW "$OVERLAY_WAS" >/dev/null 2>&1 \
         || printf '[v13.1-c2] warning: SYSTEM_ALERT_WINDOW was not put back to %s\n' "$OVERLAY_WAS" >&2
     fi
-    "$SMIX" runner down --platform android --device "$SERIAL" --runner-port "$PORT" >/dev/null 2>&1 || true
+    "$SMIX" runner down --platform android --device "$SERIAL" --runner-port "$PORT" \
+      >/dev/null || printf '[v13.1-c2] warning: the runner was not stopped\n' >&2
   fi
   [ -n "$WORK" ] && rm -rf "$WORK"
   if [ "$WE_BOOTED" = 1 ]; then "$SMIX" sim shutdown "$SERIAL" >/dev/null 2>&1 || true; fi
@@ -82,7 +83,8 @@ OVERLAY_WAS="$(adb -s "$SERIAL" shell appops get "$APPID" SYSTEM_ALERT_WINDOW | 
 adb -s "$SERIAL" shell appops set "$APPID" SYSTEM_ALERT_WINDOW allow || fail "could not allow the fixture an overlay"
 
 # A runner that answers before the overlay goes up: the already-running path.
-"$SMIX" runner down --platform android --device "$SERIAL" --runner-port "$PORT" >/dev/null 2>&1 || true
+"$SMIX" runner down --platform android --device "$SERIAL" --runner-port "$PORT" >/dev/null \
+  || log "no runner of ours was answering on $PORT"
 "$SMIX" runner up "$ALIAS" --platform android --runner-port "$PORT" >/dev/null 2>&1 \
   || fail "the runner would not start on $SERIAL:$PORT before the overlay"
 adb -s "$SERIAL" shell am start -W -S -n "$APPID/.OverlayActivity" >/dev/null 2>&1 \
@@ -128,7 +130,8 @@ judge() {
 
 log "--- a runner already answering"
 judge already-up
-"$SMIX" runner down --platform android --device "$SERIAL" --runner-port "$PORT" >/dev/null 2>&1 || true
+"$SMIX" runner down --platform android --device "$SERIAL" --runner-port "$PORT" >/dev/null \
+  || log "no runner of ours was answering on $PORT"
 log "--- a fresh bring-up"
 judge fresh
 
