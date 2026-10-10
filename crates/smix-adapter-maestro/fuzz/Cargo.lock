@@ -1768,6 +1768,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "smix-adb",
  "smix-error",
  "smix-input",
  "smix-runner-wire",
