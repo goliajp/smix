@@ -136,4 +136,29 @@ run_flow sheet
 has "the page" || fail "the page that shows through the sheet is no longer reported"
 log "  the sheet is reported, and the page still shows through it"
 
+log "--- a list narrowed in place, the way a consumer's device search narrows it"
+# Rows the filter drops leave the tree with the screen. The consumer's eight
+# rows after a search were the covered page's, not rows left behind.
+adb -s "$SERIAL" shell am start -W -S -n "$APPID/.FilterActivity" >/dev/null 2>&1 \
+  || fail "could not start the filter screen"
+cat >"$WORK/filter.yaml" <<EOF
+appId: $APPID
+---
+- tapOn:
+    id: "fixture_filter_input"
+- inputText: "Lobby Entrance"
+- assertVisible: "1 result found"
+EOF
+run_flow filter
+rows="$("$SMIX" tree --device "$SERIAL" --port "$PORT" --json --reader probe 2>/dev/null | python3 -c '
+import json, sys
+def walk(n):
+    here = 1 if n.get("identifier") == "fixture_filter_row" else 0
+    return here + sum(walk(c) for c in n.get("children") or [])
+doc = json.load(sys.stdin)
+print(walk(doc.get("root", doc)))
+')"
+[ "$rows" = 1 ] || fail "after the filter the probe reports $rows rows, and one is on the screen"
+log "  one row on the screen, one in the tree"
+
 log "V13.2-C1-E2E-PASS on $SERIAL"
