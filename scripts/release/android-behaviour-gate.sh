@@ -667,7 +667,8 @@ while :; do
   [ "$SECONDS" -ge "$a12_deadline" ] && break
   sleep 1
 done
-python3 "$REPO_ROOT/scripts/release/android-a12-verdict.py" "$WORK/a12-up.json" present \
+curl -sS --max-time 20 "http://localhost:$PROXY_PORT/windows" > "$WORK/a12-up-windows.json" || true
+python3 "$REPO_ROOT/scripts/release/android-a12-verdict.py" "$WORK/a12-up.json" present "$WORK/a12-up-windows.json" \
   || die "A12: see above. $WORK/a12-up.json"
 
 # A13 — a swipe aimed inside a named element reaches this platform too.
