@@ -592,6 +592,11 @@ pub fn up_with_options(
                 match crate::android_bring_back::settle(serial, port, opts.app.as_deref(), false) {
                     Ok(()) => true,
                     Err(crate::android_bring_back::Unsettled::App(why)) => return Err(why),
+                    // Not the runner's doing, so neither its replacement nor
+                    // `--force` is offered: the window in front stays there.
+                    Err(crate::android_bring_back::Unsettled::Covered(why)) => {
+                        return Err(format!("port {port} answers /health, but {why}."));
+                    }
                     Err(crate::android_bring_back::Unsettled::Screen(why)) if !force => {
                         return Err(format!(
                             "port {port} answers /health, but {why}.\n\n\
@@ -776,7 +781,12 @@ pub fn up_with_options(
                 opts.app.as_deref(),
                 opts.relaunch,
             ) {
-                Ok(()) | Err(crate::android_bring_back::Unsettled::Screen(_)) => {}
+                // Judged below, with the device's own account of the screen.
+                Ok(())
+                | Err(
+                    crate::android_bring_back::Unsettled::Screen(_)
+                    | crate::android_bring_back::Unsettled::Covered(_),
+                ) => {}
                 Err(crate::android_bring_back::Unsettled::App(why)) => return Err(why),
             }
             if let Err(NoApp { why, in_front }) = automation_sees_an_app(port) {

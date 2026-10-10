@@ -15,6 +15,8 @@
          Measured on API 36: `pm grant` takes it once it is requested
          here, and refuses it outright when it is not. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <application
         android:label="smix fixture"
         android:theme="@style/Theme.AppCompat.Light">
@@ -58,6 +60,9 @@
             android:exported="true" />
         <activity
             android:name=".HiddenActivity"
+            android:exported="true" />
+        <activity
+            android:name=".OverlayActivity"
             android:exported="true" />
     </application>
 </manifest>

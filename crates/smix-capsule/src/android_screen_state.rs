@@ -41,7 +41,10 @@ impl ScreenState {
         if let Some(p) = &self.in_front {
             return Some(p);
         }
-        let (package, _) = self.focus.as_deref()?.split_once('/')?;
+        let (owner, _) = self.focus.as_deref()?.split_once('/')?;
+        // An overlay's title carries its window type first:
+        // `Sys2038:dev.smix.fixture/…` (measured, API 36).
+        let package = owner.rsplit_once(':').map_or(owner, |(_, p)| p);
         (package != SYSTEM_UI).then_some(package)
     }
 }
@@ -229,6 +232,18 @@ mod tests {
         assert!(
             text.contains("AutofillSaveActivity"),
             "the platform's title is evidence: {text}"
+        );
+    }
+
+    #[test]
+    fn an_overlays_window_type_is_not_read_as_its_package() {
+        let mut s = state(Some(Wakefulness::Awake), Some(false));
+        // measured on emulator-5554, API 36, with the fixture's overlay up
+        s.focus = Some("Sys2038:dev.smix.fixture/dev.smix.fixture.OverlayActivity".into());
+        let text = no_app_refusal(1, "emulator-5554", WHY, s);
+        assert!(
+            text.contains("A window of dev.smix.fixture holds the focus"),
+            "{text}"
         );
     }
 
