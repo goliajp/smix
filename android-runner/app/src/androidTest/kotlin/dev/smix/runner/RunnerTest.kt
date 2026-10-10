@@ -486,7 +486,7 @@ class SmixHttpServer(
                     ?.getLong("quietMs") ?: -1L
                 val roots = hello.getInt("roots", 0)
                 val version = hello.getString("version") ?: "?"
-                RunnerWire.probePresentBody(app, version, roots, quiet)
+                RunnerWire.probePresentBody(app, version, roots, quiet, hello.getString("library"))
             }
         } catch (e: IllegalArgumentException) {
             // Resolving an authority nothing declares throws rather than

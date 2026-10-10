@@ -90,6 +90,7 @@ class SmixProbeProvider : ContentProvider() {
                 METHOD_WINDOWS -> putIntArray(KEY_WINDOW_IDS, accessibilityWindowIds())
                 METHOD_HELLO -> {
                     putString(KEY_VERSION, PROBE_WIRE_VERSION)
+                    putString(KEY_LIBRARY, BuildConfig.SMIX_VERSION)
                     putInt(KEY_ROOTS, SemanticsProbe.rootCount())
                 }
                 // Naming the method back is what lets a caller tell "this
@@ -150,5 +151,6 @@ class SmixProbeProvider : ContentProvider() {
         const val KEY_QUIET_MS = "quietMs"
         const val KEY_ERROR = "error"
         const val KEY_WINDOW_IDS = "windowIds"
+        const val KEY_LIBRARY = "library"
     }
 }

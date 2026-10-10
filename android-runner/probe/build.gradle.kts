@@ -27,7 +27,13 @@ version = providers.gradleProperty("smixVersion").get()
 android {
     namespace = "dev.smix.probe"
     compileSdk = 35
-    defaultConfig { minSdk = 33 }
+    defaultConfig {
+        minSdk = 33
+        // What the host compares with its own version: an app keeps the
+        // probe it was built with until someone raises the dependency.
+        buildConfigField("String", "SMIX_VERSION", "\"${providers.gradleProperty("smixVersion").get()}\"")
+    }
+    buildFeatures { buildConfig = true }
     kotlinOptions { jvmTarget = "17" }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

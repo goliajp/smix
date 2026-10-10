@@ -187,6 +187,13 @@ impl HttpRunnerClient {
         if raw.get("present")?.as_bool() != Some(true) {
             return None;
         }
+        if let Some(note) = probe_version_note(
+            raw.get("library").and_then(|v| v.as_str()),
+            env!("CARGO_PKG_VERSION"),
+        ) {
+            static SAID: std::sync::Once = std::sync::Once::new();
+            SAID.call_once(|| eprintln!("{note}"));
+        }
         Some(raw.get("app").and_then(|a| a.as_str()).map(str::to_owned))
     }
 
@@ -200,5 +207,44 @@ impl HttpRunnerClient {
         let mut root = smix_screen::probe_tree_to_a11y(&payload.to_string())?;
         derive_roles_recursive(&mut root);
         Some(root)
+    }
+}
+
+/// What to say when the app's probe is not this smix's release, or `None`.
+///
+/// The probe is built into the app and stays the version the app was built
+/// with; fixes in it reach a flow only once the dependency is raised and the
+/// app rebuilt, and nothing said so — a consumer upgraded smix and kept
+/// seeing what the new release had fixed.
+#[must_use]
+pub fn probe_version_note(probe: Option<&str>, ours: &str) -> Option<String> {
+    let theirs = match probe {
+        Some(v) if v == ours => return None,
+        Some(v) => format!("is {v}"),
+        None => "is from a release before probes said which they are".to_string(),
+    };
+    Some(format!(
+        "smix: the app's smix-probe {theirs} and this smix is {ours} — fixes made in the probe \
+         since then are not in effect until the app depends on \
+         jp.golia.smix:smix-probe:{ours} and is rebuilt"
+    ))
+}
+
+#[cfg(test)]
+mod probe_version_tests {
+    use super::probe_version_note;
+
+    #[test]
+    fn the_same_release_says_nothing() {
+        assert_eq!(probe_version_note(Some("13.2.0"), "13.2.0"), None);
+    }
+
+    #[test]
+    fn another_release_is_named_with_what_to_depend_on() {
+        let note = probe_version_note(Some("12.0.0"), "13.2.0").expect("a note");
+        assert!(note.contains("is 12.0.0"), "{note}");
+        assert!(note.contains("smix-probe:13.2.0"), "{note}");
+        let old = probe_version_note(None, "13.2.0").expect("a note");
+        assert!(old.contains("before probes said which"), "{old}");
     }
 }

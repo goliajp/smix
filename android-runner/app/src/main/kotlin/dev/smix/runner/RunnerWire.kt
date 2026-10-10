@@ -324,13 +324,16 @@ object RunnerWire {
     /// `app` is the package the probe answered for — the one the caller
     /// named, or the one holding the focus when it named none. The host
     /// needs it to tell the app's windows from everyone else's.
-    fun probePresentBody(app: String, version: String, roots: Int, quietMs: Long): String =
+    /// `library` is the smix release the app's probe was built from; null
+    /// for a probe too old to say.
+    fun probePresentBody(app: String, version: String, roots: Int, quietMs: Long, library: String? = null): String =
         JSONObject()
             .put("present", true)
             .put("app", app)
             .put("version", version)
             .put("roots", roots)
             .put("quietMs", quietMs)
+            .apply { if (library != null) put("library", library) }
             .toString()
 
     fun pressKeyBody(ok: Boolean, key: String, keyCode: Int): String = JSONObject()
