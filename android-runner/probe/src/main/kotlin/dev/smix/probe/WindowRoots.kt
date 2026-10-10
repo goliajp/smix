@@ -1,6 +1,7 @@
 package dev.smix.probe
 
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inspector.WindowInspector
 import androidx.compose.ui.platform.ViewRootForTest
 
@@ -32,11 +33,19 @@ internal fun windowsWithoutCompose(compose: List<ViewRootForTest>): List<Pair<Vi
  * `AccessibilityNodeInfo.getWindowId` is public, and a node made from a
  * window's root View carries that window's id. A window not yet known to
  * the accessibility service has none, and is left out rather than given one.
+ *
+ * This runs on a binder thread, so the node is only constructed around the
+ * View, never populated from it: `createAccessibilityNodeInfo` on a
+ * ViewGroup lists its children into a scratch list the window shares with
+ * the main thread, and when the main thread was answering the
+ * accessibility service at the same moment the app crashed with an
+ * IndexOutOfBoundsException inside `ViewGroup` (once in fifteen cold
+ * starts of the fixture's interop screen).
  */
 internal fun accessibilityWindowIds(): IntArray =
     WindowInspector.getGlobalWindowViews()
         .filter { it.isAttachedToWindow && it.isShown }
-        .map { it.createAccessibilityNodeInfo().windowId }
+        .map { AccessibilityNodeInfo(it).windowId }
         .filter { it != NO_WINDOW }
         .toIntArray()
 
