@@ -20,4 +20,10 @@
     <item name="fixture_hidden_hide" type="id" />
     <item name="fixture_hidden_row" type="id" />
     <item name="fixture_hidden_row_taps" type="id" />
+    <item name="fixture_stack_open_page" type="id" />
+    <item name="fixture_stack_open_sheet" type="id" />
+    <item name="fixture_stack_sheet_apply" type="id" />
+    <item name="fixture_filter_input" type="id" />
+    <item name="fixture_filter_row" type="id" />
+    <item name="fixture_filter_list" type="id" />
 </resources>

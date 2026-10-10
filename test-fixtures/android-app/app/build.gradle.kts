@@ -28,6 +28,8 @@ android {
 
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
+    // A list a filter narrows, the shape of a consumer's device search.
+    implementation("androidx.recyclerview:recyclerview:1.4.0")
     // The Compose half of the fixture. A Compose text field and an
     // EditText present themselves to accessibility differently, and a
     // gate that only ever drives one cannot see a predicate that is
