@@ -264,6 +264,10 @@ enum Cmd {
         /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
+        /// Which platform the device is, for a device this machine has not
+        /// registered. A registered device's own kind is read otherwise.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
         /// Write a frame to this path the moment the tap returns.
         ///
         /// For UI that does not wait: a control bar that hides itself
@@ -302,6 +306,10 @@ enum Cmd {
         /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
+        /// Which platform the device is, for a device this machine has not
+        /// registered. A registered device's own kind is read otherwise.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
     },
     /// Poll `/find` every 250ms until the selector resolves or
     /// `--timeout` expires. Mirrors SDK `App::wait_for` semantics; useful in
@@ -330,6 +338,10 @@ enum Cmd {
         /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
+        /// Which platform the device is, for a device this machine has not
+        /// registered. A registered device's own kind is read otherwise.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
         /// Wait until the element is gone, instead of until it appears.
         ///
         /// Mirrors `smix_assert_not_visible`, which the MCP server has
@@ -358,6 +370,10 @@ enum Cmd {
         /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
+        /// Which platform the device is, for a device this machine has not
+        /// registered. A registered device's own kind is read otherwise.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
     },
     /// Press a key by name: `return`, `delete`, `back`, `home`,
     /// `volume up`, maestro's `Enter` / `Backspace`, the arrows and the
@@ -380,6 +396,10 @@ enum Cmd {
         /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
+        /// Which platform the device is, for a device this machine has not
+        /// registered. A registered device's own kind is read otherwise.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
     },
     /// Swipe once through the content. `direction` names what you
     /// want to see — `down` reveals what is below — not which way the
@@ -412,6 +432,10 @@ enum Cmd {
         /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
+        /// Which platform the device is, for a device this machine has not
+        /// registered. A registered device's own kind is read otherwise.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
     },
     /// Swipe until the selector's target is wholly in view — the same
     /// loop `scrollUntilVisible` runs, with its defaults (100% visible,
@@ -437,6 +461,10 @@ enum Cmd {
         /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
+        /// Which platform the device is, for a device this machine has not
+        /// registered. A registered device's own kind is read otherwise.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
     },
     /// Dismiss the soft keyboard if visible.
     HideKeyboard {
@@ -452,6 +480,10 @@ enum Cmd {
         /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
+        /// Which platform the device is, for a device this machine has not
+        /// registered. A registered device's own kind is read otherwise.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
     },
     /// Print the runner's current a11y tree. `--json` emits
     /// wire JSON; default emits an indented text outline.
@@ -471,6 +503,10 @@ enum Cmd {
         /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
+        /// Which platform the device is, for a device this machine has not
+        /// registered. A registered device's own kind is read otherwise.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
         /// Print the software keyboard's keys.
         ///
         /// They are collapsed by default: a key per letter plus
@@ -571,6 +607,10 @@ enum Cmd {
         /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
+        /// Which platform the device is, for a device this machine has not
+        /// registered. A registered device's own kind is read otherwise.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
     },
     /// Run a flow file end-to-end. smix flows are written in a yaml
     /// dialect we share with maestro (so existing flows are reusable),
@@ -4003,9 +4043,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             ocr_locale,
             port,
             device,
+            platform,
             then_screenshot,
         } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
             match then_screenshot {
                 Some(out) => act::cmd_tap_then_screenshot(selector, p, plat, &out)
                     .await
@@ -4020,8 +4061,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             ocr_locale,
             port,
             device,
+            platform,
         } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
             act::cmd_find(selector, p, plat, ocr_locale)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -4032,9 +4074,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             timeout,
             port,
             device,
+            platform,
             absent,
         } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
             act::cmd_wait_for(selector, timeout, p, plat, absent, ocr_locale)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -4044,14 +4087,20 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             text,
             port,
             device,
+            platform,
         } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
             act::cmd_fill(selector, text, p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::PressKey { key, port, device } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+        Cmd::PressKey {
+            key,
+            port,
+            device,
+            platform,
+        } => {
+            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
             act::cmd_press_key(key, p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -4061,8 +4110,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             direction,
             port,
             device,
+            platform,
         } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
             act::cmd_scroll(selector, direction, p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -4073,8 +4123,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             to_point,
             port,
             device,
+            platform,
         } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
             // Two ways in, and saying which was meant is the caller's
             // job: a swipe given both a direction and a pair of points
             // has two answers, and picking one silently is how a flow
@@ -4105,8 +4156,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
             }
         }
-        Cmd::HideKeyboard { port, device } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+        Cmd::HideKeyboard {
+            port,
+            device,
+            platform,
+        } => {
+            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
             act::cmd_hide_keyboard(p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -4115,13 +4170,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             json,
             port,
             device,
+            platform,
             keyboard,
             reader,
         } => {
             let p = runner_dial_port(port, device.as_deref());
             // Only for the caveat, so a platform that cannot be told is not
             // a reason to refuse the tree.
-            let ios = runner_dial_target(port, device.as_deref())
+            let ios = runner_dial_target(port, device.as_deref(), platform)
                 .is_ok_and(|(_, plat)| plat == smix_driver::Platform::Ios);
             act::cmd_tree(json, p, keyboard, reader.to_act(), ios)
                 .await
@@ -4150,8 +4206,13 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::RunScript { path, port, device } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+        Cmd::RunScript {
+            path,
+            port,
+            device,
+            platform,
+        } => {
+            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
             script::cmd_run_script(&path, p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -6776,8 +6837,13 @@ fn runner_dial_port(flag: Option<u16>, device: Option<&str>) -> u16 {
 fn runner_dial_target(
     flag: Option<u16>,
     device: Option<&str>,
+    platform: Option<RunPlatform>,
 ) -> Result<(u16, smix_driver::Platform), CliError> {
     let port = runner_dial_port(flag, device);
+    // Said outright, as `smix run --platform` says it.
+    if let Some(p) = platform {
+        return Ok((port, p.to_driver()));
+    }
     let dial = device.map(|d| match lookup_registered(d) {
         Some(sim) => DeviceDial::Registered(sim.kind),
         None => DeviceDial::Unregistered,
@@ -7166,6 +7232,21 @@ mod dial_platform {
     /// The same judgement `smix run` makes: a --device the registry does
     /// not know is an error naming the fix, not a silent iOS guess. The
     /// two entrances must not carry two rules.
+    /// A device this machine has not registered is driven as the caller
+    /// says, the way `smix run --platform` drives it — a consumer's fresh
+    /// machine knew none of its emulators, and `wait-for` had no way to say.
+    #[test]
+    fn a_platform_said_outright_drives_an_unregistered_device() {
+        let (port, plat) = runner_dial_target(
+            Some(28999),
+            Some("emulator-5998"),
+            Some(RunPlatform::Android),
+        )
+        .unwrap();
+        assert_eq!(port, 28999);
+        assert_eq!(plat, smix_driver::Platform::Android);
+    }
+
     #[test]
     fn an_unregistered_device_refuses_and_names_register() {
         let err = dial_platform(Some(DeviceDial::Unregistered), &[]).unwrap_err();

@@ -84,7 +84,10 @@ pub(crate) fn dial_platform(
     match device {
         Some(DeviceDial::Registered(k)) => resolve_run_platform(None, Some(k)),
         Some(DeviceDial::Unregistered) => Err(
-            "cannot tell which platform this --device is — it is not in the              registry, so its kind is unknown. Register it (`smix sim register              <alias> --udid <id> --kind emulator|simulator`) so the platform is              read from the device."
+            "cannot tell which platform this --device is — it is not in the \
+             registry, so its kind is unknown. Pass --platform to say it once, or \
+             register it (`smix sim register <alias> --udid <id> --kind \
+             emulator|simulator`) so the platform is read from the device."
                 .to_string(),
         ),
         None => {
@@ -99,10 +102,11 @@ pub(crate) fn dial_platform(
             match platforms.as_slice() {
                 [] => Ok(RunPlatform::Ios),
                 [one] => Ok(*one),
-                _ => Err(
-                    "this runner port has devices of more than one platform                      registered on it (both an iOS and an Android device name it),                      so which one a verb without --device should drive is a coin                      toss. Pass --device to say which."
-                        .to_string(),
-                ),
+                _ => Err("this runner port has devices of more than one platform \
+                     registered on it (both an iOS and an Android device name it), \
+                     so which one a verb without --device should drive is a coin \
+                     toss. Pass --device to say which."
+                    .to_string()),
             }
         }
     }
