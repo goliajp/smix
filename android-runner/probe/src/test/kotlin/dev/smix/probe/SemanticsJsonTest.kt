@@ -1,5 +1,6 @@
 package dev.smix.probe
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -88,6 +89,14 @@ class SemanticsJsonTest {
             screen.toWireJson().contains("SetText"),
         )
     }
+
+    @Test
+    fun a_windows_modality_is_written_on_its_root_and_nowhere_else() {
+        val root = node(1).copy(modal = true)
+        val json = listOf(root).toWireJson()
+        assertTrue(json, json.contains("\"modal\":true"))
+        assertFalse(listOf(node(1)).toWireJson().contains("modal"))
+    }
 }
 
 /**
@@ -128,4 +137,5 @@ class WireEscapingTest {
         val json = typed("""C:\temp""").toWireJson()
         assertTrue("the backslash was not doubled: $json", json.contains("""C:\\temp"""))
     }
+
 }

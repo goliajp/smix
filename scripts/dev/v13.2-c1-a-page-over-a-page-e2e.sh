@@ -9,9 +9,14 @@
 #
 # The fixture stacks the same three windows: the activity, a full-screen
 # page painted opaque, and a sheet in a translucent window over part of the
-# page. The page hides the activity; the sheet hides nothing — the page
-# shows through it, which is why the accessibility service, which drops a
-# covered window by its bounds alone, cannot be the judge here.
+# page. The page hides the activity. The sheet's window takes every touch on
+# the screen, as a dialog's does, so the page that shows through it is not
+# reachable and is not in the tree a flow addresses.
+#
+# The same pages over an activity whose content is Compose — the consumer's
+# shape — lost the page on top: the host took whichever root every other
+# one contained for the window in front, and a Compose root is as small as
+# its content. Which window takes every touch is now the window's own flag.
 #
 # There is no SKIP path: a gate that cannot judge must be red.
 set -euo pipefail
@@ -130,11 +135,31 @@ appId: $APPID
 - assertVisible: "Time Range"
 - assertVisible:
     id: "fixture_stack_sheet_apply"
-- assertVisible: "the page"
 EOF
 run_flow sheet
-has "the page" || fail "the page that shows through the sheet is no longer reported"
-log "  the sheet is reported, and the page still shows through it"
+if has fixture_stack_open_sheet; then
+  fail "the page under a sheet that takes every touch is still offered to a flow"
+fi
+log "  the sheet is reported, and the page it holds every touch over is not"
+
+log "--- the same pages over a Compose activity"
+adb -s "$SERIAL" shell am start -W -S -n "$APPID/.ComposeStackActivity" >/dev/null 2>&1 \
+  || fail "could not start the Compose stack screen"
+for _ in $(seq 1 40); do has compose_stack_open_page && break; sleep 0.5; done
+has compose_stack_open_page || fail "the Compose activity's button is not reported before anything covers it"
+cat >"$WORK/compose.yaml" <<EOF
+appId: $APPID
+---
+- tapOn:
+    id: "compose_stack_open_page"
+- assertVisible: "the page"
+- tapOn:
+    id: "fixture_stack_open_sheet"
+- assertVisible:
+    id: "fixture_stack_sheet_apply"
+EOF
+run_flow compose
+log "  the page and then the sheet are each the one in front"
 
 log "--- a list narrowed in place, the way a consumer's device search narrows it"
 # Rows the filter drops leave the tree with the screen. The consumer's eight

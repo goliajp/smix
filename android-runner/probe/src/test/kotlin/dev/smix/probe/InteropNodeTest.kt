@@ -223,7 +223,7 @@ class InteropNodeTest {
     }
 
     @Test
-    fun `the wire has seventeen fields`() {
+    fun `the wire has eighteen fields`() {
         // A count, not "more than none". Sixteen is a fact about what the
         // host reads off this wire today; a field added or removed here
         // changes what every downstream reader sees, so it should cost one
@@ -233,8 +233,11 @@ class InteropNodeTest {
         // being asked both where the node is and how much of it shows, and
         // the second answer was wrong for every clipped node. Seventeen
         // since `hint`: an empty field's hint is what a person reads there,
-        // and the accessibility reader carries it.
-        assertEquals(17, ProbeNode::class.java.declaredFields.count { !it.isSynthetic })
+        // and the accessibility reader carries it. Eighteen since `modal`:
+        // which window takes every touch was guessed from the roots' sizes,
+        // and a sheet smaller than the pages around it was taken for the one
+        // in front.
+        assertEquals(18, ProbeNode::class.java.declaredFields.count { !it.isSynthetic })
     }
 }
 

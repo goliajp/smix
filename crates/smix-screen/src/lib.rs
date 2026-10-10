@@ -885,6 +885,65 @@ mod keyboard_collapse_tests {
         assert!(!ids.contains(&"a".to_string()), "got {ids:?}");
     }
 
+    /// A consumer's screen: the activity, a page, an export sheet over the
+    /// lower part of the page, and a time-range page over everything. The
+    /// sheet is the only root every other contains, and the shape rule
+    /// took it for the one in front: the page on top vanished from the tree.
+    #[test]
+    fn the_topmost_window_that_takes_every_touch_is_the_one_in_front() {
+        let root = |tag: &str, y: i32, modal: bool| {
+            format!(
+                r#"{{"id":1,"testTag":"{tag}","bounds":[0,{y},1080,2400],"visibleBounds":[0,{y},1080,2400],"visible":true,"children":[],"modal":{modal}}}"#
+            )
+        };
+        let json = format!(
+            r#"{{"screen":[1080,2400],"roots":[{},{},{},{}]}}"#,
+            root("activity", 0, true),
+            root("page", 0, true),
+            root("export", 1477, true),
+            root("range", 0, true),
+        );
+        let tree = probe_tree_to_a11y(&json).expect("a tree");
+        let tags: Vec<_> = tree
+            .children
+            .iter()
+            .filter_map(|c| c.identifier.clone())
+            .collect();
+        assert_eq!(tags, vec!["range"]);
+    }
+
+    #[test]
+    fn a_window_that_lets_touches_through_hides_nothing() {
+        let json = r#"{"screen":[1080,2400],"roots":[
+            {"id":1,"testTag":"activity","bounds":[0,0,316,397],"visibleBounds":[0,0,316,397],"visible":true,"children":[],"modal":true},
+            {"id":2,"testTag":"popup","bounds":[0,400,1080,800],"visibleBounds":[0,400,1080,800],"visible":true,"children":[],"modal":false}
+        ]}"#;
+        let tree = probe_tree_to_a11y(json).expect("a tree");
+        let tags: Vec<_> = tree
+            .children
+            .iter()
+            .filter_map(|c| c.identifier.clone())
+            .collect();
+        assert_eq!(tags, vec!["activity", "popup"]);
+    }
+
+    /// A Compose activity's root is as small as its content, and a page
+    /// over it is the whole screen: the shape rule kept the activity.
+    #[test]
+    fn a_page_over_a_small_compose_root_is_the_one_in_front() {
+        let json = r#"{"screen":[1080,2400],"roots":[
+            {"id":1,"testTag":"activity","bounds":[0,0,316,397],"visibleBounds":[0,0,316,397],"visible":true,"children":[],"modal":true},
+            {"id":2,"testTag":"page","bounds":[0,0,1080,2400],"visibleBounds":[0,0,1080,2400],"visible":true,"children":[],"modal":true}
+        ]}"#;
+        let tree = probe_tree_to_a11y(json).expect("a tree");
+        let tags: Vec<_> = tree
+            .children
+            .iter()
+            .filter_map(|c| c.identifier.clone())
+            .collect();
+        assert_eq!(tags, vec!["page"]);
+    }
+
     #[test]
     fn asking_for_the_keys_gets_them() {
         let ids: Vec<_> = collect_visible_summaries_with(&screen(), 1000, true)
@@ -936,7 +995,17 @@ pub fn probe_tree_to_a11y(json: &str) -> Option<A11yNode> {
     if converted.iter().all(|r| !carries_anything(r)) {
         return None;
     }
-    if let Some(modal) = modal_index(&converted) {
+    // The probe says which windows take every touch, and lists them in the
+    // order they stand; the topmost such window hides what stands below it
+    // from reach. A probe too old to say is judged by the roots' shapes, as
+    // it always was.
+    if roots.iter().any(|r| r.modal.is_some()) {
+        let front = roots
+            .iter()
+            .rposition(|r| r.modal == Some(true))
+            .unwrap_or(0);
+        converted.drain(..front);
+    } else if let Some(modal) = modal_index(&converted) {
         // A modal is showing, so what is behind it is not addressable —
         // even though the probe can see it perfectly well.
         //
@@ -1037,6 +1106,10 @@ struct ProbeNodeWire {
     enabled: bool,
     #[serde(default)]
     children: Vec<ProbeNodeWire>,
+    /// On a window's root: whether that window takes every touch on the
+    /// screen. Absent from a probe older than the field.
+    #[serde(default)]
+    modal: Option<bool>,
 }
 
 fn yes() -> bool {

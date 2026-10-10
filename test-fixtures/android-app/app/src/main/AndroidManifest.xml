@@ -70,5 +70,8 @@
         <activity
             android:name=".FilterActivity"
             android:exported="true" />
+        <activity
+            android:name=".ComposeStackActivity"
+            android:exported="true" />
     </application>
 </manifest>
