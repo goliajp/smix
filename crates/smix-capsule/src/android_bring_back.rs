@@ -25,6 +25,9 @@ pub(crate) enum Unsettled {
     /// launcher entry, or it did not come up. Cycling the runner fixes
     /// none of these.
     App(String),
+    /// A window of another package is in front of the app. Neither
+    /// cycling the runner nor bringing the app forward moves it.
+    Covered(String),
 }
 
 /// How long the whole settling may take. One shade and one launch fit
@@ -130,7 +133,7 @@ pub(crate) fn settle(
             Step::Covered { by } => {
                 let since = *covered_since.get_or_insert_with(Instant::now);
                 if since.elapsed() >= COVERED_FOR || Instant::now() >= deadline {
-                    return Err(Unsettled::Screen(covered(&by, &screen)));
+                    return Err(Unsettled::Covered(covered(&by, &screen)));
                 }
                 std::thread::sleep(LOOK_AGAIN);
             }
@@ -149,7 +152,11 @@ fn instead_of(was: Option<&str>, name: &str) -> String {
 /// What to say about a window of another package in front of the app.
 pub(crate) fn covered(by: &str, screen: &Screen) -> String {
     format!(
-        "a window of {by} holds the focus and no application window can be read          behind it (windows: {}) — a system dialog or an input method's own screen is          in front of the app. smix does not dismiss it: a BACK key would answer it          for whoever uses the device. Close it on the device and bring the runner up          again",
+        "a window of {by} holds the focus and no application window can be read \
+         behind it (windows: {}) — a system dialog or an input method's own screen \
+         is in front of the app. smix does not dismiss it: a BACK key would answer \
+         it for whoever uses the device. Close it on the device and bring the \
+         runner up again",
         describe(&screen.windows)
     )
 }
