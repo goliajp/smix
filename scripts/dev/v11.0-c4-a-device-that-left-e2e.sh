@@ -40,6 +40,17 @@ fail() { printf '[c4-left] FAIL: %s\n' "$*" >&2; exit 1; }
 cannot_judge() { printf '[c4-left] CANNOT JUDGE: %s\n' "$*" >&2; exit 2; }
 
 BLOCKER_SERIAL="" SERIAL="" WORK="$(mktemp -d)"
+# The ledgers this writes are kept apart from the machine's. Every smix
+# command notices departures from the ledgers it can see, and with the
+# machine's own any other smix run on this machine may be the one that
+# notices this emulator leave — then the command this script asks says
+# nothing (2026-10-10, a `smix run --apps-config` got there first). The
+# registrations come along as a copy: which port each AVD is registered on
+# is what this builds its subject from.
+MACHINE="${SMIX_MACHINE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/smix}"
+mkdir -p "$WORK/machine"
+cp -R "$MACHINE/devices" "$WORK/machine/devices" || cannot_judge "could not copy the registrations from $MACHINE/devices"
+export SMIX_MACHINE_DIR="$WORK/machine"
 cleanup() {
   if [ -n "$SERIAL" ] && adb devices | grep -q "^$SERIAL[[:space:]]"; then
     e2e_stop_emulator "$SERIAL" || true
