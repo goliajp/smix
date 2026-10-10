@@ -887,6 +887,18 @@ object TreeWire {
     fun leavesHollow(windowType: Int, pkg: String?, hollow: String?): Boolean =
         hollow != null && windowType == 1 && pkg == hollow
 
+    /// Whether a window is the hollow app's by the ids its probe gave, so
+    /// that its root need not be read at all.
+    ///
+    /// Reading an app window's root — even to learn whose it is — is
+    /// answered by that app's main thread. While the app was busy every
+    /// look waited for it: 3.5 s, measured on the fixture with its main
+    /// thread held, for a window whose contents the host throws away.
+    /// Only an application window is ever matched; an id the probe did
+    /// not give is read the ordinary way.
+    fun hollowById(windowType: Int, windowId: Int, appWindowIds: Set<Int>): Boolean =
+        windowType == 1 && windowId in appWindowIds
+
     /// `touchable` is where the window takes touches, `[left, top, width,
     /// height]` in screen pixels — not its bounds: the keyboard's window
     /// spans the screen below the status bar and takes touches only on the

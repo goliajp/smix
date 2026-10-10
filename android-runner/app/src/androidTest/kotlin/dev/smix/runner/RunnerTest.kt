@@ -567,7 +567,7 @@ class SmixHttpServer(
         val walkStart = System.currentTimeMillis()
         val automation = instrumentation.uiAutomation
         val hollow = session.parameters["hollow"]?.firstOrNull()?.takeIf { it.isNotEmpty() }
-        val root = TreeBuilder.fromWindows(automation, displaySize(), hollow)
+        val root = TreeBuilder.fromWindows(automation, displaySize(), hollow, hollow?.let(::appWindowIds).orEmpty())
         val wallMs = System.currentTimeMillis() - walkStart
         val refreshCount = treeServeCounter.incrementAndGet()
         val resp = newFixedLengthResponse(
@@ -588,6 +588,16 @@ class SmixHttpServer(
     /// tell from here whether their app's window was absent from the
     /// list or present and unreadable — different problems, identical
     /// symptom, and no way to look.
+    /// The ids of `app`'s windows, from its probe; empty when there is no
+    /// probe or it is older than the question, and its windows are then
+    /// read the ordinary way.
+    private fun appWindowIds(app: String): Set<Int> = try {
+        ProbeCall.call(InstrumentationRegistry.getInstrumentation().context, app, "windows")
+            ?.getIntArray("windowIds")?.toSet().orEmpty()
+    } catch (_: Exception) {
+        emptySet()
+    }
+
     private fun serveWindows(): Response {
         val rows = JSONArray()
         val windows = instrumentation.uiAutomation.windows
@@ -2442,10 +2452,15 @@ object TreeBuilder {
         automation: UiAutomation,
         display: Pair<Int, Int>,
         hollow: String? = null,
+        appWindowIds: Set<Int> = emptySet(),
     ): JSONObject {
         val rootChildren = JSONArray()
         var unreadable = 0
         for (window in automation.windows) {
+            if (hollow != null && TreeWire.hollowById(window.type, window.id, appWindowIds)) {
+                rootChildren.put(hollowWindow(window, hollow))
+                continue
+            }
             // A window whose root cannot be read is counted, not
             // dropped in silence: absent from the tree and "that app
             // has no accessibility nodes" look identical to the caller,
@@ -2480,6 +2495,33 @@ object TreeBuilder {
             }
         }
         return TreeWire.windowRootJson(display.first, display.second, rootChildren, unreadable)
+    }
+
+    /// The hollow app's window, from the window alone: where it is, its
+    /// layer, its focus and where it takes touches — what the host places
+    /// the probe's tree by. Its root is not read.
+    private fun hollowWindow(
+        window: android.view.accessibility.AccessibilityWindowInfo,
+        pkg: String,
+    ): JSONObject {
+        val b = Rect()
+        window.getBoundsInScreen(b)
+        return TreeWire.nodeJson(
+            rawType = "android.view.Window",
+            identifier = null,
+            label = null,
+            text = null,
+            placeholder = null,
+            x = b.left,
+            y = b.top,
+            w = b.width(),
+            h = b.height(),
+            enabled = true,
+            selected = false,
+            hasFocus = window.isFocused,
+            visible = true,
+            children = JSONArray(),
+        ).put("window", TreeWire.windowJson(window.type, pkg, window.isFocused, window.layer, touchableOf(window)))
     }
 
     /// Where `window` takes touches, as `[left, top, width, height]`.
