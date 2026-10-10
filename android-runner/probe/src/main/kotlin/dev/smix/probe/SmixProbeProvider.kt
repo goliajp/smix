@@ -83,6 +83,11 @@ class SmixProbeProvider : ContentProvider() {
                     KEY_RESULT,
                     SemanticsProbe.unsafeAct(arg ?: "", extras?.getString(KEY_ACTION) ?: "OnClick"),
                 )
+                // Which of the screen's windows are this app's, by the id
+                // the accessibility service knows them by. A reader that
+                // learns it from a window's root waits for this app's main
+                // thread; this is answered here, on a binder thread.
+                METHOD_WINDOWS -> putIntArray(KEY_WINDOW_IDS, accessibilityWindowIds())
                 METHOD_HELLO -> {
                     putString(KEY_VERSION, PROBE_WIRE_VERSION)
                     putInt(KEY_ROOTS, SemanticsProbe.rootCount())
@@ -134,6 +139,7 @@ class SmixProbeProvider : ContentProvider() {
         const val METHOD_HELLO = "hello"
         const val METHOD_TREE = "tree"
         const val METHOD_IDLE = "idle"
+        const val METHOD_WINDOWS = "windows"
         const val METHOD_ACT = "act"
         const val METHOD_ACT_UNSAFE = "act-unsafe-for-gates"
         const val KEY_ACTION = "action"
@@ -143,5 +149,6 @@ class SmixProbeProvider : ContentProvider() {
         const val KEY_TREE = "tree"
         const val KEY_QUIET_MS = "quietMs"
         const val KEY_ERROR = "error"
+        const val KEY_WINDOW_IDS = "windowIds"
     }
 }

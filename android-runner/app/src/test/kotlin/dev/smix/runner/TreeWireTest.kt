@@ -260,4 +260,12 @@ class TreeWireTest {
         assertFalse(w.has("package"))
         assertFalse(w.getBoolean("focused"))
     }
+
+    @Test
+    fun aWindowTheProbeNamedIsHollowWithoutItsRoot() {
+        assertTrue(TreeWire.hollowById(1, 42, setOf(42, 43)))
+        assertFalse("an id the probe did not give", TreeWire.hollowById(1, 44, setOf(42, 43)))
+        assertFalse("only an application window", TreeWire.hollowById(3, 42, setOf(42)))
+        assertFalse("no probe answer, nothing matched", TreeWire.hollowById(1, 42, emptySet()))
+    }
 }

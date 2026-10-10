@@ -25,3 +25,20 @@ internal fun windowsWithoutCompose(compose: List<ViewRootForTest>): List<Pair<Vi
         .filter { it.isAttachedToWindow && it.isShown && it !in covered }
         .mapNotNull { v -> v.asWindowRoot()?.let { v to it } }
 }
+
+/**
+ * The accessibility window id of each window this app has on screen.
+ *
+ * `AccessibilityNodeInfo.getWindowId` is public, and a node made from a
+ * window's root View carries that window's id. A window not yet known to
+ * the accessibility service has none, and is left out rather than given one.
+ */
+internal fun accessibilityWindowIds(): IntArray =
+    WindowInspector.getGlobalWindowViews()
+        .filter { it.isAttachedToWindow && it.isShown }
+        .map { it.createAccessibilityNodeInfo().windowId }
+        .filter { it != NO_WINDOW }
+        .toIntArray()
+
+/** What `getWindowId` answers for a node no window has claimed yet. */
+private const val NO_WINDOW = -1

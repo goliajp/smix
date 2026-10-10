@@ -75,6 +75,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v12.0-c2-a-tap-under-a-sheet-e2e.sh",
     "v12.2-c1-a-view-that-is-gone-e2e.sh",
     "v12.2-c4-animations-are-put-back-e2e.sh",
+    "v13.1-c1-a-look-while-the-app-is-busy-e2e.sh",
     "smoke-chain-e2e.sh",
     "v11.0-c5-runner-brings-the-app-back-e2e.sh",
     "v11.0-c2-a-failure-says-whose-screen-e2e.sh",
