@@ -61,6 +61,11 @@ data class ProbeNode(
     val visible: Boolean,
     val actions: List<String>,
     val children: List<ProbeNode>,
+    /// On a window's root only: whether that window takes every touch on
+    /// the screen, inside its bounds or not — focusable and without
+    /// `FLAG_NOT_TOUCH_MODAL`, as a dialog is. What stands below it cannot
+    /// be reached. Null on every other node.
+    val modal: Boolean? = null,
 )
 
 data class Bounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
@@ -98,6 +103,7 @@ private fun ProbeNode.toJson(): String = buildString {
     append(",\"actions\":")
         .append(actions.joinToString(prefix = "[", separator = ",", postfix = "]") { it.quoted() })
     append(",\"children\":").append(children.toWireJson())
+    if (modal != null) append(",\"modal\":").append(modal)
     append('}')
 }
 

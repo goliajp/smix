@@ -191,8 +191,17 @@ object SemanticsProbe {
         }
         val windows = WindowInspector.getGlobalWindowViews()
         val stacked = StackOrder.bottomFirst(composed + windowsWithoutCompose(compose), { it.first }, windows)
-        return Occlusion.prune(stacked.map { (window, root) -> opaqueFace(window) to root })
-            .toWireJson()
+        return Occlusion.prune(
+            stacked.map { (window, root) -> opaqueFace(window) to root.copy(modal = takesEveryTouch(window)) },
+        ).toWireJson()
+    }
+
+    /** Whether the window `root` stands for takes every touch on the screen. */
+    private fun takesEveryTouch(root: View): Boolean {
+        val params = root.layoutParams as? WindowManager.LayoutParams ?: return false
+        val passesThrough = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        return params.flags and passesThrough == 0
     }
 
     /** Where a window's root paints opaquely on screen, or null if it does not. */

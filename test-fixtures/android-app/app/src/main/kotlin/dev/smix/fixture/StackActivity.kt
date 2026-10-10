@@ -40,55 +40,60 @@ class StackActivity : Activity() {
         )
     }
 
-    private fun page(): Dialog = Dialog(this, android.R.style.Theme_Translucent_NoTitleBar).apply {
+    private fun openPage() = openStackPage(this)
+}
+
+private fun page(activity: Activity): Dialog =
+    Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar).apply {
         window?.setBackgroundDrawable(ColorDrawable(Color.WHITE))
     }
 
-    private fun openPage() {
-        val page = page()
-        page.setContentView(
-            LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(0, 200, 0, 0)
-                addView(TextView(this@StackActivity).apply { text = "the page" })
-                addView(
-                    Button(this@StackActivity).apply {
-                        id = R.id.fixture_stack_open_sheet
-                        text = "Open sheet"
-                        setOnClickListener { openSheet() }
-                    },
-                )
-            },
-        )
-        page.show()
-    }
-
-    private fun openSheet() {
-        val sheet = Dialog(this, android.R.style.Theme_Translucent_NoTitleBar)
-        val panel = LinearLayout(this).apply {
+/// A page over whatever `activity` shows, with a button that opens a sheet
+/// over part of it.
+internal fun openStackPage(activity: Activity) {
+    val page = page(activity)
+    page.setContentView(
+        LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.LTGRAY)
-            addView(TextView(this@StackActivity).apply { text = "Time Range" })
+            setPadding(0, 200, 0, 0)
+            addView(TextView(activity).apply { text = "the page" })
             addView(
-                Button(this@StackActivity).apply {
-                    id = R.id.fixture_stack_sheet_apply
-                    text = "Apply"
-                    setOnClickListener { sheet.dismiss() }
+                Button(activity).apply {
+                    id = R.id.fixture_stack_open_sheet
+                    text = "Open sheet"
+                    setOnClickListener { openSheet(activity) }
                 },
             )
-        }
-        sheet.setContentView(
-            FrameLayout(this).apply {
-                addView(
-                    panel,
-                    FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        Gravity.BOTTOM,
-                    ),
-                )
+        },
+    )
+    page.show()
+}
+
+private fun openSheet(activity: Activity) {
+    val sheet = Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar)
+    val panel = LinearLayout(activity).apply {
+        orientation = LinearLayout.VERTICAL
+        setBackgroundColor(Color.LTGRAY)
+        addView(TextView(activity).apply { text = "Time Range" })
+        addView(
+            Button(activity).apply {
+                id = R.id.fixture_stack_sheet_apply
+                text = "Apply"
+                setOnClickListener { sheet.dismiss() }
             },
         )
-        sheet.show()
     }
+    sheet.setContentView(
+        FrameLayout(activity).apply {
+            addView(
+                panel,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.BOTTOM,
+                ),
+            )
+        },
+    )
+    sheet.show()
 }
