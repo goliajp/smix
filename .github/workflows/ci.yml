@@ -491,6 +491,12 @@ jobs:
         run: python3 scripts/dev/a-classification-names-every-variant.py
       - name: the classification gate can still go red
         run: python3 scripts/dev/a-classification-names-every-variant.test.py
+      # A message wrapped over source lines without `\` keeps the line break
+      # and its indentation; three refusals read with a hole of spaces.
+      - name: a message keeps its line joins
+        run: python3 scripts/dev/a-message-keeps-its-line-joins.py
+      - name: the line-joins gate can still go red
+        run: python3 scripts/dev/a-message-keeps-its-line-joins.test.py
       # Three hand copies of the key table drifted; none read `back`.
       - name: a key name is read in one place
         run: python3 scripts/dev/one-key-table.py
