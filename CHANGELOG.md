@@ -19,6 +19,15 @@ the CLI and the SDKs keep working. What answers differently is in
 
 ### Fixed
 
+- **The 13.1 probe could crash the app it was built into.** Asking which
+  windows are the app's had a ViewGroup list its children for accessibility
+  on a binder thread, into a scratch list the window shares with the main
+  thread; when the main thread was answering the accessibility service at
+  the same moment, the app died with an `IndexOutOfBoundsException` inside
+  `ViewGroup` — once in fifteen cold starts of a Compose screen hosting a
+  View, under the reads a run makes. The window ids are now read without
+  populating anything. Apps built with the 13.1 probe should move to this
+  one.
 - **A page an Android app paints over another hides it.** An app that pushes
   each page as a full-screen dialog with an opaque background keeps the page
   below laid out, and the probe reported it: `assertNotVisible` on it
