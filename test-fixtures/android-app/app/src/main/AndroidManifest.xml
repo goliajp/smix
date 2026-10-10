@@ -64,5 +64,11 @@
         <activity
             android:name=".OverlayActivity"
             android:exported="true" />
+        <activity
+            android:name=".StackActivity"
+            android:exported="true" />
+        <activity
+            android:name=".FilterActivity"
+            android:exported="true" />
     </application>
 </manifest>

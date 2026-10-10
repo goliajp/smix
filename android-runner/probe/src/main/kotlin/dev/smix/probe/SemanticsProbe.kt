@@ -190,9 +190,17 @@ object SemanticsProbe {
             root.view.rootView to (if (hosted.isEmpty()) node else HostedNesting.nest(node, hosted))
         }
         val windows = WindowInspector.getGlobalWindowViews()
-        return StackOrder.bottomFirst(composed + windowsWithoutCompose(compose), { it.first }, windows)
-            .map { it.second }
+        val stacked = StackOrder.bottomFirst(composed + windowsWithoutCompose(compose), { it.first }, windows)
+        return Occlusion.prune(stacked.map { (window, root) -> opaqueFace(window) to root })
             .toWireJson()
+    }
+
+    /** Where a window's root paints opaquely on screen, or null if it does not. */
+    private fun opaqueFace(window: View): Bounds? {
+        if (!window.isOpaque) return null
+        val at = IntArray(2)
+        window.getLocationOnScreen(at)
+        return Bounds(at[0], at[1], at[0] + window.width, at[1] + window.height)
     }
 
     /** The signal that was tried first, kept so its verdict can be re-checked. */
