@@ -244,7 +244,7 @@ mod tests {
     fn android_home_comes_first_and_path_last() {
         let env = env_of(&[
             ("ANDROID_HOME", "/opt/sdk"),
-            ("ANDROID_SDK_ROOT", "/x"),
+            ("ANDROID_SDK_ROOT", "/opt/other-sdk"),
             ("HOME", "/h"),
         ]);
         assert_eq!(
@@ -258,11 +258,11 @@ mod tests {
             resolve_adb(&env, &|_| false),
             (PathBuf::from("adb"), AdbSource::Path)
         );
-        let only_root = env_of(&[("ANDROID_SDK_ROOT", "/x"), ("HOME", "/h")]);
+        let only_root = env_of(&[("ANDROID_SDK_ROOT", "/opt/other-sdk"), ("HOME", "/h")]);
         assert_eq!(
-            resolve_adb(&only_root, &|p| p.starts_with("/x")),
+            resolve_adb(&only_root, &|p| p.starts_with("/opt/other-sdk")),
             (
-                PathBuf::from("/x/platform-tools/adb"),
+                PathBuf::from("/opt/other-sdk/platform-tools/adb"),
                 AdbSource::AndroidSdkRoot
             )
         );
@@ -292,7 +292,12 @@ mod tests {
             "{said}"
         );
         assert!(said.contains("ANDROID_HOME"), "{said}");
-        let plain = did_not_start(Path::new("/x/adb"), AdbSource::Path, STARTS_WITHIN, false);
+        let plain = did_not_start(
+            Path::new("/opt/elsewhere/bin/adb"),
+            AdbSource::Path,
+            STARTS_WITHIN,
+            false,
+        );
         assert!(!plain.contains("quarantine"), "{plain}");
     }
 

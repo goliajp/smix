@@ -142,6 +142,8 @@ LOCAL = {
     "the run wrapper can still go red": "smix-run --selftest",
     "every class over our own enums names every variant": "a-classification-names-every-variant.py",
     "the classification gate can still go red": "a-classification-names-every-variant.test",
+    "a message keeps its line joins": "a-message-keeps-its-line-joins.py",
+    "the line-joins gate can still go red": "a-message-keeps-its-line-joins.test",
     "a key name is read in one place": "one-key-table.py",
     "the key-table gate can still go red": "one-key-table.test",
     "every selector form is declared on every surface": "selector-surface-scan",

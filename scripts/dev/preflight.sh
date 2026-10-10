@@ -316,6 +316,8 @@ python3 scripts/dev/a-run-is-judged-by-its-code.test.py
 # A class drawn with `matches!` over our own enum lets a new variant in silently.
 python3 scripts/dev/a-classification-names-every-variant.py
 python3 scripts/dev/a-classification-names-every-variant.test.py
+python3 scripts/dev/a-message-keeps-its-line-joins.py
+python3 scripts/dev/a-message-keeps-its-line-joins.test.py
 # A key name is read in one place; three copies of the table drifted.
 python3 scripts/dev/one-key-table.py
 python3 scripts/dev/one-key-table.test.py
