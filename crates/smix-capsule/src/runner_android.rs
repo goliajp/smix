@@ -33,7 +33,7 @@ const TEST_RUNNER: &str = "androidx.test.runner.AndroidJUnitRunner";
 const SERVER_ENTRY: &str = "dev.smix.runner.RunnerTest#runServerForever";
 
 pub(crate) fn adb(serial: &str) -> Command {
-    let mut c = Command::new("adb");
+    let mut c = Command::new(&smix_adb::adb_path().0);
     c.args(["-s", serial]);
     c
 }
@@ -404,8 +404,14 @@ fn ensure_installed_apk() -> Result<(PathBuf, bool), String> {
 /// Shared by both trees, because both have the same obligation: the
 /// artifact must be no older than the sources beside it.
 fn build_apk_in(tree: &Path) -> Result<PathBuf, String> {
+    // Gradle finds the SDK through ANDROID_HOME or a local.properties, and
+    // a shell started over ssh has neither: the build then failed with
+    // "SDK location not found", and a caller saw only that `runner up` had.
+    let sdk = smix_adb::sdk_root()
+        .ok_or_else(|| no_sdk(&smix_adb::sdk_candidates(&|k| std::env::var(k).ok())))?;
     let out = Command::new("./gradlew")
         .args([":app:assembleDebugAndroidTest", "--console=plain"])
+        .env("ANDROID_HOME", &sdk)
         .current_dir(tree)
         .output()
         .map_err(|e| {
@@ -437,9 +443,29 @@ fn build_apk_in(tree: &Path) -> Result<PathBuf, String> {
     Ok(apk)
 }
 
+/// The refusal for a machine with no Android SDK in any place smix looks.
+fn no_sdk(looked: &[(PathBuf, smix_adb::AdbSource)]) -> String {
+    let places: Vec<String> = looked
+        .iter()
+        .map(|(p, from)| format!("{} (from {from})", p.display()))
+        .collect();
+    format!(
+        "the Android runner is built on this machine and needs the Android SDK, \
+         which is not in any place smix looks: {}. Set ANDROID_HOME to the SDK.",
+        if places.is_empty() {
+            "none — neither ANDROID_HOME, ANDROID_SDK_ROOT nor HOME is set".to_string()
+        } else {
+            places.join(", ")
+        }
+    )
+}
+
 /// Is this serial actually attached and ready?
 fn device_present(serial: &str) -> bool {
-    let Ok(out) = Command::new("adb").args(["devices"]).output() else {
+    let Ok(out) = Command::new(&smix_adb::adb_path().0)
+        .args(["devices"])
+        .output()
+    else {
         return false;
     };
     String::from_utf8_lossy(&out.stdout)
@@ -494,6 +520,9 @@ pub fn up_with_options(
     port: u16,
     opts: &UpOptions,
 ) -> Result<(), String> {
+    // An adb that cannot start would hold every step below until its own
+    // time limit; say so once, before anything is installed or forwarded.
+    smix_adb::adb_usable()?;
     let UpOptions {
         timeout_secs,
         force,
@@ -1155,6 +1184,17 @@ mod tests {
         java.lang.IllegalStateException: UiAutomationService android.accessibilityservice.IAccessibilityServiceClient$Stub$Proxy@a551ee5already registered!\n\
         \tat android.os.Parcel.createExceptionOrNull(Parcel.java:3381)\n\
         INSTRUMENTATION_RESULT: shortMsg=Process crashed.\n";
+
+    #[test]
+    fn a_machine_with_no_sdk_is_told_where_smix_looked() {
+        let said = no_sdk(&[(
+            PathBuf::from("/Users/me/Library/Android/sdk"),
+            smix_adb::AdbSource::DefaultSdk,
+        )]);
+        assert!(said.contains("/Users/me/Library/Android/sdk"), "{said}");
+        assert!(said.contains("ANDROID_HOME"), "{said}");
+        assert!(no_sdk(&[]).contains("neither ANDROID_HOME"));
+    }
 
     #[test]
     fn a_taken_uiautomation_connection_is_named() {

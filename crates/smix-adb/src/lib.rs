@@ -17,12 +17,23 @@
 
 use serde::{Deserialize, Serialize};
 use std::io;
+mod binary;
+
+pub use binary::{
+    AdbSource, adb_path, adb_usable, did_not_start, resolve_adb, sdk_candidates, sdk_root,
+    std_command,
+};
+
 use std::path::Path;
 use thiserror::Error;
 use tokio::process::Command;
 
 /// Failure variants for any `adb` invocation.
+///
+/// `#[non_exhaustive]`: a way adb can fail that smix learns to name is a
+/// new variant, and that should not cost callers a major version.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum AdbError {
     /// Failed to spawn `adb` (missing binary / PATH lookup / fork failure).
     #[error("spawn adb failed: {0}")]
@@ -30,6 +41,24 @@ pub enum AdbError {
     /// `adb` was not found in PATH at all.
     #[error("adb binary not found in PATH; install Android SDK platform-tools")]
     BinaryNotFound,
+    /// No Android SDK in any place smix looks.
+    #[error(
+        "no Android SDK found: set ANDROID_HOME, or install it at its default location (~/Library/Android/sdk on a Mac)"
+    )]
+    NoSdk,
+    /// The adb in use does not start; the reason is in the text.
+    #[error("{0}")]
+    CannotStart(String),
+    /// `adb <sub>` did not return within its limit.
+    #[error("adb {subcommand} did not return within {} s{}", after.as_secs(), serial.as_deref().map(|s| format!(" on {s}")).unwrap_or_default())]
+    TimedOut {
+        /// The subcommand as run.
+        subcommand: String,
+        /// Device serial if scoped to one.
+        serial: Option<String>,
+        /// The limit that passed.
+        after: std::time::Duration,
+    },
     /// `adb <sub>` exited non-zero.
     ///
     /// The message carries the whole command. Naming only the subcommand
@@ -160,11 +189,11 @@ pub fn parse_devices_stdout(stdout: &str) -> Result<Vec<AdbDevice>, AdbError> {
 
 /// Client wrapping `adb` invocations.
 ///
-/// Construction is cheap — internally just an `adb` binary path resolved
-/// via PATH lookup at command-spawn time. No persistent state.
+/// Construction is cheap — the adb it runs is [`adb_path`]'s unless one
+/// is named. No persistent state.
 #[derive(Debug, Default, Clone)]
 pub struct AdbClient {
-    /// Override the `adb` binary path; defaults to `"adb"` (PATH lookup).
+    /// Override the `adb` binary path; defaults to [`adb_path`].
     binary: Option<String>,
 }
 
@@ -506,8 +535,19 @@ pub fn parse_crash_buffer(stdout: &str) -> Vec<CrashReport> {
     reports
 }
 
+/// How long one adb command may take before smix stops waiting. A limit
+/// past anything a working command takes: it exists so that an adb that
+/// never returns ends a run with its name, not so that slow ones fail.
+fn command_limit(subcommand: &str) -> std::time::Duration {
+    let secs = match subcommand.split_whitespace().next() {
+        Some("install") => 600,
+        _ => 300,
+    };
+    std::time::Duration::from_secs(secs)
+}
+
 impl AdbClient {
-    /// Default constructor — uses `adb` from PATH.
+    /// Default constructor — uses the adb [`adb_path`] resolves.
     #[must_use]
     pub fn new() -> Self {
         AdbClient { binary: None }
@@ -523,7 +563,21 @@ impl AdbClient {
     }
 
     fn cmd(&self) -> Command {
-        Command::new(self.binary.as_deref().unwrap_or("adb"))
+        let mut c = match self.binary.as_deref() {
+            Some(b) => Command::new(b),
+            None => Command::new(&adb_path().0),
+        };
+        // A command abandoned at its time limit does not outlive it.
+        c.kill_on_drop(true);
+        c
+    }
+
+    /// Refuse before running anything when the default adb cannot start.
+    fn usable(&self) -> Result<(), AdbError> {
+        if self.binary.is_some() {
+            return Ok(());
+        }
+        adb_usable().map_err(AdbError::CannotStart)
     }
 
     async fn run_capture(
@@ -532,6 +586,7 @@ impl AdbClient {
         subcommand: &str,
         args: &[&str],
     ) -> Result<(String, String), AdbError> {
+        self.usable()?;
         let mut cmd = self.cmd();
         if let Some(s) = serial {
             cmd.args(["-s", s]);
@@ -543,13 +598,21 @@ impl AdbClient {
         for a in args {
             cmd.arg(a);
         }
-        let output = cmd.output().await.map_err(|e| {
-            if e.kind() == io::ErrorKind::NotFound {
-                AdbError::BinaryNotFound
-            } else {
-                AdbError::Spawn(e)
-            }
-        })?;
+        let limit = command_limit(subcommand);
+        let output = tokio::time::timeout(limit, cmd.output())
+            .await
+            .map_err(|_| AdbError::TimedOut {
+                subcommand: subcommand.to_string(),
+                serial: serial.map(str::to_owned),
+                after: limit,
+            })?
+            .map_err(|e| {
+                if e.kind() == io::ErrorKind::NotFound {
+                    AdbError::BinaryNotFound
+                } else {
+                    AdbError::Spawn(e)
+                }
+            })?;
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
         if !output.status.success() {
@@ -724,8 +787,14 @@ impl AdbClient {
     /// a device has left: a machine without adb on its PATH would record
     /// every emulator it ever had as gone.
     pub fn live_devices(&self) -> Option<Vec<(String, Option<String>)>> {
-        let bin = self.binary.as_deref().unwrap_or("adb");
-        let listed = std::process::Command::new(bin)
+        let bin = self
+            .binary
+            .as_deref()
+            .map_or_else(|| adb_path().0.clone(), std::path::PathBuf::from);
+        if self.usable().is_err() {
+            return None;
+        }
+        let listed = std::process::Command::new(&bin)
             .arg("devices")
             .output()
             .ok()?;
@@ -742,7 +811,7 @@ impl AdbClient {
                         .serial
                         .starts_with("emulator-")
                         .then(|| {
-                            std::process::Command::new(bin)
+                            std::process::Command::new(&bin)
                                 .args(["-s", &d.serial, "emu", "avd", "name"])
                                 .output()
                                 .ok()
@@ -831,15 +900,8 @@ impl AdbClient {
         console: Option<&std::path::Path>,
         boot: BootFrom,
     ) -> Result<(), AdbError> {
-        let home = std::env::var("ANDROID_HOME")
-            .or_else(|_| std::env::var("ANDROID_SDK_ROOT"))
-            .unwrap_or_else(|_| {
-                format!(
-                    "{}/Library/Android/sdk",
-                    std::env::var("HOME").unwrap_or_default()
-                )
-            });
-        let mut cmd = std::process::Command::new(format!("{home}/emulator/emulator"));
+        let home = sdk_root().ok_or(AdbError::NoSdk)?;
+        let mut cmd = std::process::Command::new(home.join("emulator").join("emulator"));
         cmd.args(emulator_args(avd, port, boot));
         let (out, err) = match console {
             Some(path) => {
