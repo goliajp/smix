@@ -112,7 +112,14 @@ pub fn adb_usable() -> Result<(), String> {
     USABLE
         .get_or_init(|| {
             let (path, source) = adb_path();
-            check_starts(path, *source, STARTS_WITHIN)
+            let verdict = check_starts(path, *source, STARTS_WITHIN);
+            // Once, where every caller's reader looks: a caller that reads
+            // a refused adb as "no Android devices" must not leave the
+            // reason unsaid.
+            if let Err(why) = &verdict {
+                eprintln!("smix: {why}");
+            }
+            verdict
         })
         .clone()
 }
