@@ -6,9 +6,11 @@
 //! a phone nobody had offered to smix (2026-09-25, SL2). An unregistered
 //! device is unreachable (§9#1), a read included.
 //!
-//! The adb here is a stand-in on PATH that records what it was asked and
-//! invents a phone: no real device is involved, which is also the only way
-//! this can be proven without doing the thing it forbids.
+//! The adb here is a stand-in that records what it was asked and invents a
+//! phone: no real device is involved, which is also the only way this can
+//! be proven without doing the thing it forbids. It is put where smix looks
+//! first — an SDK named by `ANDROID_HOME` — since the first adb on PATH is
+//! the last one smix will run.
 
 use std::path::Path;
 use std::process::Command;
@@ -56,7 +58,10 @@ fn an_unregistered_phone_is_listed_and_not_asked() {
     let machine = tempfile::tempdir().expect("a temp dir is available in tests");
     let work = tempfile::tempdir().expect("a temp dir is available in tests");
     let log = bin.path().join("adb.log");
-    stand_in_adb(bin.path(), &log);
+    let sdk = bin.path().join("sdk");
+    let tools = sdk.join("platform-tools");
+    std::fs::create_dir_all(&tools).expect("the temp dir is writable");
+    stand_in_adb(&tools, &log);
     stand_in_xcrun(bin.path());
     let path = format!(
         "{}:{}",
@@ -67,6 +72,8 @@ fn an_unregistered_phone_is_listed_and_not_asked() {
     let out = Command::new(env!("CARGO_BIN_EXE_smix"))
         .args(["sim", "list", "--json"])
         .env("PATH", path)
+        .env("ANDROID_HOME", &sdk)
+        .env_remove("ANDROID_SDK_ROOT")
         .env("SMIX_MACHINE_DIR", machine.path())
         .current_dir(work.path())
         .output()
