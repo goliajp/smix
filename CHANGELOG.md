@@ -2,6 +2,51 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **A page an Android app paints over another hides it.** An app that pushes
+  each page as a full-screen dialog with an opaque background keeps the page
+  below laid out, and the probe reported it: `assertNotVisible` on it
+  failed, a tap on a list row went to the row of the covered list, and a
+  wait for the page below passed with another page in front. Nodes lying
+  wholly inside an opaque window above them are now left out.
+- **The window in front is the topmost one that takes every touch.** smix
+  took whichever of the app's windows every other one contained for the
+  dialog in front. A sheet smaller than the pages around it was taken for
+  it while a full-screen page stood over it, and the page on top vanished
+  from the tree; a Compose activity's root is as small as its content, so a
+  dialog page over one was dropped instead. The probe now says which
+  windows take every touch, and the topmost of them hides what stands below.
+  An app built with an older probe is judged as before.
+- **smix runs the Android SDK's own adb, and says when an adb cannot
+  start.** adb used to be the first one on `PATH`. On a Mac driven over ssh
+  that was Homebrew's, which carries `com.apple.quarantine`; its first
+  launch waited for a Gatekeeper answer nobody was there to give, and a run
+  waited 26 minutes on its first flow. adb now comes from `ANDROID_HOME`,
+  `ANDROID_SDK_ROOT` or the SDK's default location before `PATH`; whether it
+  starts is asked once, with a time limit, and a quarantined binary is named
+  with the way out; the adb commands a flow sends carry a time limit.
+  `smix doctor` says which adb is in use and which rule found it.
+- **The Android runner is built without `ANDROID_HOME` set.** smix passes the
+  SDK it found to gradle; with none anywhere, it says where it looked
+  instead of a caller seeing only that `runner up` failed.
+- **Three refusals read without a hole of spaces in the middle**, where a
+  wrapped message had lost its line join.
+
+### Added
+
+- **The single-shot verbs take `--platform`** — `tap`, `find`, `wait-for`,
+  `fill`, `press-key`, `scroll`, `swipe`, `hide-keyboard`, `tree`,
+  `run-script` — for a device this machine has not registered, as
+  `smix run --platform` already did.
+- **A run whose app carries another release's probe says so once.** The
+  probe is built into the app and stays the release the app was built with;
+  its fixes reach a run only once the app depends on the new
+  `jp.golia.smix:smix-probe` and is rebuilt.
+- **Running smix on another Mac over ssh** is described in the CLI guide.
+
 ## [13.1.0] — 2026-10-10
 
 ### Fixed

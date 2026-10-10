@@ -119,6 +119,37 @@ smix run smoke.yaml checkout.yaml --nodes .smix/nodes.yaml --debug-output ./arti
   and `--runner-port` (ports are per-node — set `runnerPort` in the
   roster instead).
 
+### Running smix on another Mac over ssh
+
+When a whole test run moves to another Mac — a runner script started there
+over ssh, its results copied back — smix on that machine needs nothing a
+person at its keyboard would have provided:
+
+- **Install with npm**, the same version as everywhere else:
+  `npm install -g @goliapkg/smix-cli@<version>` brings `smix` and
+  `smix-mcp` together and builds nothing on the host. A plain
+  `ssh host 'smix …'` session's `PATH` often lacks npm's bin directory; run
+  through a login shell (`ssh host "zsh -lc 'smix …'"`) or put it on `PATH`.
+- **adb and the Android SDK are found without `PATH`.** smix runs the SDK's
+  own adb — `$ANDROID_HOME`, then `$ANDROID_SDK_ROOT`, then
+  `~/Library/Android/sdk` — before any `adb` on `PATH`, and passes the SDK
+  to gradle when it builds the Android runner. `smix doctor` says which adb
+  is in use and which rule found it.
+- **An adb that cannot start is named, not waited on.** smix asks once,
+  with a time limit, whether the adb starts. An adb Homebrew installed
+  carries the `com.apple.quarantine` attribute; on its first launch macOS
+  waits for a Gatekeeper answer that, over ssh, nobody gives. smix says so
+  and how to clear it. The adb commands a flow sends also carry a time
+  limit, past anything a working one takes.
+- **A device the machine has not registered** is driven by saying its
+  platform: `smix wait-for --device emulator-5560 --platform android …`,
+  as `smix run --platform` already took. Or register it once with
+  `smix sim register`.
+- **The app's probe is its own version.** It is built into the app, so a
+  new smix's probe fixes reach a run only once the app depends on
+  `jp.golia.smix:smix-probe:<version>` and is rebuilt; a run against an app
+  with another release's probe says so once.
+
 ## `smix` — environment + low-level
 
 ### Sim management (`smix sim …`)
@@ -1102,6 +1133,22 @@ than dispatching an event the presentation swallows and reporting success.
 
 A runner that predates this says nothing about reachability, and silence is
 not a refusal — taps proceed as they always did.
+
+### Which windows a flow can reach
+
+An app that pushes pages as dialogs has several windows on screen at once.
+The probe reports what a person could touch:
+
+- A window the app paints **opaquely over another** hides what is under it:
+  nodes lying wholly inside it are left out, the way a View set `GONE` is.
+- A window that **takes every touch** — focusable and without
+  `FLAG_NOT_TOUCH_MODAL`, as a dialog is — hides every window below it from
+  reach, even where they show through, because a touch there would go to
+  the dialog. The topmost such window decides; one that lets touches
+  through hides nothing.
+
+An app built with a probe older than this is judged by the shapes of its
+windows, as before.
 
 ## Migration and authoring
 
