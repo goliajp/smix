@@ -2249,7 +2249,7 @@ fn simctl_knows(udid: &str) -> bool {
 /// device is checked against the catalogue its own platform keeps. Case
 /// is preserved — `adb` matches serials verbatim.
 fn adb_knows(serial: &str) -> bool {
-    std::process::Command::new("adb")
+    std::process::Command::new(&smix_adb::adb_path().0)
         .arg("devices")
         .output()
         .is_ok_and(|out| {
@@ -6399,7 +6399,7 @@ fn may_ask_release(serial: &str, registered: bool) -> bool {
 /// on a machine with no Xcode.
 fn android_devices() -> Vec<AndroidDevice> {
     let registry = load_registry().registry;
-    let Ok(out) = std::process::Command::new("adb")
+    let Ok(out) = std::process::Command::new(&smix_adb::adb_path().0)
         .args(["devices", "-l"])
         .output()
     else {
@@ -6421,7 +6421,7 @@ fn android_devices() -> Vec<AndroidDevice> {
                     registered,
                 };
             }
-            let release = std::process::Command::new("adb")
+            let release = std::process::Command::new(&smix_adb::adb_path().0)
                 .args([
                     "-s",
                     &serial,
@@ -7933,7 +7933,10 @@ mod tests {
         // true. Skipping quietly would leave a function that returns
         // `false` for everything looking exactly as healthy as one that
         // works.
-        let Ok(out) = std::process::Command::new("adb").arg("devices").output() else {
+        let Ok(out) = std::process::Command::new(&smix_adb::adb_path().0)
+            .arg("devices")
+            .output()
+        else {
             return;
         };
         if !out.status.success() {

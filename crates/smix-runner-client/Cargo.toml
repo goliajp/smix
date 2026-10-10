@@ -17,6 +17,7 @@ categories = ["development-tools::testing"]
 workspace = true
 
 [dependencies]
+smix-adb = { path = "../smix-adb", version = "13.1.0" }
 smix-screen = { path = "../smix-screen", version = "13.1.0" }
 smix-selector = { path = "../smix-selector", version = "13.1.0" }
 smix-input = { path = "../smix-input", version = "13.1.0" }

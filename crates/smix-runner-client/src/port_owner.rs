@@ -212,7 +212,7 @@ fn is_apple_device_id(s: &str) -> bool {
 
 /// Ask adb which device holds `port`.
 pub fn ask_android(port: u16) -> Authority {
-    match std::process::Command::new("adb")
+    match std::process::Command::new(&smix_adb::adb_path().0)
         .args(["forward", "--list"])
         .output()
     {

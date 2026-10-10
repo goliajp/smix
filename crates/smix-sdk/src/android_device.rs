@@ -192,9 +192,13 @@ pub(crate) fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> DeviceControlE
             subcommand: sub,
             detail,
         },
-        still @ AdbError::StillListed { .. } => {
-            DeviceControlError::non_zero_exit(subcommand, -1, still.to_string())
-        }
+        // The error's own text is the whole of what is known.
+        e @ (AdbError::StillListed { .. }
+        | AdbError::CannotStart(_)
+        | AdbError::TimedOut { .. }
+        | AdbError::NoSdk) => DeviceControlError::non_zero_exit(subcommand, -1, e.to_string()),
+        // `AdbError` is non-exhaustive; a variant added later says its own text.
+        e => DeviceControlError::non_zero_exit(subcommand, -1, e.to_string()),
     }
 }
 
