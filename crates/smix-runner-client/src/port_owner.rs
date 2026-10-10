@@ -212,10 +212,11 @@ fn is_apple_device_id(s: &str) -> bool {
 
 /// Ask adb which device holds `port`.
 pub fn ask_android(port: u16) -> Authority {
-    match std::process::Command::new(&smix_adb::adb_path().0)
-        .args(["forward", "--list"])
-        .output()
-    {
+    let mut adb = match smix_adb::std_command() {
+        Ok(c) => c,
+        Err(why) => return Authority::Unavailable { why },
+    };
+    match adb.args(["forward", "--list"]).output() {
         Ok(out) if out.status.success() => {
             let held = parse_adb_forwards(&String::from_utf8_lossy(&out.stdout), port);
             if !held.is_empty() {

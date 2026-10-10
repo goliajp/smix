@@ -2289,23 +2289,24 @@ fn simctl_knows(udid: &str) -> bool {
 /// device is checked against the catalogue its own platform keeps. Case
 /// is preserved — `adb` matches serials verbatim.
 fn adb_knows(serial: &str) -> bool {
-    std::process::Command::new(&smix_adb::adb_path().0)
-        .arg("devices")
-        .output()
-        .is_ok_and(|out| {
-            out.status.success()
-                && String::from_utf8_lossy(&out.stdout)
-                    .lines()
-                    // `adb devices` prints "<serial>\t<state>"; a device
-                    // that is listed as `offline` or `unauthorized` is
-                    // known but cannot be driven, and registering an
-                    // alias for one would hand out a name that fails
-                    // later somewhere else.
-                    .any(|l| {
-                        l.split('\t').next().is_some_and(|s| s == serial)
-                            && l.split('\t').nth(1).is_some_and(|s| s.trim() == "device")
-                    })
-        })
+    // An adb that cannot start has said why, once, on stderr.
+    let Ok(mut adb) = smix_adb::std_command() else {
+        return false;
+    };
+    adb.arg("devices").output().is_ok_and(|out| {
+        out.status.success()
+            && String::from_utf8_lossy(&out.stdout)
+                .lines()
+                // `adb devices` prints "<serial>\t<state>"; a device
+                // that is listed as `offline` or `unauthorized` is
+                // known but cannot be driven, and registering an
+                // alias for one would hand out a name that fails
+                // later somewhere else.
+                .any(|l| {
+                    l.split('\t').next().is_some_and(|s| s == serial)
+                        && l.split('\t').nth(1).is_some_and(|s| s.trim() == "device")
+                })
+    })
 }
 
 /// The device a `sim` verb was pointed at, if it names one.
@@ -6381,6 +6382,7 @@ async fn cmd_doctor(simctl: &SimctlClient, json: bool, port: u16) -> Result<(), 
         runner_up: smix_capsule::runner::health_ok(port),
         capture_server_up: capture_server_reachable(),
         downgradeable,
+        adb: adb_facts(),
     });
 
     if json {
@@ -6410,6 +6412,26 @@ async fn cmd_doctor(simctl: &SimctlClient, json: bool, port: u16) -> Result<(), 
         None => println!("\nready — nothing left to set up"),
     }
     Ok(())
+}
+
+/// The adb smix runs, as doctor reports it; `None` when there is none.
+fn adb_facts() -> Option<readiness::AdbFacts> {
+    let (path, source) = smix_adb::adb_path();
+    // The file a bare name stands for, which is the thing to know.
+    let found = if path.components().count() == 1 {
+        std::env::var_os("PATH").and_then(|dirs| {
+            std::env::split_paths(&dirs)
+                .map(|d| d.join(path))
+                .find(|p| p.is_file())
+        })
+    } else {
+        path.is_file().then(|| path.clone())
+    };
+    found.map(|found| readiness::AdbFacts {
+        path: found.display().to_string(),
+        source: source.to_string(),
+        cannot_start: smix_adb::adb_usable().err(),
+    })
 }
 
 /// One Android device as `adb devices -l` reports it.
@@ -6460,10 +6482,12 @@ fn may_ask_release(serial: &str, registered: bool) -> bool {
 /// on a machine with no Xcode.
 fn android_devices() -> Vec<AndroidDevice> {
     let registry = load_registry().registry;
-    let Ok(out) = std::process::Command::new(&smix_adb::adb_path().0)
-        .args(["devices", "-l"])
-        .output()
+    // An adb that cannot start has said why, once, on stderr.
+    let Ok(out) = smix_adb::std_command().map(|mut adb| adb.args(["devices", "-l"]).output())
     else {
+        return Vec::new();
+    };
+    let Ok(out) = out else {
         return Vec::new();
     };
     if !out.status.success() {

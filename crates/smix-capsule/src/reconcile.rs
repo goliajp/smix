@@ -210,7 +210,11 @@ pub(crate) fn stop_port_forward(local_port: u16, proc: &ProcIdentity) -> Outcome
 /// this close wanted. Nothing else is read that way: an adb that is
 /// missing, or a route that refuses to go, is reported.
 fn remove_reverse_port(serial: &str, device_port: u16) -> Outcome {
-    let out = std::process::Command::new(&smix_adb::adb_path().0)
+    let mut adb = match smix_adb::std_command() {
+        Ok(c) => c,
+        Err(why) => return Outcome::Failed(why),
+    };
+    let out = adb
         .args([
             "-s",
             serial,

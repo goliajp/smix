@@ -38,6 +38,21 @@ pub struct Facts {
     /// next command does not work, and a readiness oracle that suggested it
     /// anyway would be sending people into that wall.
     pub capture_server_up: bool,
+    /// Which adb smix runs and whether it starts; `None` when there is
+    /// none anywhere smix looks.
+    pub adb: Option<AdbFacts>,
+}
+
+/// The adb smix resolved, and whether it started.
+#[derive(Debug, Clone)]
+pub struct AdbFacts {
+    /// Where it is.
+    pub path: String,
+    /// Which rule found it — `$ANDROID_HOME`, the SDK's default location,
+    /// PATH and so on.
+    pub source: String,
+    /// Why it cannot start, when it cannot.
+    pub cannot_start: Option<String>,
 }
 
 /// What simctl reported.
@@ -149,6 +164,44 @@ pub const PLATFORM_NOTE: &str = "smix drives iOS Simulators, Android emulators, 
 /// reporting "no registry" to someone whose Xcode tools are missing sends
 /// them to a command that cannot succeed yet.
 pub fn assess(facts: &Facts) -> Readiness {
+    let mut r = assess_chain(facts);
+    r.checks.push(adb_check(facts));
+    r
+}
+
+/// Outside the chain, and last: Android is optional, and an adb that cannot
+/// start must not hide the iOS checks — nor be hidden by them, wherever the
+/// chain stops.
+fn adb_check(facts: &Facts) -> Check {
+    match &facts.adb {
+        Some(AdbFacts {
+            path,
+            source,
+            cannot_start: None,
+        }) => Check {
+            id: "adb",
+            status: Status::Ok,
+            detail: format!("adb: {path} (from {source})"),
+        },
+        Some(AdbFacts {
+            cannot_start: Some(why),
+            ..
+        }) => Check {
+            id: "adb",
+            status: Status::Blocked,
+            detail: why.clone(),
+        },
+        None => Check {
+            id: "adb",
+            status: Status::Skipped,
+            detail: "no adb in the Android SDK or on PATH — Android is not set up on this \
+                     machine"
+                .into(),
+        },
+    }
+}
+
+fn assess_chain(facts: &Facts) -> Readiness {
     let mut checks = Vec::new();
 
     // First, and outside the chain below, because it is not a step
@@ -350,6 +403,53 @@ fn blocked(
 mod tests {
     use super::*;
 
+    /// An adb that cannot start is said — and does not stand in front of
+    /// the iOS checks, nor they in front of it.
+    #[test]
+    fn an_adb_that_cannot_start_is_reported_beside_the_ios_chain() {
+        let r = assess(&Facts {
+            simctl: Some(simctl_ok()),
+            registry: None,
+            runner_up: false,
+            downgradeable: None,
+            capture_server_up: true,
+            adb: Some(AdbFacts {
+                path: "/opt/homebrew/bin/adb".into(),
+                source: "PATH".into(),
+                cannot_start: Some("it carries the com.apple.quarantine attribute".into()),
+            }),
+        });
+        let adb = r
+            .checks
+            .iter()
+            .find(|c| c.id == "adb")
+            .expect("an adb check");
+        assert_eq!(adb.status, Status::Blocked);
+        assert!(adb.detail.contains("quarantine"), "{}", adb.detail);
+        assert!(
+            r.checks.iter().any(|c| c.id == "simctl"),
+            "the iOS chain still ran"
+        );
+    }
+
+    #[test]
+    fn no_adb_is_a_machine_without_android_not_a_fault() {
+        let r = assess(&Facts {
+            simctl: Some(simctl_ok()),
+            registry: None,
+            runner_up: false,
+            downgradeable: None,
+            capture_server_up: true,
+            adb: None,
+        });
+        let adb = r
+            .checks
+            .iter()
+            .find(|c| c.id == "adb")
+            .expect("an adb check");
+        assert_eq!(adb.status, Status::Skipped);
+    }
+
     fn simctl_ok() -> SimctlFacts {
         SimctlFacts {
             available_runtimes: 1,
@@ -364,6 +464,7 @@ mod tests {
             registry: None,
             runner_up: false,
             capture_server_up: false,
+            adb: None,
             downgradeable: None,
         });
         assert!(!r.ready);
@@ -388,6 +489,7 @@ mod tests {
             }),
             runner_up: false,
             capture_server_up: false,
+            adb: None,
             downgradeable: None,
         });
         assert!(!r.ready);
@@ -409,6 +511,7 @@ mod tests {
             registry: None,
             runner_up: false,
             capture_server_up: false,
+            adb: None,
             downgradeable: None,
         });
         let next = r.next.expect("blocked");
@@ -435,6 +538,11 @@ mod tests {
             }),
             runner_up: true,
             capture_server_up: true,
+            adb: Some(AdbFacts {
+                path: "/sdk/platform-tools/adb".into(),
+                source: "$ANDROID_HOME".into(),
+                cannot_start: None,
+            }),
             downgradeable: None,
         });
         assert!(r.ready);
@@ -454,6 +562,7 @@ mod tests {
             }),
             runner_up: false,
             capture_server_up: false,
+            adb: None,
             downgradeable: None,
         });
         assert_eq!(r.next.expect("blocked").command, "smix init");
@@ -466,6 +575,7 @@ mod tests {
             registry: None,
             runner_up: false,
             capture_server_up: false,
+            adb: None,
             downgradeable: None,
         });
         let v: serde_json::Value = serde_json::to_value(&r).expect("serialize");
@@ -488,6 +598,7 @@ mod tests {
             }),
             runner_up: false,
             capture_server_up: false,
+            adb: None,
             downgradeable: None,
         });
         let cmd = without.next.expect("blocked").command;
@@ -501,6 +612,7 @@ mod tests {
             }),
             runner_up: false,
             capture_server_up: true,
+            adb: None,
             downgradeable: None,
         });
         assert!(!with.next.expect("blocked").command.contains("--no-capture"));
@@ -519,6 +631,7 @@ mod tests {
             }),
             runner_up: true,
             capture_server_up: true,
+            adb: None,
             downgradeable: Some(true),
         });
         let store = r
@@ -540,6 +653,7 @@ mod tests {
             }),
             runner_up: true,
             capture_server_up: true,
+            adb: None,
             downgradeable: Some(false),
         });
         let store = r
@@ -569,6 +683,7 @@ mod tests {
             }),
             runner_up: true,
             capture_server_up: true,
+            adb: None,
             downgradeable: None,
         });
         assert!(

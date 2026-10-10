@@ -462,10 +462,7 @@ fn no_sdk(looked: &[(PathBuf, smix_adb::AdbSource)]) -> String {
 
 /// Is this serial actually attached and ready?
 fn device_present(serial: &str) -> bool {
-    let Ok(out) = Command::new(&smix_adb::adb_path().0)
-        .args(["devices"])
-        .output()
-    else {
+    let Ok(Ok(out)) = smix_adb::std_command().map(|mut adb| adb.args(["devices"]).output()) else {
         return false;
     };
     String::from_utf8_lossy(&out.stdout)
@@ -935,6 +932,7 @@ fn package_installed(serial: &str, package: &str) -> bool {
 /// Stops the instrumentation first: uninstalling a package whose process
 /// is running is a harder ask, and the stop is idempotent.
 pub fn uninstall(serial: &str, port: u16) -> Result<(), String> {
+    smix_adb::adb_usable()?;
     let _ = adb(serial)
         .args(["shell", "am", "force-stop", TEST_PACKAGE])
         .output();
@@ -1022,6 +1020,7 @@ pub fn down(serial: &str, port: u16) -> Result<(), String> {
 /// than this one is holding. The consent lives in the flag: only a
 /// person who can see whose run it is can decide it should end.
 pub fn down_with(serial: &str, port: u16, take_over: bool) -> Result<(), String> {
+    smix_adb::adb_usable()?;
     if !take_over && let Some(holder) = live_foreign_holder(serial) {
         return Err(foreign_holder_refusal(serial, &holder, "down"));
     }
