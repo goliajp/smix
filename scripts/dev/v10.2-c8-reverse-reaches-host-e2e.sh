@@ -55,9 +55,9 @@ WE_BOOTED=0
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
 gate_free_port _C8_HOST_PORT
-gate_free_port _C8_DEVICE_PORT
 HOST_PORT="${SMIX_E2E_STUB_PORT:-$_C8_HOST_PORT}"
-DEVICE_PORT="${SMIX_E2E_DEVICE_PORT:-$_C8_DEVICE_PORT}"
+# Chosen on the device once it is up, below.
+DEVICE_PORT="${SMIX_E2E_DEVICE_PORT:-}"
 TOKEN="smix-c8-$$-$(date +%s)"
 STUB_PID=""
 
@@ -93,6 +93,31 @@ if ! adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; 
   WE_BOOTED=1
   adb -s "$SERIAL" wait-for-device
 fi
+
+# The device dials DEVICE_PORT, so it has to be free on the device, and a
+# port free on this machine says nothing about that: it was picked here
+# once, and the emulator already had 50821 open (2026-10-11). Taken from
+# just below the device's own ephemeral range, which its outgoing
+# connections cannot land on, and checked against every socket it has.
+device_port_taken() {
+  adb -s "$SERIAL" shell cat /proc/net/tcp /proc/net/tcp6 2>/dev/null \
+    | awk -v p="$(printf ':%04X' "$1")" '$2 ~ p"$" { found = 1 } END { exit !found }'
+}
+if [ -z "$DEVICE_PORT" ]; then
+  EPHEMERAL_LOW="$(adb -s "$SERIAL" shell cat /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null | awk '{print $1}')"
+  [ -n "$EPHEMERAL_LOW" ] || fail "could not read $SERIAL's ephemeral port range"
+  SOCKETS="$(adb -s "$SERIAL" shell cat /proc/net/tcp 2>/dev/null | wc -l | tr -d ' ')"
+  [ "$SOCKETS" -ge 1 ] || fail "could not read $SERIAL's sockets, so a free port there cannot be told"
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    candidate=$(( EPHEMERAL_LOW - 1 - RANDOM % 2000 ))
+    [ "$candidate" != "$HOST_PORT" ] || continue
+    device_port_taken "$candidate" && continue
+    DEVICE_PORT="$candidate"
+    break
+  done
+  [ -n "$DEVICE_PORT" ] || fail "ten ports below $EPHEMERAL_LOW were all taken on $SERIAL"
+fi
+log "ports: device $DEVICE_PORT, host $HOST_PORT"
 
 # A port somebody else holds is not a reason to pass quietly. The
 # suite's older scripts skip here and exit 0, which is how a red run
