@@ -114,7 +114,7 @@ PY
   [ -n "$busy_y" ] && break
   sleep 0.5
 done
-[ -n "$busy_y" ] || fail "the probe never reported the busy button"
+[ -n "$busy_y" ] || fail "the probe never reported the button that holds the main thread"
 
 idle="$(read_route "/tree?hollow=$APPID" idle)"
 log "idle: the hollow read took ${idle}s"

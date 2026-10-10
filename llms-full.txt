@@ -2833,7 +2833,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:13.0.0")
+    debugImplementation("jp.golia.smix:smix-probe:13.1.0")
 }
 ```
 
@@ -3726,6 +3726,11 @@ one at a time, and `uiautomator events`, a second instrumentation or
 another tool's runner takes it.
 
 **Fix**: stop the other client and bring the runner up again.
+
+When the log says the process *failed to attach*, Android gave up starting
+it: the system allows a starting process a fixed time, and a heavily
+loaded machine or device can exceed it. Nothing is wrong with the runner;
+bring it up again once the load has come down.
 
 ### "a window of … holds the focus" (Android)
 
