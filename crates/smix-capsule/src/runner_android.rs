@@ -822,26 +822,38 @@ fn log_tail(log: &Path) -> String {
 
 /// A cause the instrumentation's own output names, said in words.
 ///
-/// Android allows one UiAutomation connection at a time. Another client
-/// holding it — `uiautomator events`, a second instrumentation, another
-/// tool's runner — makes this one fail as it connects, and the log says
-/// so near its top, above a stack trace longer than any tail.
+/// Each is a line the platform writes, matched whole; a log that names
+/// none of them is left to its tail.
 fn instrumentation_ended_because(log: &str) -> Option<&'static str> {
-    log.lines()
-        .any(|line| {
-            UIAUTOMATION_TAKEN
-                .iter()
-                .all(|needle| line.contains(needle))
-        })
-        .then_some(
-            "Another UiAutomation client holds the device's accessibility connection — \
-             `uiautomator events`, another instrumentation, or another tool's runner — \
-             and Android allows one at a time. Stop it and bring the runner up again.",
-        )
+    ENDED_BECAUSE.iter().find_map(|(needles, why)| {
+        log.lines()
+            .any(|line| needles.iter().all(|needle| line.contains(needle)))
+            .then_some(*why)
+    })
 }
 
-/// What the platform writes when a UiAutomation connection is already taken.
-const UIAUTOMATION_TAKEN: &[&str] = &["UiAutomationService", "already registered"];
+/// What the platform writes, and what it means.
+const ENDED_BECAUSE: &[(&[&str], &str)] = &[
+    // Android allows one UiAutomation connection at a time. Another
+    // client holding it makes this one fail as it connects, and the log
+    // says so near its top, above a stack trace longer than any tail.
+    (
+        &["UiAutomationService", "already registered"],
+        "Another UiAutomation client holds the device's accessibility connection — \
+         `uiautomator events`, another instrumentation, or another tool's runner — \
+         and Android allows one at a time. Stop it and bring the runner up again.",
+    ),
+    // The activity manager gives a starting process a fixed time to
+    // attach and kills it after. Measured once in a release gate with the
+    // machine at load 20; the same bring-up passed alone moments later.
+    (
+        &["shortMsg=failed to attach"],
+        "Android gave up starting the runner's process: it did not attach within \
+         the time the system allows a starting process, which a heavily loaded \
+         machine or device can exceed. Nothing is wrong with the runner; bring it \
+         up again once the load has come down.",
+    ),
+];
 
 /// Record this runner in the device's ledger.
 ///
@@ -1148,6 +1160,23 @@ mod tests {
     fn a_taken_uiautomation_connection_is_named() {
         let why = instrumentation_ended_because(TAKEN_LOG).expect("named");
         assert!(why.contains("Another UiAutomation client"), "{why}");
+    }
+
+    /// A release gate's bring-up, emulator-5554, machine load about 20.
+    const ATTACH_LOG: &str = "INSTRUMENTATION_RESULT: longMsg=Process ProcessRecord{ad1602d 21799:dev.smix.runner.test/u0a224} failed to attach\n\
+        INSTRUMENTATION_RESULT: shortMsg=failed to attach\n\
+        INSTRUMENTATION_CODE: 0\n";
+
+    #[test]
+    fn a_process_that_did_not_attach_is_named() {
+        let why = instrumentation_ended_because(ATTACH_LOG).expect("named");
+        assert!(why.contains("did not attach"), "{why}");
+        assert!(
+            !instrumentation_ended_because(TAKEN_LOG)
+                .expect("named")
+                .contains("attach"),
+            "each log is named for its own cause"
+        );
     }
 
     #[test]
