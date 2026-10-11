@@ -44,6 +44,9 @@ use smix_selector::{
 use std::collections::HashMap;
 
 mod collect;
+mod off_screen;
+
+pub use off_screen::matched_off_screen;
 
 const NEAR_THRESHOLD_PT: f64 = 100.0; // logical points @1x
 

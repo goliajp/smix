@@ -1302,13 +1302,34 @@ pub(crate) fn element_not_found(tree: &A11yNode, selector: &Selector) -> Expecta
             message: format!("element not found: {}", describe_selector(selector)),
             selector: Some(selector.clone()),
             suggestions,
-            hint: Some(
-                "matched 0 nodes in the current a11y tree; check selector or wait for the screen to settle"
-                    .into(),
-            ),
+            hint: Some(not_found_hint(tree, selector)),
             ..Default::default()
         }
         .with_screen(screen),
+    )
+}
+
+/// What to do about a miss: an element the tree holds off screen is
+/// scrolled to, not looked for under another name.
+fn not_found_hint(tree: &A11yNode, selector: &Selector) -> String {
+    let off = smix_selector_resolver::matched_off_screen(tree, selector);
+    let Some(first) = off.first() else {
+        return "matched 0 nodes in the current a11y tree; check selector or wait for the screen to settle"
+            .into();
+    };
+    let b = &first.bounds;
+    let s = &tree.bounds;
+    format!(
+        "matched {} node(s) in the a11y tree, all off screen — the first at \
+         x={:.0} y={:.0} {:.0}x{:.0}, the screen {:.0}x{:.0}; scroll it into view \
+         first (`scrollUntilVisible`)",
+        off.len(),
+        b.x,
+        b.y,
+        b.w,
+        b.h,
+        s.w,
+        s.h
     )
 }
 
