@@ -17,10 +17,10 @@ import android.os.Bundle
 /// the same as `ContentResolver.call`: callers read that as "no probe in
 /// this build", which is the ordinary case.
 object ProbeCall {
-    fun call(ctx: Context, app: String, method: String): Bundle? {
+    fun call(ctx: Context, app: String, method: String, extras: Bundle? = null): Bundle? {
         val uri = Uri.parse("content://$app.smixprobe")
         val client = ctx.contentResolver.acquireUnstableContentProviderClient(uri)
             ?: throw IllegalArgumentException("Unknown authority $app.smixprobe")
-        return client.use { it.call(method, null, null) }
+        return client.use { it.call(method, null, extras) }
     }
 }

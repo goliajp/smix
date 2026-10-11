@@ -150,25 +150,30 @@ object SemanticsProbe {
 
     /**
      * The screen as the main thread has it, or — when the main thread does
-     * not take the read within [waitMs] — the last reading it made.
+     * not take the read within [waitMs] and [orKept] allows — the last
+     * reading it made, if the screen has not changed since.
      *
-     * A main thread that is busy is not laying anything out, so what it
-     * last read is still what is on screen: an app that holds its main
-     * thread for four seconds after a tap shows the screen it showed when
-     * it started, and a look in those four seconds answers without
-     * waiting for it, as it did when the read ran here on the binder
-     * thread. The sampler keeps that reading current while nothing asks.
+     * A main thread that is busy is not laying anything out, so a reading
+     * taken after the last change the sampler saw is still what is on
+     * screen: an app that holds its main thread for four seconds after a
+     * tap shows the screen it showed when it started, and a look in those
+     * four seconds answers without waiting for it. A reading older than
+     * that change is not given out. Given out regardless, on a player
+     * screen whose detection boxes never stop moving it was a screen from
+     * before the playback controls appeared, and a tap on them was judged
+     * against it.
      */
-    internal fun read(waitMs: Long): MainThread.Ran<Reading> {
+    internal fun read(waitMs: Long, orKept: Boolean): MainThread.Ran<Reading> {
         startSamplerOnce()
         // A recomposition can replace nodes in one message and the layout
         // that places them runs in a later one; read between the two and
         // the replaced part is missing, because a node not yet placed is
         // left out. Measured on the fixture's tour screen: 1 read in 80.
-        return when (val ran = MainThread.run(waitMs, { !hasPendingLayout() }, ::readHere)) {
-            MainThread.Ran.Busy -> lastRead?.let { MainThread.Ran.Done(it) } ?: ran
-            else -> ran
-        }
+        val ran = MainThread.run(waitMs, { !hasPendingLayout() }, ::readHere)
+        if (ran !is MainThread.Ran.Busy || !orKept) return ran
+        val kept = lastRead ?: return ran
+        val changedAt = synchronized(this) { lastChangedAtMs }
+        return if (kept.atMs >= changedAt) MainThread.Ran.Done(kept) else ran
     }
 
     private var sampler: Handler? = null
