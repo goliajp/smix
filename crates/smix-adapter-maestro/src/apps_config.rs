@@ -199,14 +199,90 @@ pub fn resolve_app_into_flow(
     }
     // Patch inherited LaunchApp steps (those with empty app_id) so the
     // runtime dispatch path stays oblivious to the logical resolve.
-    for step in &mut flow.steps {
+    fill_bare_launch_apps(&mut flow.steps, &primary);
+    Ok(())
+}
+
+/// Give every `launchApp` written without an app id the flow's own,
+/// at any depth: one inside `runFlow: { commands }`, `repeat`, `retry`
+/// or `neverVisible` is the same bare `launchApp` as one at the top.
+pub(crate) fn fill_bare_launch_apps(steps: &mut [crate::Step], app_id: &str) {
+    for step in steps {
         if let crate::Step::LaunchApp { app_id: sid, .. } = step
             && sid.is_empty()
         {
-            *sid = primary.clone();
+            *sid = app_id.to_string();
+        }
+        if let Some(body) = body_mut(step) {
+            fill_bare_launch_apps(body, app_id);
         }
     }
-    Ok(())
+}
+
+/// The steps a block runs, for the blocks that hold them in place. A
+/// `runFlow` naming a file holds none: the file is read when it runs.
+fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
+    use crate::Step;
+    match step {
+        Step::RunFlowInline { steps, .. } => Some(steps),
+        Step::Repeat { commands, .. } | Step::Retry { commands, .. } => Some(commands),
+        Step::NeverVisible { during, .. } => Some(during),
+        Step::TapOn { .. }
+        | Step::SwipeOver { .. }
+        | Step::RepeatTap { .. }
+        | Step::DoubleTapOn { .. }
+        | Step::LongPressOn { .. }
+        | Step::InputTextInto { .. }
+        | Step::CopyTextFrom { .. }
+        | Step::RememberBounds { .. }
+        | Step::AssertBoundsUnchanged { .. }
+        | Step::AssertVisible { .. }
+        | Step::AssertNotVisible { .. }
+        | Step::ExtendedWaitUntil { .. }
+        | Step::ScrollUntilVisible { .. }
+        | Step::RunFlowConditional { .. }
+        | Step::TakeScreenshot { .. }
+        | Step::TapAtPoint { .. }
+        | Step::WebViewEval { .. }
+        | Step::WaitForAnimationToEnd { .. }
+        | Step::InputText { .. }
+        | Step::PressKey { .. }
+        | Step::Back(_)
+        | Step::RunFlow { .. }
+        | Step::EraseText { .. }
+        | Step::Swipe { .. }
+        | Step::LaunchApp { .. }
+        | Step::ClearAppData { .. }
+        | Step::ResetAppData { .. }
+        | Step::ClearUserDefaults { .. }
+        | Step::OpenLink { .. }
+        | Step::StopApp
+        | Step::Scroll
+        | Step::HideKeyboard
+        | Step::KillApp { .. }
+        | Step::ClearState { .. }
+        | Step::ClearKeychain
+        | Step::SetClipboard { .. }
+        | Step::PasteText { .. }
+        | Step::AssertTrue { .. }
+        | Step::RunScript { .. }
+        | Step::EvalScript { .. }
+        | Step::SetLocation { .. }
+        | Step::ClearLocation
+        | Step::Travel { .. }
+        | Step::SetPermissions { .. }
+        | Step::AddMedia { .. }
+        | Step::SetOrientation { .. }
+        | Step::StartRecording { .. }
+        | Step::StopRecording
+        | Step::AssertScreenshot { .. }
+        | Step::AssertCondition { .. }
+        | Step::ExtractWithAI { .. }
+        | Step::ExpectSignal { .. }
+        | Step::ExpectSignals { .. }
+        | Step::ExpectLogClean
+        | Step::Fixture { .. } => None,
+    }
 }
 
 // ----------------------------- tests -----------------------------------

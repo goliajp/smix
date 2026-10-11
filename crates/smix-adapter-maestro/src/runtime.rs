@@ -1103,6 +1103,10 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// The Android launch activity `resolve_app_into_flow` put on the
     /// flow, seeded in [`Self::run`] alongside `last_bundle`.
     launch_activity: Option<String>,
+    /// The apps config the top-level flow's `app:` was resolved with.
+    /// A subflow file read at run time names its app the same way and
+    /// is resolved with it too.
+    apps: Option<(crate::AppsConfig, smix_driver::Platform)>,
     /// When true, `write_step_debug`'s fail-PNG output
     /// stays raw (no annotation overlay). Opt-out via `smix run
     /// --no-fail-annotate`. Default false = annotate.
@@ -1191,6 +1195,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             step_ms_cursors: vec![0],
             fixture_registry: None,
             launch_activity: None,
+            apps: None,
             no_fail_annotate: false,
             ai_cfg: smix_ai_tier::AiTierConfig::default(),
             quiescence: smix_sdk::quiescence::QuiescenceParams::default(),
@@ -1241,6 +1246,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     #[must_use]
     pub fn with_fixture_registry(mut self, reg: smix_fixture::FixtureRegistry) -> Self {
         self.fixture_registry = Some(reg);
+        self
+    }
+
+    /// Resolve the `app:` of subflow files read at run time with the
+    /// config the top-level flow was resolved with.
+    #[must_use]
+    pub fn with_apps(mut self, apps: crate::AppsConfig, platform: smix_driver::Platform) -> Self {
+        self.apps = Some((apps, platform));
         self
     }
 
@@ -2701,6 +2714,20 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 // state consistent with what they declared.
                 if let Some(lang) = Self::extract_apple_languages(arguments) {
                     self.last_locale = lang;
+                }
+                if app_id.is_empty() {
+                    return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::DriverError),
+                        message: "launchApp: no app id — the step names none, and its flow's \
+                                  `app:` was not resolved to one"
+                            .into(),
+                        hint: Some(
+                            "pass --apps-config so `app:` resolves, or name the app: \
+                             `launchApp: com.acme.app`"
+                                .into(),
+                        ),
+                        ..Default::default()
+                    })));
                 }
                 if !*stop_app {
                     // maestro `stopApp: false` = foreground resume.
@@ -4281,7 +4308,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             return Err(RunError::RunFlowCycle(abs));
         }
 
-        let parsed = match parse_flow_file(&abs) {
+        let mut parsed = match parse_flow_file(&abs) {
             Ok(f) => f,
             Err(ParseError::UnsupportedCommand(cmd)) => {
                 let reason = format!(
@@ -4294,6 +4321,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Err(other) => return Err(RunError::Parse(other)),
         };
+        if let Some((apps, platform)) = &self.apps {
+            crate::resolve_app_into_flow(&mut parsed, apps, *platform)
+                .map_err(|e| RunError::Io(format!("subflow {}: {e}", abs.display())))?;
+        }
 
         let new_base = abs
             .parent()

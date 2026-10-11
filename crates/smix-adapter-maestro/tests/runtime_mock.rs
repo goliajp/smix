@@ -4330,3 +4330,47 @@ async fn a_press_capture_that_failed_says_why() {
         other => panic!("expected a DriverError, got {other:?}"),
     }
 }
+
+// A bare `launchApp` whose flow's `app:` never resolved has no app to
+// open; it used to reach the device as `simctl launch <udid> ""`.
+#[tokio::test]
+async fn a_launch_app_with_no_app_id_is_refused_before_the_device() {
+    let flow = parse_inline("app: demoApp\n---\n- launchApp\n");
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let err = adapter.run(&flow).await.expect_err("nothing to launch");
+    assert!(format!("{err:?}").contains("no app id"), "{err:?}");
+    assert!(app.calls().is_empty(), "{:?}", app.calls());
+}
+
+// A subflow file read at run time names its app with `app:` as the
+// top-level flow does, and is resolved with the same config.
+#[tokio::test]
+async fn a_subflow_file_naming_its_app_logically_launches_that_app() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("child.yaml"),
+        "app: demoApp\n---\n- launchApp\n",
+    )
+    .unwrap();
+    let flow = parse_inline(
+        "app: demoApp\n---\n- runFlow:\n    when: { platform: iOS }\n    file: child.yaml\n",
+    );
+    let apps = smix_adapter_maestro::AppsConfig::from_yaml(
+        "apps:\n  demoApp:\n    ios:\n      bundleId: com.example.app\n",
+    )
+    .unwrap();
+    let app = MockApp::new();
+    let mut adapter =
+        Adapter::new(&app, dir.path().to_path_buf()).with_apps(apps, smix_driver::Platform::Ios);
+    adapter.run(&flow).await.expect("subflow launches");
+    let launched: Vec<String> = app
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            MockCall::LaunchAppWithOptions(opts) => Some(opts.bundle_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(launched, vec!["com.example.app".to_string()]);
+}
