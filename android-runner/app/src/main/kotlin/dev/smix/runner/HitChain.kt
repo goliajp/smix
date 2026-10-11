@@ -25,12 +25,18 @@ object HitChain {
     /// `drawingOrder` is the node's place among its siblings as drawn — and
     /// as a touch is dispatched: the highest is on top. It is not the index:
     /// a group that overrides `getChildDrawingOrder` draws in its own order.
+    ///
+    /// `takesTouch` is false only for a node known to let a touch through:
+    /// a Compose node with nothing in its semantics that acts on a touch.
+    /// Everything else — every View, every node the accessibility tree
+    /// reads — is taken to stop it, as before.
     data class Node(
         val id: String,
         val label: String,
         val bounds: Box,
         val children: List<Node>,
         val drawingOrder: Int = 0,
+        val takesTouch: Boolean = true,
     )
 
     /// `pkg` and `application` say whose window it is, so the probe's tree
@@ -67,12 +73,29 @@ object HitChain {
         // point — the one a touch there is dispatched to. Equal orders keep
         // index order, the later on top: a group that sets no order of its
         // own, and the probe's nodes, which it lists as drawn.
-        n.children
-            .withIndex()
-            .filter { it.value.bounds.contains(px, py) }
+        //
+        // On top among those that would take it. Compose hands a touch to
+        // the topmost node that acts on it, and one that does not lets it
+        // through: a consumer's player draws its detection boxes in a
+        // full-size layer over the "GO LIVE" pill, the tap went back to
+        // live, and a chain through the boxes reported it a miss. When
+        // none of them takes touches the topmost is still the answer.
+        val under = n.children.withIndex().filter { it.value.bounds.contains(px, py) }
+        val taking = under.filter { reaches(it.value, px, py) }
+        (taking.ifEmpty { under })
             .maxWithOrNull(compareBy({ it.value.drawingOrder }, { it.index }))
             ?.let { collect(it.value, px, py, into) }
     }
+
+    /// Whether a touch at the point stops in `n` or below it.
+    private fun reaches(n: Node, px: Int, py: Int): Boolean =
+        n.takesTouch || n.children.any { it.bounds.contains(px, py) && reaches(it, px, py) }
+
+    /// Semantics actions that mean a node acts on a touch at it.
+    private val TOUCH_ACTIONS = setOf(
+        "OnClick", "OnLongClick", "ScrollBy", "ScrollByOffset", "ScrollToIndex",
+        "SetProgress", "SetText", "Dismiss", "Expand", "Collapse",
+    )
 
     /// A reader of the screen, named as the wire names it.
     enum class Reader(val wire: String) {
@@ -149,11 +172,16 @@ object HitChain {
     private fun node(o: org.json.JSONObject): Node {
         val b = (o.optJSONArray("visibleBounds") ?: o.getJSONArray("bounds"))
         val kids = o.optJSONArray("children") ?: org.json.JSONArray()
+        val actions = o.optJSONArray("actions")
+        // A hosted View carries its class and no actions; whether it takes
+        // a touch is not something the probe says, so it is taken to.
+        val acts = actions != null && (0 until actions.length()).any { actions.optString(it) in TOUCH_ACTIONS }
         return Node(
             id = o.optString("testTag").ifEmpty { o.optString("resourceId") },
             label = o.optString("contentDescription"),
             bounds = Box(b.getInt(0), b.getInt(1), b.getInt(2), b.getInt(3)),
             children = nodesFromProbe(kids),
+            takesTouch = actions == null || o.has("className") || acts,
         )
     }
 }
