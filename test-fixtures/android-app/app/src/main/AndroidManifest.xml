@@ -53,6 +53,9 @@
             android:name=".WatchActivity"
             android:exported="true" />
         <activity
+            android:name=".TourActivity"
+            android:exported="true" />
+        <activity
             android:name=".CodeActivity"
             android:exported="true" />
         <activity

@@ -33,4 +33,19 @@ class OffTheMainThreadTest {
         }
         assertEquals("populated off the main thread", emptyList<String>(), offenders)
     }
+
+    @Test
+    fun `the semantics tree is walked from one place, and that place runs on the main thread`() {
+        // A walk from the binder thread the question arrives on meets layout
+        // passes half done, and can end the app; see MainThread.
+        val calls = sources.flatMap { f ->
+            f.readLines().withIndex()
+                .filter { (_, line) -> line.contains("dumpWireJson()") && !line.contains("fun dumpWireJson()") }
+                .map { (i, line) -> "${f.name}:${i + 1}: ${line.trim()}" }
+        }
+        assertEquals(1, calls.size)
+        assertTrue(calls.single(), calls.single().contains("Reading(dumpWireJson()"))
+        val probe = sources.single { it.name == "SemanticsProbe.kt" }.readText()
+        assertTrue(probe.contains("MainThread.run(waitMs, { !hasPendingLayout() }, ::readHere)"))
+    }
 }

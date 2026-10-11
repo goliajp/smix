@@ -2,6 +2,7 @@ package dev.smix.runner
 
 import android.app.Instrumentation
 import android.graphics.Rect
+import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import org.json.JSONArray
@@ -31,14 +32,17 @@ class HitReader(private val instrumentation: Instrumentation) {
                 root.recycle()
             }
         }
-        return HitChain.read(reader, windows, px, py, app, app?.let(::probeRoots), display)
+        val answer = if (reader == HitChain.Reader.SEMANTICS && app != null) probeTree(app) else null
+        answer?.getString("error")?.let { return HitChain.Reading.Unreadable(reader, it) }
+        val roots = answer?.getString("tree")?.let { HitChain.nodesFromProbe(JSONArray(it)) }
+        return HitChain.read(reader, windows, px, py, app, roots, display)
     }
 
-    /// The probe's roots for `app`, or null when it carries no probe.
-    private fun probeRoots(app: String): List<HitChain.Node>? = try {
+    /// The probe's answer for `app`, or null when it carries no probe. An
+    /// answer can be a refusal with its reason under `error`, which is the
+    /// reason the host is told.
+    private fun probeTree(app: String): Bundle? = try {
         ProbeCall.call(instrumentation.context, app, "tree")
-            ?.getString("tree")
-            ?.let { HitChain.nodesFromProbe(JSONArray(it)) }
     } catch (_: Exception) {
         // No provider under that authority, a refusal, a failure: the
         // reading says the probe did not answer, and the host is told so

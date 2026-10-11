@@ -59,11 +59,19 @@ class SmixProbeProvider : ContentProvider() {
                 // Deliberately not one "status" call returning everything:
                 // a caller asking whether the probe is live must not have to
                 // pay for a tree dump to find out.
-                METHOD_TREE -> {
-                    putString(KEY_TREE, SemanticsProbe.dumpWireJson())
-                    val (w, h) = SemanticsProbe.screenSize()
-                    putInt("screenW", w)
-                    putInt("screenH", h)
+                METHOD_TREE -> when (val read = SemanticsProbe.read(TREE_WAIT_MS)) {
+                    is MainThread.Ran.Done -> {
+                        putString(KEY_TREE, read.value.json)
+                        putInt("screenW", read.value.screenW)
+                        putInt("screenH", read.value.screenH)
+                    }
+                    is MainThread.Ran.Threw ->
+                        putString(KEY_ERROR, "the probe could not read the tree: ${read.error}")
+                    MainThread.Ran.Busy -> putString(
+                        KEY_ERROR,
+                        "the app's main thread has not taken a read in ${TREE_WAIT_MS} ms " +
+                            "and none was made before it got busy",
+                    )
                 }
                 METHOD_IDLE -> {
                     putLong(KEY_QUIET_MS, SemanticsProbe.quiescentForMs())
@@ -152,5 +160,13 @@ class SmixProbeProvider : ContentProvider() {
         const val KEY_ERROR = "error"
         const val KEY_WINDOW_IDS = "windowIds"
         const val KEY_LIBRARY = "library"
+
+        /**
+         * How long a tree read waits for the app's main thread before
+         * answering with the last reading it made there. Long enough for
+         * the frame in progress to finish; short enough that a look at an
+         * app holding its main thread does not wait on it.
+         */
+        const val TREE_WAIT_MS = 250L
     }
 }
