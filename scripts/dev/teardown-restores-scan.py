@@ -80,6 +80,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v13.2-c1-a-page-over-a-page-e2e.sh",
     "v14.1-c2-a-tap-mid-layout-e2e.sh",
     "v14.1-c6-a-tap-through-a-layer-e2e.sh",
+    "v14.2-c2-a-row-off-screen-e2e.sh",
     "smoke-chain-e2e.sh",
     "v11.0-c5-runner-brings-the-app-back-e2e.sh",
     "v11.0-c2-a-failure-says-whose-screen-e2e.sh",
