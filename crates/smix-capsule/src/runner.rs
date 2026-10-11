@@ -1970,7 +1970,9 @@ pub fn live_foreign_holder_on(
     else {
         return Ok(None);
     };
-    Ok(crate::runner_android::live_foreign_holder_in(leases, &st.udid))
+    Ok(crate::runner_android::live_foreign_holder_in(
+        leases, &st.udid,
+    ))
 }
 
 /// The refusal [`down`] gives for a runner somebody else is driving.

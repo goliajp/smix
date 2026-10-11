@@ -52,11 +52,18 @@ fn read(path: &Path) -> Option<Report> {
     let thread = body["faultingThread"].as_u64().unwrap_or(0) as usize;
     let frames = body["threads"][thread]["frames"]
         .as_array()
-        .map(|fs| fs.iter().filter_map(|f| f["symbol"].as_str().map(str::to_string)).collect())
+        .map(|fs| {
+            fs.iter()
+                .filter_map(|f| f["symbol"].as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
     Some(Report {
         bundle: head["bundleID"].as_str()?.to_string(),
-        exception: body["exception"]["type"].as_str().unwrap_or("an exception").to_string(),
+        exception: body["exception"]["type"]
+            .as_str()
+            .unwrap_or("an exception")
+            .to_string(),
         frames,
     })
 }
@@ -72,7 +79,10 @@ fn describe(bundle: &str, report: &Report, path: &Path) -> String {
             path.display()
         );
     }
-    let top = report.frames.first().map_or("an unnamed frame", String::as_str);
+    let top = report
+        .frames
+        .first()
+        .map_or("an unnamed frame", String::as_str);
     format!(
         "{bundle} crashed at launch ({}, in {top}). Crash report: {}",
         report.exception,
@@ -99,7 +109,10 @@ mod tests {
         let dir = dir_with("NoScene-1.ips", NO_SCENE_REPORT);
         let said = explain(dir.path(), "dev.smix.noscene", SystemTime::UNIX_EPOCH)
             .expect("the report names this bundle");
-        assert!(said.contains("does not adopt the scene lifecycle"), "{said}");
+        assert!(
+            said.contains("does not adopt the scene lifecycle"),
+            "{said}"
+        );
         assert!(said.contains("UIApplicationSceneManifest"), "{said}");
         assert!(said.contains("NoScene-1.ips"), "{said}");
     }

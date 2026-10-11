@@ -53,7 +53,10 @@ fn a_live_driver_that_is_not_us_is_named() {
         .expect("read")
         .expect("a live process driving the device behind this port must stop the verb");
     assert_eq!(holder.pid, stranger.pid);
-    assert!(holder.cmd.contains("sleep"), "the refusal names whose run it is: {holder:?}");
+    assert!(
+        holder.cmd.contains("sleep"),
+        "the refusal names whose run it is: {holder:?}"
+    );
 
     let _ = child.kill();
     let _ = child.wait();
@@ -70,7 +73,11 @@ fn a_driver_that_has_exited_is_not() {
 
     // `runner up` and `smix run` both exit before the teardown that
     // follows them; refusing here would refuse every ordinary run.
-    assert!(live_foreign_holder_on(&leases, PORT).expect("read").is_none());
+    assert!(
+        live_foreign_holder_on(&leases, PORT)
+            .expect("read")
+            .is_none()
+    );
 }
 
 #[test]
@@ -78,7 +85,11 @@ fn we_are_not_a_stranger_to_ourselves() {
     let dir = tempfile::tempdir().expect("tempdir");
     let leases = LeaseDir::at(dir.path());
     runner_on(&leases, PORT, smix_lease::store::identify_self());
-    assert!(live_foreign_holder_on(&leases, PORT).expect("read").is_none());
+    assert!(
+        live_foreign_holder_on(&leases, PORT)
+            .expect("read")
+            .is_none()
+    );
 }
 
 #[test]
@@ -90,7 +101,11 @@ fn only_the_device_behind_the_asked_port_counts() {
 
     // Somebody is driving the simulator on 22187; the runner on 22087 is
     // another device's, and theirs is no reason to keep it.
-    assert!(live_foreign_holder_on(&leases, 22087).expect("read").is_none());
+    assert!(
+        live_foreign_holder_on(&leases, 22087)
+            .expect("read")
+            .is_none()
+    );
 
     let _ = child.kill();
     let _ = child.wait();
