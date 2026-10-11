@@ -56,6 +56,9 @@
             android:name=".TourActivity"
             android:exported="true" />
         <activity
+            android:name=".LiveActivity"
+            android:exported="true" />
+        <activity
             android:name=".CodeActivity"
             android:exported="true" />
         <activity
