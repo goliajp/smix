@@ -41,8 +41,11 @@ internal object MainThread {
         val main = Handler(Looper.getMainLooper())
         val step = object : Runnable {
             override fun run() {
-                if (!ready() && SystemClock.uptimeMillis() < deadline) {
-                    main.post(this)
+                if (!ready()) {
+                    // Not read at the deadline either: a layout still pending
+                    // then is the half-placed tree this waits to avoid, and
+                    // the caller is told the main thread was busy instead.
+                    if (SystemClock.uptimeMillis() < deadline) main.post(this) else done.countDown()
                     return
                 }
                 ran = attempt(read)
