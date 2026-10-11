@@ -47,8 +47,17 @@ package dev.smix.runner
  * text every frame while nothing has gone back — the fixture's blocked
  * screen is exactly that shape, and it is what `pressBack()`'s own
  * boolean gets wrong.
+ *
+ * [application] marks an app's window as opposed to the system's (status
+ * bar, navigation bar, keyboard), which is what decides whether a screen
+ * whose reading has a hole in it was seen at all.
  */
-data class WindowReading(val id: Int, val pkg: String?, val structure: Int?)
+data class WindowReading(
+    val id: Int,
+    val pkg: String?,
+    val structure: Int?,
+    val application: Boolean = false,
+)
 
 data class ScreenReading(val windows: List<WindowReading>) {
     /** Short enough to sit in a `saw` string beside another one. */
@@ -230,6 +239,12 @@ private fun <T> differs(then: T?, now: T?): Boolean =
  * So the screen has to read the same across [stillMs] before the key
  * goes in. Readings that compare nothing do not count as the same: a
  * screen that holds still is one some look actually read.
+ *
+ * Nor does a reading with an app's window in it that did not read. On a
+ * loaded emulator the activity a tap had just opened was listed for
+ * about three seconds with a root that came back null; the status bar
+ * alone held still for 300ms, the key went in against a picture with no
+ * app in it, and `/back` could only answer `couldNotSee`.
  */
 class BeforeSettle(private val stillMs: Long) {
     private var held: ScreenReading? = null
@@ -243,6 +258,10 @@ class BeforeSettle(private val stillMs: Long) {
         looks += 1
         val now = (reading as? Reading.Screen)?.reading ?: return null
         val then = held
+        if (now.windows.any { it.application && it.structure == null }) {
+            held = null
+            return null
+        }
         if (then == null || (comparableWindows(then, now) ?: 0) == 0) {
             held = now
             heldSinceMs = atMs
