@@ -161,6 +161,7 @@ public enum TreeRoute {
     _ root: A11ySnapshotData,
     logSink: ((String) -> Void)?
   ) -> Data {
+    let root = CellPlacement.placed(root)
     var truncated = false
     // Judge visibility against the snapshot's OWN root frame, taken from
     // the same live snapshot as the node frames — not a value cached at
