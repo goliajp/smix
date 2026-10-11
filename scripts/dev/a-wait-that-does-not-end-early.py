@@ -65,6 +65,13 @@ def probe(port):
         return {"present": False, "why": f"the runner answered {body[:60]!r}"}
 
 
+def probe_rows(port):
+    """Where the lazy rows are, from the probe's tree: (row, top) pairs."""
+    body = get(port, f"/probe/tree?app={APP}")
+    return sorted((int(m.group(1)), int(m.group(2))) for m in re.finditer(
+        r'"testTag":"compose_row_(\d+)"[^{}]*?"visibleBounds":\[\d+,(-?\d+)', body))
+
+
 def visible_rows(port):
     """Which lazy rows the accessibility tree currently carries."""
     return sorted(int(m) for m in re.findall(r"compose_row_(\d+)", get(port, "/tree")))
@@ -141,17 +148,38 @@ def main():
     # measured anything. A reading counts only when the rows changed both
     # in the interval before it and in the interval after it: changing
     # after it alone is a reading taken just before the list started.
+    #
+    # Which rows are where is read from the probe's tree, which answers in
+    # milliseconds. The accessibility tree took up to four seconds a read
+    # during the scroll, longer than the scroll, and a release dry-run went
+    # red with no reading inside the motion at all.
+    #
+    # And only once the list has been seen moving for longer than the
+    # probe's sampler takes to notice: it looks every 50 ms, so the first
+    # reading after the list starts still describes the stillness before
+    # it. Measured: that first reading was 2.3-3.1 s in four runs of five,
+    # every one after it under 100 ms.
+    SAMPLER_CATCHES_UP_S = 0.2
     moving = []
     polling_says_ready = False
     deadline = time.time() + 6
-    earlier, rows = before, before
+    earlier = rows = probe_rows(a.port)
+    moving_since = None
     while time.time() < deadline:
+        asked = time.time()
         q = probe(a.port).get("quietMs", -1)
-        now = visible_rows(a.port)
-        if now:
-            polling_says_ready = True
-        if rows != earlier and now != rows:
+        now = probe_rows(a.port)
+        if now != rows:
+            moving_since = moving_since or asked
+        else:
+            moving_since = None
+        if (rows != earlier and now != rows and moving_since is not None
+                and asked - moving_since >= SAMPLER_CATCHES_UP_S):
             moving.append(q)
+            if len(moving) == 1:
+                # The other strategy, asked once while the list is known to
+                # be moving: does the tag resolve in the tree it polls?
+                polling_says_ready = bool(visible_rows(a.port))
         earlier, rows = rows, now
     after = visible_rows(a.port)
     settled_quiet = probe(a.port).get("quietMs", -1)
