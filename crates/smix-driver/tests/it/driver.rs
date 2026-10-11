@@ -203,6 +203,38 @@ async fn tap_miss_returns_element_not_found_after_implicit_wait() {
     assert!(err.message.contains("element not found"));
 }
 
+// A list row held below the screen is in the tree and not on screen; the
+// miss says so and says to scroll, rather than "matched 0 nodes".
+#[tokio::test]
+async fn tap_miss_on_an_element_held_off_screen_says_to_scroll_to_it() {
+    let server = MockServer::start().await;
+    let tree = mk_node(
+        None,
+        rect(0.0, 0.0, 390.0, 844.0),
+        vec![
+            mk_node(Some("Rule 0"), rect(0.0, 106.0, 390.0, 66.0), vec![]),
+            mk_node(Some("Rule 20"), rect(0.0, 1426.0, 390.0, 66.0), vec![]),
+        ],
+    );
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tree))
+        .mount(&server)
+        .await;
+    let d = driver_for(&server);
+    let err = d.tap(&text_sel("Rule 20"), None).await.unwrap_err();
+    assert_eq!(err.code, FailureCode::ElementNotFound);
+    let hint = err.hint.unwrap_or_default();
+    assert!(
+        hint.contains("1 node(s)") && hint.contains("off screen"),
+        "{hint}"
+    );
+    assert!(
+        hint.contains("y=1426") && hint.contains("scrollUntilVisible"),
+        "{hint}"
+    );
+}
+
 #[tokio::test]
 async fn fill_chunks_one_char_per_post() {
     // Driver.fill splits multi-char text into 1-char
