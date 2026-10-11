@@ -65,7 +65,7 @@ public enum HitChain {
     limit: Int = 16
   ) -> [HitChainEntry] {
     var found: [HitChainEntry] = []
-    walk(root, point: point, into: &found)
+    walk(CellPlacement.placed(root), point: point, into: &found)
     found.sort { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
     // A cap, because the chain rides on every tap response. Sixteen is
     // far above the three-to-four a real screen produces, so hitting it

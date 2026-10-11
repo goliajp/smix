@@ -1854,7 +1854,18 @@ final class SmixRunnerUITests: XCTestCase {
           // elements under floating overlays (e.g. a QA bubble),
           // which are genuinely visible and assertable.
           if requireOnScreen {
-            return el.frame.intersects(app.frame)
+            let frame = el.frame
+            guard frame.intersects(app.frame) else { return false }
+            // The live frame is not the truth for a control inside an
+            // off-screen list cell: iOS 27 gives it the list's origin.
+            // The cell's own frame is right (see `CellPlacement`).
+            let cell = app.cells.containing(predicate).firstMatch
+            if cell.exists,
+              CellPlacement.misplaced(control: frame, cell: cell.frame, screen: app.frame)
+            {
+              return false
+            }
+            return true
           }
           return true
         } ?? false

@@ -6,6 +6,22 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Fixed
 
+- **A control in a list row below the screen is off screen, on iOS 27.**
+  UIKit lists every row of a table or collection view to accessibility,
+  and iOS 27 gives the controls inside an off-screen row a frame that is
+  not theirs — the list's origin, a copy of the first visible row's frame
+  — while the row's cell keeps its own. smix took that frame: the control
+  read as on screen over the first row, `scrollUntilVisible` stopped
+  without scrolling, a swipe over it opened the first row's actions, and
+  `tapOn` landed on the first row and reported success. A control that
+  does not touch its off-screen cell now takes the cell's frame, in the
+  tree, in what a tap reports it landed inside, and in the runner's
+  on-screen check. Rows on screen are left as they are, swipe actions
+  held past the screen's edge included.
+- **A miss on an element the tree holds off screen says so.** It said
+  "matched 0 nodes in the current a11y tree; check selector", sending the
+  reader to rename something that was there; it now says how many nodes
+  matched off screen, where the first one is, and to scroll to it.
 - **A `launchApp` inside a block launches the flow's app.** A bare
   `launchApp` inside `runFlow: { commands }`, `repeat`, `retry` or
   `neverVisible` was left without an app id — only top-level steps were
