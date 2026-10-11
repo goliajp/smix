@@ -402,6 +402,25 @@ cycles a runner of yours whose session has stopped working; the runner here
 is working fine and is not yours. `--include-unrecorded` is for a runner the
 ledger does not know about; this one it knows and says is somebody else's.
 
+On iOS the unit is the port, and `runner down` asks the same question of
+the simulator behind it: when a live process other than this one is driving
+that simulator — a `smix run`, an MCP session, an SDK program — the runner is
+left running and the holder is named:
+
+```
+$ smix runner down --runner-port 22197
+error: the runner on port 22197 is on a device another process is driving, so
+`runner down` would end a run that is not ours.
+
+  pid 91353: smix run --device A6E0D8D5-… ~/their-project/qa/settings.yaml
+
+Wait for it to finish, or say `--take-over` to stop it deliberately.
+```
+
+`smix down` names such a runner and leaves it, and goes on with the rest of
+the sweep. `smix runner cycle` does not ask: it brings the same runner back
+on the same simulator and port, for whoever is driving it.
+
 A holder whose process has exited is not a holder, so the ordinary teardown
 after a flow is unaffected.
 

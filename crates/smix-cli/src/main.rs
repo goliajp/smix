@@ -1416,13 +1416,13 @@ enum RunnerAction {
         /// happens.
         #[arg(long = "include-unrecorded", default_value_t = false)]
         include_unrecorded: bool,
-        /// Android: also end a runner a live process other than this one
-        /// is holding.
+        /// Also end a runner on a device a live process other than this
+        /// one is driving.
         ///
-        /// An Android device has one runner -- one instrumentation
-        /// package, one device-side port -- so there is no version of
-        /// this that ends only ours. Without the flag, a device somebody
-        /// else is driving is refused and their command line is printed.
+        /// Without the flag, a device somebody else is driving is refused
+        /// and their command line is printed. On Android this is the
+        /// device's only runner -- one instrumentation package, one
+        /// device-side port -- so there is no version that ends only ours.
         /// This is not `--include-unrecorded`, which means "one the
         /// ledger does not know about"; the case here is one the ledger
         /// knows perfectly well and says is not yours.
@@ -3889,7 +3889,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
                     let port = port_flag.unwrap_or_else(runner_port);
-                    if include_unrecorded {
+                    if take_over {
+                        smix_capsule::runner::down_taking_over(port, include_unrecorded)
+                    } else if include_unrecorded {
                         smix_capsule::runner::down_including_unrecorded(port)
                     } else {
                         smix_capsule::runner::down(port)
