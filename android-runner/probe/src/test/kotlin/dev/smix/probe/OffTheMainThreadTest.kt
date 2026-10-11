@@ -44,7 +44,7 @@ class OffTheMainThreadTest {
                 .map { (i, line) -> "${f.name}:${i + 1}: ${line.trim()}" }
         }
         assertEquals(1, calls.size)
-        assertTrue(calls.single(), calls.single().contains("Reading(dumpWireJson()"))
+        assertTrue(calls.single(), calls.single().contains("Reading(dumpWireJson(), w, h"))
         val probe = sources.single { it.name == "SemanticsProbe.kt" }.readText()
         assertTrue(probe.contains("MainThread.run(waitMs, { !hasPendingLayout() }, ::readHere)"))
     }

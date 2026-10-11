@@ -112,17 +112,22 @@ object SemanticsProbe {
             // and a sampler that dies takes the signal with it silently.
             return
         }
-        val changed = synchronized(this) {
-            val changed = fp != lastFingerprint || lastChangedAtMs == 0L
-            if (changed) {
+        val behind = synchronized(this) {
+            if (fp != lastFingerprint || lastChangedAtMs == 0L) {
                 lastFingerprint = fp
                 lastChangedAtMs = System.currentTimeMillis()
+                false
+            } else {
+                (lastRead?.atMs ?: 0L) < lastChangedAtMs
             }
-            changed
         }
-        // Kept current for the read a busy main thread cannot take, and
-        // only from a screen whose layout has caught up; see [read].
-        if ((changed || lastRead == null) && !hasPendingLayout()) {
+        // Kept current for the read a busy main thread cannot take: once,
+        // when the screen has held still for a tick after changing, and
+        // only from a screen whose layout has caught up; see [read]. Not on
+        // every change. A whole read on each tick of a scroll held the main
+        // thread and this sampler with it, and a wait asking how long the
+        // tree had been still was told 380 ms in the middle of the scroll.
+        if (behind && !hasPendingLayout()) {
             try {
                 readHere()
             } catch (_: Exception) {
@@ -132,7 +137,7 @@ object SemanticsProbe {
     }
 
     /** One whole reading of the screen: the tree and the display it is on. */
-    class Reading(val json: String, val screenW: Int, val screenH: Int)
+    class Reading(val json: String, val screenW: Int, val screenH: Int, val atMs: Long)
 
     @Volatile
     private var lastRead: Reading? = null
@@ -140,7 +145,7 @@ object SemanticsProbe {
     /** The screen read now, on the main thread; see [MainThread]. */
     private fun readHere(): Reading {
         val (w, h) = screenSize()
-        return Reading(dumpWireJson(), w, h).also { lastRead = it }
+        return Reading(dumpWireJson(), w, h, System.currentTimeMillis()).also { lastRead = it }
     }
 
     /**
