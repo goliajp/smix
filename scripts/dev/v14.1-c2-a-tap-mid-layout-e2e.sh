@@ -94,12 +94,20 @@ adb -s "$SERIAL" shell am start -W -S -n "$APPID/.TourActivity" >/dev/null 2>&1 
   || fail "could not start the tour screen"
 
 log "--- the probe's tree, read back to back while the screen lays out"
+# Three outcomes, counted apart. A read that came back with the tour is
+# whole; one that came back with a tree and no tour is the defect; one the
+# probe declined — its main thread did not take the read in time and the
+# screen had changed since its last one — says so under `error` and is not
+# a tree at all. On a loaded machine the last happens, and is honest.
 READS=80
-counted="$(adb -s "$SERIAL" shell "sleep 2; n=0; whole=0; while [ \$n -lt $READS ]; do o=\$(content call --uri content://$APPID.smixprobe --method tree 2>&1); n=\$((n+1)); case \"\$o\" in *tour-scrim*tour-advance*) whole=\$((whole+1));; esac; done; echo \$n \$whole")"
-read -r n whole <<<"$counted"
-log "  $whole of $n reads held the tour that was on screen throughout"
+counted="$(adb -s "$SERIAL" shell "sleep 2; n=0; whole=0; declined=0; while [ \$n -lt $READS ]; do o=\$(content call --uri content://$APPID.smixprobe --method tree 2>&1); n=\$((n+1)); case \"\$o\" in *tour-scrim*tour-advance*) whole=\$((whole+1));; *error=*) declined=\$((declined+1));; esac; done; echo \$n \$whole \$declined")"
+read -r n whole declined <<<"$counted"
+torn=$((n - whole - declined))
+log "  $whole of $n reads held the tour on screen, $declined were declined, $torn held a tree without it"
 [ "$n" = "$READS" ] || fail "asked for $READS reads and the device counted '$n'"
-[ "$whole" = "$READS" ] || fail "$((READS - whole)) of $READS reads of the tree were missing the tour on screen"
+[ "$torn" = 0 ] || fail "$torn of $READS reads of the tree were missing the tour on screen"
+[ "$whole" -ge $((READS * 3 / 4)) ] \
+  || fail "only $whole of $READS reads came back at all — too few to say the tree is read whole"
 
 log "--- three taps on the tour's Next, judged with no allowance"
 cat >"$WORK/tour.yaml" <<EOF
