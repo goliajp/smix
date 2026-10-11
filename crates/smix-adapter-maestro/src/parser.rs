@@ -3645,13 +3645,7 @@ pub fn parse_flow_yaml(yaml: &str) -> Result<Flow, ParseError> {
 
     // Bare `- launchApp` steps inherit the flow header appId here
     // (parser layer; runtime stays appId-agnostic).
-    for step in &mut steps {
-        if let Step::LaunchApp { app_id: sid, .. } = step
-            && sid.is_empty()
-        {
-            *sid = app_id.clone();
-        }
-    }
+    crate::apps_config::fill_bare_launch_apps(&mut steps, &app_id);
     Ok(Flow {
         app_id,
         app,

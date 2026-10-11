@@ -216,6 +216,7 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
 
     // Resolve the cross-platform `app:` logical key via smix-apps.yaml
     // when both are provided.
+    let mut apps = None;
     if let Some(config_path) = &args.apps_config {
         let cfg = match AppsConfig::from_path(config_path) {
             Ok(c) => c,
@@ -228,6 +229,7 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
             eprintln!("error: resolve app: {e}");
             return 2;
         }
+        apps = Some(cfg);
     }
 
     // The app under test: an explicit --bundle-id wins; otherwise the
@@ -422,6 +424,9 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
     // no_fail_annotate flows into the Adapter for the debug-output
     // fail-PNG auto-annotate opt-out.
     adapter = adapter.with_no_fail_annotate(args.no_fail_annotate);
+    if let Some(cfg) = apps {
+        adapter = adapter.with_apps(cfg, args.platform.to_driver());
+    }
 
     // Attach fixture registry if configured.
     if let Some(path) = &args.fixture_registry {

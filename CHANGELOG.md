@@ -2,6 +2,20 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **A `launchApp` inside a block launches the flow's app.** A bare
+  `launchApp` inside `runFlow: { commands }`, `repeat`, `retry` or
+  `neverVisible` was left without an app id — only top-level steps were
+  given the flow's `appId:` or resolved `app:` — and reached the device as
+  `simctl launch <udid> ""`, failing with `The request to open "" failed`.
+  Every depth is filled now. A subflow file run through `runFlow: file:`
+  whose header names its app with `app:` is resolved with the same
+  `--apps-config` as the top-level flow. A `launchApp` that still has no
+  app id is refused before anything is sent to the device, saying why.
+
 ## [14.1.1] — 2026-10-12
 
 ### Fixed

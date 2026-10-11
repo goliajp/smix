@@ -94,3 +94,57 @@ fn resolve_patches_inherited_launch_app_step() {
         panic!("expected LaunchApp");
     }
 }
+
+/// Every `launchApp` in a flow, at any depth, with its app id.
+fn launch_ids(steps: &[Step]) -> Vec<String> {
+    let mut out = Vec::new();
+    for step in steps {
+        match step {
+            Step::LaunchApp { app_id, .. } => out.push(app_id.clone()),
+            Step::RunFlowInline { steps, .. } => out.extend(launch_ids(steps)),
+            Step::Repeat { commands, .. } | Step::Retry { commands, .. } => {
+                out.extend(launch_ids(commands));
+            }
+            Step::NeverVisible { during, .. } => out.extend(launch_ids(during)),
+            _ => {}
+        }
+    }
+    out
+}
+
+const NESTED: &str = "\
+- runFlow:
+    when: { platform: iOS }
+    commands:
+      - launchApp
+- repeat:
+    times: 1
+    commands:
+      - launchApp
+- retry:
+    maxRetries: 1
+    commands:
+      - runFlow:
+          commands:
+            - launchApp
+- neverVisible:
+    id: loading-overlay
+    during:
+      - launchApp
+";
+
+#[test]
+fn a_launch_app_inside_a_block_gets_the_resolved_app_too() {
+    let mut flow = parse_flow_yaml(&format!("app: demoApp\n---\n{NESTED}")).expect("parse ok");
+    assert_eq!(launch_ids(&flow.steps), vec![""; 4]);
+    let apps = AppsConfig::from_yaml(APPS_YAML).unwrap();
+    resolve_app_into_flow(&mut flow, &apps, Platform::Ios).unwrap();
+    assert_eq!(launch_ids(&flow.steps), vec!["com.example.app"; 4]);
+}
+
+#[test]
+fn a_launch_app_inside_a_block_inherits_a_literal_app_id_too() {
+    let flow =
+        parse_flow_yaml(&format!("appId: com.literal.app\n---\n{NESTED}")).expect("parse ok");
+    assert_eq!(launch_ids(&flow.steps), vec!["com.literal.app"; 4]);
+}
