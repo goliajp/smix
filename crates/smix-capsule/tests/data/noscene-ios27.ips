@@ -1,0 +1,39 @@
+{"app_name": "NoScene", "bundleID": "dev.smix.noscene", "bug_type": "309", "platform": 7}
+{
+  "exception": {
+    "type": "EXC_BREAKPOINT",
+    "signal": "SIGTRAP"
+  },
+  "faultingThread": 0,
+  "threads": [
+    {
+      "triggered": true,
+      "frames": [
+        {
+          "symbol": "___UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption_block_invoke"
+        },
+        {
+          "symbol": "_dispatch_client_callout"
+        },
+        {
+          "symbol": "_dispatch_once_callout"
+        },
+        {
+          "symbol": "-[UIApplication workspace:didCreateScene:withTransitionContext:completion:]"
+        },
+        {
+          "symbol": "-[UIApplicationSceneClientAgent scene:didInitializeWithEvent:completion:]"
+        },
+        {
+          "symbol": "__95-[FBSScene _callOutQueue_didCreateWithTransitionContext:alternativeCreationCallout:completion:]_block_invoke"
+        },
+        {
+          "symbol": "-[FBSScene _callOutQueue_maybeCoalesceClientSettingsUpdates:]"
+        },
+        {
+          "symbol": "-[FBSScene _callOutQueue_didCreateWithTransitionContext:alternativeCreationCallout:completion:]"
+        }
+      ]
+    }
+  ]
+}
