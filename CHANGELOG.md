@@ -21,7 +21,9 @@ All notable changes to the `smix` workspace are documented here. The format foll
   changing that could be a screen from seconds before. It now gives that
   reading only when the screen has not changed since it was taken, and the
   tree a tap is judged from is always read afresh, waiting up to three
-  seconds for the main thread. Apps should build with this release's probe.
+  seconds for the main thread. A read whose wait ends with a layout still
+  pending is declined rather than taken half-placed. Apps should build with
+  this release's probe.
 
 ## [14.1.0] — 2026-10-11
 
