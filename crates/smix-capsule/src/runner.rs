@@ -1710,6 +1710,7 @@ fn one_bring_up(
     // Heartbeat every 30 s during a cold rebuild so anyone watching
     // stdout sees progress instead of a stall.
     let started_at = std::time::Instant::now();
+    let launched_after = std::time::SystemTime::now();
     let mut last_heartbeat = started_at;
     // Said once, the moment it is known — not saved for the timeout.
     // Whoever is watching can act on it while the wait is still running,
@@ -1735,8 +1736,13 @@ fn one_bring_up(
         }
         if let Ok(Some(status)) = child.try_wait() {
             forget_runner_row(ledger, udid);
+            let app = bundle
+                .zip(crate::launch_crash::reports_dir())
+                .and_then(|(b, dir)| crate::launch_crash::explain(&dir, b, launched_after))
+                .map(|why| format!("{why}\n\n"))
+                .unwrap_or_default();
             return Err(format!(
-                "xcodebuild exited early ({status}) — log tail:\n{}",
+                "{app}xcodebuild exited early ({status}) — log tail:\n{}",
                 tail_log(&log, 25)
             ));
         }
