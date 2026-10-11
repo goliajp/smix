@@ -268,7 +268,15 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
     settle_ledgers(&leases);
 
     println!("=== 2. XCUITest runner ===");
-    smix_capsule::runner::down(runner_port)?;
+    // Named and left, like a residue on a device somebody else holds
+    // alive: the sweep is not a reason to end another session's run.
+    match smix_capsule::runner::live_foreign_holder_on(&leases, runner_port)? {
+        Some(holder) => println!(
+            "  runner on port {runner_port} left running: pid {} is driving it ({})",
+            holder.pid, holder.cmd
+        ),
+        None => smix_capsule::runner::down(runner_port)?,
+    }
 
     println!("=== 3. web demo stack ===");
     pkill("-TERM", "smix/web/node_modules/.bin/vite", "vite");

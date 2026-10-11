@@ -1929,7 +1929,7 @@ fn device_preflight_block(log: &Path) -> Option<String> {
 /// another session, and [`down_including_unrecorded`] is the sanctioned
 /// way through when it should go.
 pub fn down(port: u16) -> Result<(), String> {
-    down_with(port, false)
+    down_with(port, false, false)
 }
 
 /// [`down`], and also end any runner on the port the ledger has no
@@ -1937,11 +1937,51 @@ pub fn down(port: u16) -> Result<(), String> {
 /// `--include-unrecorded` is in a position to know the unrecorded
 /// session should go, so only the CLI's flag path calls this.
 pub fn down_including_unrecorded(port: u16) -> Result<(), String> {
-    down_with(port, true)
+    down_with(port, true, false)
 }
 
-fn down_with(port: u16, consent: bool) -> Result<(), String> {
+/// [`down`], and also end a runner whose device a live process other
+/// than this one is driving. Only the CLI's `--take-over` calls it: the
+/// person who can see whose run it is decides it should end.
+pub fn down_taking_over(port: u16, include_unrecorded: bool) -> Result<(), String> {
+    down_with(port, include_unrecorded, true)
+}
+
+/// Who is driving the device whose runner is recorded on `port`, when
+/// that is a live process other than this one or one it descends from.
+///
+/// A simulator's runner is not one per device the way an Android one is,
+/// but the run on it is just as much somebody's: the ledger names the
+/// `smix run`, the MCP session or the SDK process driving it, and ending
+/// the runner under them fails their run. `None` when nothing is recorded
+/// on the port, or its holder has exited or been replaced by another
+/// process under the same pid — the ordinary teardown after a run.
+pub fn live_foreign_holder_on(
+    leases: &smix_lease::store::LeaseDir,
+    port: u16,
+) -> Result<Option<smix_lease::ProcIdentity>, String> {
+    let Some(st) = crate::runner_state::find(leases, crate::runner_state::Lookup::Port(port))?
+    else {
+        return Ok(None);
+    };
+    Ok(crate::runner_android::live_foreign_holder_in(leases, &st.udid))
+}
+
+/// The refusal [`down`] gives for a runner somebody else is driving.
+pub fn foreign_holder_refusal(port: u16, holder: &smix_lease::ProcIdentity) -> String {
+    format!(
+        "the runner on port {port} is on a device another process is driving, so \
+         `runner down` would end a run that is not ours.\n\n  pid {}: {}\n\n\
+         Wait for it to finish, or say `--take-over` to stop it deliberately.",
+        holder.pid, holder.cmd,
+    )
+}
+
+fn down_with(port: u16, consent: bool, take_over: bool) -> Result<(), String> {
     let mut acted = false;
+    if !take_over && let Some(holder) = live_foreign_holder_on(&machine_leases()?, port)? {
+        return Err(foreign_holder_refusal(port, &holder));
+    }
     // Only the runner recorded on this port. The record used to be one
     // per platform per checkout, read without looking at the port, so
     // `down --runner-port 22087` stopped whichever runner had been
@@ -2114,8 +2154,11 @@ fn cycle_recorded(
             // No: a cycle restarts the runner the ledger names. If
             // something else holds the port, the restart is not what is
             // wanted anyway — better to say so than to clear the way by
-            // ending somebody else's session.
-            down(cycle_port)?;
+            // ending somebody else's session. A live holder is not
+            // asked about: the cycle brings the same runner back on the
+            // same device and port for whoever is driving it — the
+            // supervisor does this in the middle of somebody's run.
+            down_with(cycle_port, false, true)?;
             up(
                 root,
                 &udid,
