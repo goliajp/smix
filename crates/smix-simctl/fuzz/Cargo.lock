@@ -497,14 +497,14 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.7",
+ "syn 3.0.8",
 ]
 
 [[package]]
 name = "serde_json"
-version = "1.0.153"
+version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa62079d232416ecf7b2f938d389e28bbcd3677bcdb67b42e2f29c2433552176"
+checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
 dependencies = [
  "itoa",
  "memchr",
@@ -537,7 +537,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smix-error"
-version = "14.1.1"
+version = "14.2.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "smix-lease"
-version = "14.1.1"
+version = "14.2.0"
 dependencies = [
  "chrono",
  "serde",
@@ -556,7 +556,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "14.1.1"
+version = "14.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "14.1.1"
+version = "14.2.0"
 dependencies = [
  "regex",
  "serde",
@@ -573,14 +573,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "14.1.1"
+version = "14.2.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "14.1.1"
+version = "14.2.0"
 dependencies = [
  "libc",
  "serde",
@@ -604,7 +604,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "14.1.1"
+version = "14.2.0"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -635,9 +635,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.7"
+version = "3.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d62a2e0561533f2ca2561d0cf27fd9fedb640a1bf2616ff5d5c80d99017faadc"
+checksum = "01016da373cd8f7ef12624f796309f5c31ba8d646dd08856c02cd741d823c622"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -661,7 +661,7 @@ checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.7",
+ "syn 3.0.8",
 ]
 
 [[package]]
@@ -688,7 +688,7 @@ checksum = "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.7",
+ "syn 3.0.8",
 ]
 
 [[package]]
@@ -735,7 +735,7 @@ dependencies = [
  "bumpalo",
  "proc-macro2",
  "quote",
- "syn 3.0.7",
+ "syn 3.0.8",
  "wasm-bindgen-shared",
 ]
 
