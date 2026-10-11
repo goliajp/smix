@@ -260,6 +260,30 @@ class BackSettleTest {
     }
 
     @Test
+    fun an_app_window_that_does_not_read_keeps_the_key_waiting() {
+        // Measured on a loaded emulator: the activity a tap had just
+        // opened was listed for about three seconds with a null root while
+        // the status bar read the same. That is not a screen holding still.
+        val opening = WindowReading(id = 127, pkg = null, structure = null, application = true)
+        val opened = WindowReading(id = 127, pkg = "dev.smix.fixture", structure = 842070012, application = true)
+        val still = BeforeSettle(stillMs = 300)
+        for (at in 0L..3000L step 50) assertNull(still.observe(Reading.Screen(screen(bars, opening)), atMs = at))
+        assertNull(still.observe(Reading.Screen(screen(bars, opened)), atMs = 3050))
+        assertNull(still.observe(Reading.Screen(screen(bars, opened)), atMs = 3300))
+        assertEquals(screen(bars, opened), still.observe(Reading.Screen(screen(bars, opened)), atMs = 3350))
+    }
+
+    @Test
+    fun a_system_window_that_does_not_read_does_not_hold_the_key() {
+        // Only an app's window is the screen the key is judged against; a
+        // system window with no readable root says nothing about the app.
+        val shade = WindowReading(id = 9, pkg = null, structure = null)
+        val still = BeforeSettle(stillMs = 300)
+        assertNull(still.observe(Reading.Screen(screen(bars, app, shade)), atMs = 0))
+        assertEquals(screen(bars, app, shade), still.observe(Reading.Screen(screen(bars, app, shade)), atMs = 300))
+    }
+
+    @Test
     fun an_app_window_never_read_is_not_a_screen_that_stayed_the_same() {
         // The status bar read the same the whole time; the app's window
         // never read at all. "Nothing changed" is not what was seen.

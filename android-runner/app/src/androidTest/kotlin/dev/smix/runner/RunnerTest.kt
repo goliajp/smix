@@ -223,9 +223,11 @@ class SmixHttpServer(
     /// How long the screen must read the same before the back key goes
     /// in, and how long `/back` waits for that. A tap's navigation can
     /// still be landing when the next step's back arrives — see
-    /// `BeforeSettle`.
+    /// `BeforeSettle`. The wait covers an activity a loaded emulator
+    /// takes three seconds to make readable, and leaves the settle and
+    /// both deep readings inside the route's limit.
     private val BACK_STILL_MS = 300L
-    private val BACK_BEFORE_MS = 1500L
+    private val BACK_BEFORE_MS = 6000L
 
     /// How long to wait for the display to reach the rotation asked
     /// for.
@@ -842,9 +844,10 @@ class SmixHttpServer(
         // By id, because a window's id outlives the layer order that a
         // transition shuffles.
         val readings = windows.sortedBy { it.id }.map { window ->
+            val application = window.type == AccessibilityWindowInfo.TYPE_APPLICATION
             val root = window.root
             if (root == null) {
-                WindowReading(window.id, pkg = null, structure = null)
+                WindowReading(window.id, pkg = null, structure = null, application = application)
             } else {
                 try {
                     // The package is read from the root already in
@@ -862,6 +865,7 @@ class SmixHttpServer(
                         } else {
                             structureHash(root, STRUCTURE_WINDOW_BUDGET, STRUCTURE_DEPTH_CAP, fresh = false)
                         },
+                        application = application,
                     )
                 } finally {
                     root.recycle()
