@@ -66,9 +66,9 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "cc"
-version = "1.7.0"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50a649af8a827553c29fb0cb4bd4a6f1a0dd695bd3232b9bc98bd9c8a3ffbb8b"
+checksum = "6651c9ed80effdc7db0ff72512157f901af5e3549e341e24b1dd4887d836d838"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -582,9 +582,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.152"
+version = "1.0.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1741ab7a6cc54a03a89b5d563ed60075c277d9e3cfa73ad0c1f23f23974703c6"
+checksum = "aa62079d232416ecf7b2f938d389e28bbcd3677bcdb67b42e2f29c2433552176"
 dependencies = [
  "itoa",
  "memchr",
@@ -635,7 +635,7 @@ checksum = "5b3dc8af474f516a851ff4bd12db780f948b9250ad37211e4eec0bccea54e01b"
 
 [[package]]
 name = "smix-adb"
-version = "14.1.0"
+version = "14.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -646,7 +646,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "14.1.0"
+version = "14.1.1"
 dependencies = [
  "async-trait",
  "serde_json",
@@ -675,7 +675,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "14.1.0"
+version = "14.1.1"
 dependencies = [
  "serde",
  "smix-screen",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "14.1.0"
+version = "14.1.1"
 dependencies = [
  "smix-input",
  "smix-screen",
@@ -695,14 +695,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "14.1.0"
+version = "14.1.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-runner-client"
-version = "14.1.0"
+version = "14.1.1"
 dependencies = [
  "reqwest",
  "serde",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "14.1.0"
+version = "14.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -732,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "14.1.0"
+version = "14.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -740,7 +740,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "14.1.0"
+version = "14.1.1"
 dependencies = [
  "regex",
  "serde",
@@ -749,7 +749,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "14.1.0"
+version = "14.1.1"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -757,7 +757,7 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "14.1.0"
+version = "14.1.1"
 dependencies = [
  "tokio",
 ]

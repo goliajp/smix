@@ -2,6 +2,27 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [14.1.1] — 2026-10-12
+
+### Fixed
+
+- **A tap under a Compose layer that does nothing with a touch is judged to
+  land on what is below it.** A consumer's player draws its detection boxes
+  in a full-size layer composed after the "GO LIVE" pill; the tap went back
+  to live and was reported `TAP_MISSED`, "inside id=box-detection". The
+  judgement took the later of two overlapping siblings as the one a touch
+  goes to; Compose gives it to the topmost node that acts on it, and the
+  boxes act on nothing. A layer that does take touches — a clickable scrim —
+  still stands over what is below it. A Compose node that handles gestures
+  without any semantics action is not recognised as taking the touch.
+- **The probe no longer answers a busy main thread with an old reading.**
+  14.1.0 answered a read its main thread did not take within 250 ms with
+  the last reading made there, however old; on a screen that never stops
+  changing that could be a screen from seconds before. It now gives that
+  reading only when the screen has not changed since it was taken, and the
+  tree a tap is judged from is always read afresh, waiting up to three
+  seconds for the main thread. Apps should build with this release's probe.
+
 ## [14.1.0] — 2026-10-11
 
 Apps built with the 14.0 probe should move to this one: the probe change
