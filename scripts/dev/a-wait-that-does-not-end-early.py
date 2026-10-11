@@ -131,18 +131,31 @@ def main():
 
     before = visible_rows(a.port)
     subprocess.Popen(["adb", "-s", d, "shell", "input", "swipe",
-                      str(x), str(y_from), str(x), str(y_to), "900"])
-
-    # Read both verdicts while it is moving.
-    time.sleep(0.25)
-    polling_says_ready = bool(visible_rows(a.port))
-    quiet = probe(a.port).get("quietMs", -1)
-    quiescence_says_ready = quiet >= QUIET_ENOUGH_MS
-
-    time.sleep(3)
+                      str(x), str(y_from), str(x), str(y_to), "2000"])
+    # Read both verdicts while it is moving — and prove it was moving at
+    # that moment. A fixed sleep after starting `adb shell input swipe`
+    # does not: the shell takes its own time to start, seconds on a loaded
+    # machine, and a reading taken before the list moved says nothing about
+    # a wait during motion. Until 14.1 that reading was always -1 (the
+    # probe's sampler had not started), so this gate passed without having
+    # measured anything. A reading counts only when the rows changed both
+    # in the interval before it and in the interval after it: changing
+    # after it alone is a reading taken just before the list started.
+    moving = []
+    polling_says_ready = False
+    deadline = time.time() + 6
+    earlier, rows = before, before
+    while time.time() < deadline:
+        q = probe(a.port).get("quietMs", -1)
+        now = visible_rows(a.port)
+        if now:
+            polling_says_ready = True
+        if rows != earlier and now != rows:
+            moving.append(q)
+        earlier, rows = rows, now
     after = visible_rows(a.port)
     settled_quiet = probe(a.port).get("quietMs", -1)
-
+    quiet = max(moving) if moving else None
     # The stimulus, checked before the verdicts are believed.
     if before == after:
         problems.append(
@@ -150,17 +163,23 @@ def main():
             f"missed, and neither verdict below was taken during motion"
         )
         return report()
-
+    if not moving:
+        problems.append(
+            "no reading was taken while the rows were changing — the list moved, "
+            "but between the readings rather than across one, so nothing here "
+            "was measured during motion"
+        )
+        return report()
     if not polling_says_ready:
         problems.append(
             "the polling strategy did NOT say ready during the scroll — the "
             "rows were absent from the tree, so this is not the situation "
             "this gate is about"
         )
-    if quiescence_says_ready:
+    if quiet >= QUIET_ENOUGH_MS:
         problems.append(
-            f"quiescence said ready mid-scroll (quietMs={quiet}) — it is "
-            f"supposed to be the one that waits"
+            f"quiescence said ready mid-scroll (quietMs={quiet}, readings taken "
+            f"while the rows changed: {moving}) — it is supposed to be the one that waits"
         )
     if settled_quiet < QUIET_ENOUGH_MS:
         problems.append(
@@ -168,7 +187,6 @@ def main():
             f"(quietMs={settled_quiet}) — a wait that never ends is worse "
             f"than one that ends early"
         )
-
     if problems:
         return report()
     print(f"a-wait-that-does-not-end-early: mid-scroll the tag was resolvable "
