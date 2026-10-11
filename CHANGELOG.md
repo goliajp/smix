@@ -2,6 +2,45 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [14.1.0] — 2026-10-11
+
+Apps built with the 14.0 probe should move to this one: the probe change
+below takes effect only once an app carries it.
+
+### Fixed
+
+- **The probe reads an Android app's screen on the app's main thread.** It
+  walked Compose's tree from the binder thread the question arrived on, and
+  could meet a layout pass half done. A consumer's walkthrough `tapOn`
+  advanced the walkthrough and was reported `TAP_MISSED`, two runs in
+  sixteen: the tree read to judge where the touch would land held the
+  screen's outer containers and a video player and none of the content the
+  button was in. On a screen that rebuilds part of itself every frame,
+  about half of such reads came back incomplete, and one run of them
+  crashed the app inside `LayoutNode.remeasure`. Every read now runs on the
+  main thread, after any pending layout. When the main thread is busy, the
+  probe answers within 250 ms with the last screen it read there; a busy
+  main thread is not drawing, so that is still the screen on display.
+- **`back` on a loaded Android emulator no longer fails on a screen it could
+  not see.** A screen opened just before `back` was listed for about three
+  seconds with nothing readable in it, and `back` pressed the key against a
+  picture of the status bar alone, then answered `couldNotSee`. It now waits
+  until every app window on screen can be read, for up to six seconds,
+  before the key goes in.
+- **iOS `runner down` no longer stops a runner on a simulator another
+  process is driving.** It found the runner by port and stopped it, ending
+  the `smix run`, MCP session or SDK program driving that simulator. It now
+  refuses and prints the driver's command line, as the Android path has
+  done since 10.0; `--take-over` stops it deliberately. `smix down` names
+  such a runner and leaves it; `runner cycle` still restarts it, for whoever
+  is driving it.
+- **`runner up` says why the app stopped at launch.** When the app crashes
+  before the runner can drive it, the error now starts with what the
+  newest crash report for that app says: the exception and the function it
+  was thrown in, with the report's path. An app that iOS 27 stops for still
+  making its window in the app delegate is named as such, with what iOS 27
+  wants instead.
+
 ## [14.0.0] — 2026-10-10
 
 A major release because a public Rust enum gained variants (below); flows,
