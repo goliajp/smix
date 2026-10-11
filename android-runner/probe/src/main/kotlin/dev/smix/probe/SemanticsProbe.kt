@@ -112,11 +112,57 @@ object SemanticsProbe {
             // and a sampler that dies takes the signal with it silently.
             return
         }
-        synchronized(this) {
-            if (fp != lastFingerprint || lastChangedAtMs == 0L) {
+        val changed = synchronized(this) {
+            val changed = fp != lastFingerprint || lastChangedAtMs == 0L
+            if (changed) {
                 lastFingerprint = fp
                 lastChangedAtMs = System.currentTimeMillis()
             }
+            changed
+        }
+        // Kept current for the read a busy main thread cannot take, and
+        // only from a screen whose layout has caught up; see [read].
+        if ((changed || lastRead == null) && !hasPendingLayout()) {
+            try {
+                readHere()
+            } catch (_: Exception) {
+                // the same root torn down mid-walk, met one step later
+            }
+        }
+    }
+
+    /** One whole reading of the screen: the tree and the display it is on. */
+    class Reading(val json: String, val screenW: Int, val screenH: Int)
+
+    @Volatile
+    private var lastRead: Reading? = null
+
+    /** The screen read now, on the main thread; see [MainThread]. */
+    private fun readHere(): Reading {
+        val (w, h) = screenSize()
+        return Reading(dumpWireJson(), w, h).also { lastRead = it }
+    }
+
+    /**
+     * The screen as the main thread has it, or — when the main thread does
+     * not take the read within [waitMs] — the last reading it made.
+     *
+     * A main thread that is busy is not laying anything out, so what it
+     * last read is still what is on screen: an app that holds its main
+     * thread for four seconds after a tap shows the screen it showed when
+     * it started, and a look in those four seconds answers without
+     * waiting for it, as it did when the read ran here on the binder
+     * thread. The sampler keeps that reading current while nothing asks.
+     */
+    internal fun read(waitMs: Long): MainThread.Ran<Reading> {
+        startSamplerOnce()
+        // A recomposition can replace nodes in one message and the layout
+        // that places them runs in a later one; read between the two and
+        // the replaced part is missing, because a node not yet placed is
+        // left out. Measured on the fixture's tour screen: 1 read in 80.
+        return when (val ran = MainThread.run(waitMs, { !hasPendingLayout() }, ::readHere)) {
+            MainThread.Ran.Busy -> lastRead?.let { MainThread.Ran.Done(it) } ?: ran
+            else -> ran
         }
     }
 
@@ -240,7 +286,7 @@ object SemanticsProbe {
      * be refusing something real, and is not on the offered surface.
      */
     fun act(tag: String, action: String): String = when (action) {
-        in STAGING_ACTIONS -> perform(tag, action)
+        in STAGING_ACTIONS -> performOnMain(tag, action)
         "OnClick", "PerformImeAction", "SetText" ->
             "the probe refuses `$action`: it calls the composable's lambda " +
                 "without hit-testing, so it fires on a node nothing could " +
@@ -250,7 +296,17 @@ object SemanticsProbe {
     }
 
     /** The refused half, reachable only so a gate can show what it refuses. */
-    fun unsafeAct(tag: String, action: String): String = perform(tag, action)
+    fun unsafeAct(tag: String, action: String): String = performOnMain(tag, action)
+
+    /** An action runs what the composable would run, so it runs where that does. */
+    private fun performOnMain(tag: String, action: String): String =
+        when (val ran = MainThread.run(ACT_WAIT_MS) { perform(tag, action) }) {
+            is MainThread.Ran.Done -> ran.value
+            is MainThread.Ran.Threw -> "the action threw on the app's main thread: ${ran.error}"
+            MainThread.Ran.Busy -> "the app's main thread did not take the action within $ACT_WAIT_MS ms"
+        }
+
+    private const val ACT_WAIT_MS = 3000L
 
     /** Actions that bring a node within reach of a real touch. */
     val STAGING_ACTIONS = setOf("ScrollToIndex", "ScrollBy")
