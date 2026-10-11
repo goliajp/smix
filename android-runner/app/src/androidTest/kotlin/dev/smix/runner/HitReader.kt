@@ -40,9 +40,10 @@ class HitReader(private val instrumentation: Instrumentation) {
 
     /// The probe's answer for `app`, or null when it carries no probe. An
     /// answer can be a refusal with its reason under `error`, which is the
-    /// reason the host is told.
+    /// reason the host is told. Asked for the screen as it is now: a kept
+    /// reading, which a look may be given, is no tree to judge a touch by.
     private fun probeTree(app: String): Bundle? = try {
-        ProbeCall.call(instrumentation.context, app, "tree")
+        ProbeCall.call(instrumentation.context, app, "tree", Bundle().apply { putBoolean("fresh", true) })
     } catch (_: Exception) {
         // No provider under that authority, a refusal, a failure: the
         // reading says the probe did not answer, and the host is told so

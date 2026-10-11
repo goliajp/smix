@@ -59,7 +59,13 @@ class SmixProbeProvider : ContentProvider() {
                 // Deliberately not one "status" call returning everything:
                 // a caller asking whether the probe is live must not have to
                 // pay for a tree dump to find out.
-                METHOD_TREE -> when (val read = SemanticsProbe.read(TREE_WAIT_MS)) {
+                METHOD_TREE -> when (
+                    val read = if (extras?.getBoolean(KEY_FRESH) == true) {
+                        SemanticsProbe.read(FRESH_WAIT_MS, orKept = false)
+                    } else {
+                        SemanticsProbe.read(TREE_WAIT_MS, orKept = true)
+                    }
+                ) {
                     is MainThread.Ran.Done -> {
                         putString(KEY_TREE, read.value.json)
                         putInt("screenW", read.value.screenW)
@@ -69,8 +75,8 @@ class SmixProbeProvider : ContentProvider() {
                         putString(KEY_ERROR, "the probe could not read the tree: ${read.error}")
                     MainThread.Ran.Busy -> putString(
                         KEY_ERROR,
-                        "the app's main thread has not taken a read in ${TREE_WAIT_MS} ms " +
-                            "and none was made before it got busy",
+                        "the app's main thread did not take the probe's read in time, and " +
+                            "the screen has changed since the last one it took",
                     )
                 }
                 METHOD_IDLE -> {
@@ -168,5 +174,14 @@ class SmixProbeProvider : ContentProvider() {
          * app holding its main thread does not wait on it.
          */
         const val TREE_WAIT_MS = 250L
+
+        /**
+         * With [METHOD_TREE]: this read has to be of the screen now, never
+         * a kept one — the tree a tap is about to be judged from. Waits up
+         * to [FRESH_WAIT_MS], as long as the touch itself would wait for
+         * the main thread to take it.
+         */
+        const val KEY_FRESH = "fresh"
+        const val FRESH_WAIT_MS = 3000L
     }
 }
