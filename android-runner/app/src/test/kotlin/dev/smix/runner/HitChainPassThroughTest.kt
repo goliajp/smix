@@ -48,9 +48,11 @@ class HitChainPassThroughTest {
     }
 
     @Test
-    fun where_nothing_takes_a_touch_the_topmost_is_still_the_answer() {
+    fun where_nothing_takes_a_touch_every_layer_under_the_point_is_listed() {
         val boxes = """{"id":4,"testTag":"box-detection","bounds":[0,258,1080,1068],"visibleBounds":[0,258,1080,1068],"actions":[],"children":[]}"""
         // A point beside the pill: only the boxes and the stage hold it.
-        assertEquals("box-detection", firstId(player(boxes), 700, 500))
+        val ids = HitChain.at(HitChain.withProbe(emptyList(), "app", player(boxes), display), 700, 500).map { it.id }
+        assertEquals(true, "box-detection" in ids)
+        assertEquals(false, "btn_player_mode_go_live" in ids)
     }
 }

@@ -121,4 +121,22 @@ class HitChainTouchTest {
         assertEquals("top-scrim", ids(f).first())
         assertTrue(ids(f).toString(), "Kitchen" !in ids(f))
     }
+
+    // A consumer's zone editor: polygons drawn on a canvas, a gesture layer
+    // with no semantics that decides by the polygon, and over it one box per
+    // zone on the polygon's bounding rectangle carrying only semantics
+    // { onClick }. Two zones' rectangles overlap; the tap is in zone-0's
+    // polygon.
+    private val zones = """[{"id":1017,"testTag":"canvas-zones","bounds":[0,268,1080,876],"visibleBounds":[0,268,1080,876],"actions":[],"touch":"through","children":[
+      {"id":1045,"bounds":[0,268,1080,876],"visibleBounds":[0,268,1080,876],"actions":[],"touch":"through","children":[]},
+      {"id":1044,"testTag":"zone-0","bounds":[378,481,702,663],"visibleBounds":[378,481,702,663],"actions":["OnClick"],"touch":"through","children":[]},
+      {"id":1046,"testTag":"zone-1","bounds":[450,520,800,700],"visibleBounds":[450,520,800,700],"actions":["OnClick"],"touch":"through","children":[]}
+    ]}]"""
+
+    @Test
+    fun overlapping_zone_boxes_that_only_offer_semantics_are_both_under_the_point() {
+        val f = find(zones, 540, 572)
+        assertTrue(ids(f).toString(), "zone-0" in ids(f))
+        assertTrue(ids(f).toString(), "zone-1" in ids(f))
+    }
 }

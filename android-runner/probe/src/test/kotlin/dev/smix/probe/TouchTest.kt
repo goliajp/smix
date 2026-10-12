@@ -8,15 +8,11 @@ import org.junit.Test
 
 class TouchTest {
     @Test
-    fun a_compose_node_with_a_gesture_and_no_semantics_action_takes_the_touch() {
+    fun a_compose_node_with_pointer_input_takes_the_touch_and_one_without_lets_it_through() {
         // a vertex handle that drags with pointerInput
-        assertEquals(Touch.TAKES, Touch.ofCompose(emptyList(), pointerInput = true))
-    }
-
-    @Test
-    fun a_compose_node_with_a_click_action_takes_it_and_one_with_neither_lets_it_through() {
-        assertEquals(Touch.TAKES, Touch.ofCompose(listOf("OnClick"), pointerInput = false))
-        assertEquals(Touch.THROUGH, Touch.ofCompose(listOf("GetTextLayoutResult"), pointerInput = false))
+        assertEquals(Touch.TAKES, Touch.ofCompose(pointerInput = true))
+        // a zone's bounding box carrying only semantics { onClick }
+        assertEquals(Touch.THROUGH, Touch.ofCompose(pointerInput = false))
     }
 
     @Test

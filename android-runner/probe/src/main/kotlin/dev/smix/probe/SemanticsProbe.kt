@@ -432,6 +432,6 @@ internal fun SemanticsNode.toProbeNode(): ProbeNode? {
         visible = shown.right > shown.left && shown.bottom > shown.top,
         actions = actions,
         children = children.mapNotNull { it.toProbeNode() },
-        touch = Touch.ofCompose(actions, Touch.hasPointerInput(layoutInfo)),
+        touch = Touch.ofCompose(Touch.hasPointerInput(layoutInfo)),
     )
 }
