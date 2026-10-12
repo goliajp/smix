@@ -524,6 +524,11 @@ pub struct HttpRunnerClient {
     /// (values `healthy` | `degraded` | `cycling` | `dead`). Unknown /
     /// missing header leaves the state unchanged.
     session_state: Arc<std::sync::Mutex<Option<Arc<std::sync::atomic::AtomicU8>>>>,
+    /// The app whose probe has answered present on this client, so a look
+    /// can ask for its tree and the rest of the screen at once instead of
+    /// first asking whether it is there. Forgotten the moment its tree
+    /// cannot be had.
+    probe_seen: Arc<std::sync::Mutex<Option<String>>>,
     /// Port of the in-app `SmixWebViewBridge` that `webview_eval`
     /// reaches on iOS. Read once from `SMIX_WEBVIEW_BRIDGE_PORT` at
     /// construction; see [`with_webview_bridge_port`] to set it
@@ -793,6 +798,7 @@ impl HttpRunnerClient {
             liveness: Arc::new(std::sync::Mutex::new(None)),
             sim_health: None,
             session_state: Arc::new(std::sync::Mutex::new(None)),
+            probe_seen: Arc::new(std::sync::Mutex::new(None)),
             webview_bridge_port: webview_bridge_port_from(
                 std::env::var("SMIX_WEBVIEW_BRIDGE_PORT").ok().as_deref(),
             ),

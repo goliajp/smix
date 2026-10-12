@@ -14,8 +14,21 @@ All notable changes to the `smix` workspace are documented here. The format foll
   (`sampleLateMs`) and whether a Compose root has an animation or
   recomposition waiting for a frame (`framesPending`).
 
+- **`runner up` in a smix checkout no longer starts another runner when the
+  checkout's Android runner does not build.** It said it was building the
+  runner from the working tree and, when the build failed, started the
+  installed one; it now stops with gradle's error.
+
 ### Changed
 
+- **An Android look asks one question fewer.** Once the app's probe has
+  answered, a look reads its tree and the rest of the screen at once
+  without first asking whether it is there, and the runner reads the
+  other windows after emptying the accessibility cache once rather than
+  refreshing every node (API 34 and later). On the fixture,
+  `neverVisible` over a 1.1 s span looked 110–114 times (49–53 before),
+  longest gap 20–30 ms (37–39); on an emulator stopped 85% of the time,
+  longest gap 195–223 ms (225–409).
 - **`ProbeStatus::idle` now has a value.** `HttpRunnerClient::probe_status`
   reads it from the probe's report through the new
   `smix_runner_client::settled`: settled when the tree has held still for

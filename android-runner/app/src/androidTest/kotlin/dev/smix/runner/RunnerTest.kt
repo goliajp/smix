@@ -12,6 +12,7 @@
 
 package dev.smix.runner
 
+import android.os.Build
 import android.app.UiAutomation
 import android.graphics.Rect
 import android.view.KeyEvent
@@ -572,7 +573,9 @@ class SmixHttpServer(
         val walkStart = System.currentTimeMillis()
         val automation = instrumentation.uiAutomation
         val hollow = session.parameters["hollow"]?.firstOrNull()?.takeIf { it.isNotEmpty() }
-        val root = TreeBuilder.fromWindows(automation, displaySize(), hollow, hollow?.let(::appWindowIds).orEmpty())
+        val ids = hollow?.let(::appWindowIds).orEmpty()
+        val askedMs = System.currentTimeMillis() - walkStart
+        val root = TreeBuilder.fromWindows(automation, displaySize(), hollow, ids)
         val wallMs = System.currentTimeMillis() - walkStart
         val refreshCount = treeServeCounter.incrementAndGet()
         val resp = newFixedLengthResponse(
@@ -582,6 +585,8 @@ class SmixHttpServer(
         )
         resp.addHeader("X-Tree-Snapshot-Refresh-Count", refreshCount.toString())
         resp.addHeader("X-Tree-Snapshot-Wall-Ms", wallMs.toString())
+        // the part of the wall spent asking the app's probe which windows are its own
+        resp.addHeader("X-Tree-App-Windows-Ms", askedMs.toString())
         return resp
     }
 
@@ -2463,6 +2468,12 @@ object TreeBuilder {
     ): JSONObject {
         val rootChildren = JSONArray()
         var unreadable = 0
+        // Emptied once here, every node below is fetched fresh, its
+        // subtree prefetched in the same call; refreshing each one again
+        // was a call per node, and on an emulator whose guest CPUs were
+        // held by busy loops a tree of the system windows took 240-490 ms
+        // that way. Before API 34 there is no cache to empty.
+        val fresh = Build.VERSION.SDK_INT >= 34 && automation.clearCache()
         for (window in automation.windows) {
             if (hollow != null && TreeWire.hollowById(window.type, window.id, appWindowIds)) {
                 rootChildren.put(hollowWindow(window, hollow))
@@ -2479,7 +2490,7 @@ object TreeBuilder {
             }
             try {
                 val pkg = node.packageName?.toString()
-                val obj = nodeToJson(node, walk = !TreeWire.leavesHollow(window.type, pkg, hollow))
+                val obj = nodeToJson(node, walk = !TreeWire.leavesHollow(window.type, pkg, hollow), refresh = !fresh)
                 if (obj == null) {
                     unreadable += 1
                     continue
@@ -2540,7 +2551,7 @@ object TreeBuilder {
     }
 
     /// `null` when the node no longer exists: its subtree is left out.
-    private fun nodeToJson(node: AccessibilityNodeInfo, walk: Boolean = true): JSONObject? {
+    private fun nodeToJson(node: AccessibilityNodeInfo, walk: Boolean = true, refresh: Boolean = true): JSONObject? {
         // Per-node refresh parity with the /tap-by-id walkFind path.
         // Chained NavHost transitions leave cached AccessibilityNodeInfo
         // descendants stale even after parent root.refresh(); a tree
@@ -2552,14 +2563,14 @@ object TreeBuilder {
         // `refresh` answers false when the view behind the node is gone,
         // and leaves the node holding what it last knew — reporting it
         // would put something on the screen that is not.
-        if (!node.refresh()) return null
+        if (refresh && !node.refresh()) return null
         val rect = Rect()
         node.getBoundsInScreen(rect)
         val childArr = JSONArray()
         for (i in 0 until if (walk) node.childCount else 0) {
             val child = node.getChild(i) ?: continue
             try {
-                nodeToJson(child)?.let { childArr.put(it) }
+                nodeToJson(child, refresh = refresh)?.let { childArr.put(it) }
             } finally {
                 child.recycle()
             }
