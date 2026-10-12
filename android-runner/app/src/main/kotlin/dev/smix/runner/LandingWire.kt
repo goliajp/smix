@@ -12,6 +12,9 @@ import org.json.JSONObject
 /// `reader` says which tree the chain was read from. A reader that could
 /// not be read gives no chain at all, `complete: false`, and why in
 /// `readerError` — never the other reader's chain in its place.
+///
+/// `uncertain` says why the chain may not be where the touch went: a View
+/// whose own code decides was taken to keep it.
 internal fun JSONObject.withChain(landing: HitChain.Reading): JSONObject {
     val chain = when (landing) {
         is HitChain.Reading.Read -> landing.chain
@@ -34,5 +37,7 @@ internal fun JSONObject.withChain(landing: HitChain.Reading): JSONObject {
                 ),
         )
     }
-    return put("chain", arr).put("complete", true).put("reader", landing.reader.wire)
+    put("chain", arr).put("complete", true).put("reader", landing.reader.wire)
+    landing.uncertain?.let { put("uncertain", it) }
+    return this
 }

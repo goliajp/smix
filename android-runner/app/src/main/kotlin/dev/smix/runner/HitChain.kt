@@ -22,21 +22,32 @@ object HitChain {
         fun contains(x: Int, y: Int): Boolean = x in left until right && y in top until bottom
     }
 
+    /// Whether a touch at a node stops there. `MAYBE` is a View whose own
+    /// code decides each touch — an `onTouchEvent` it overrides, or a touch
+    /// listener — which nothing outside the app can read.
+    enum class Touch { TAKES, THROUGH, MAYBE }
+
     /// `drawingOrder` is the node's place among its siblings as drawn — and
     /// as a touch is dispatched: the highest is on top. It is not the index:
     /// a group that overrides `getChildDrawingOrder` draws in its own order.
     ///
-    /// `takesTouch` is false only for a node known to let a touch through:
-    /// a Compose node with nothing in its semantics that acts on a touch.
-    /// Everything else — every View, every node the accessibility tree
-    /// reads — is taken to stop it, as before.
+    /// `touch` is `TAKES` for every node read from the accessibility tree,
+    /// and for a probe too old to say: the reading these defaulted to.
+    ///
+    /// `clips` is whether a touch reaches the node's children only inside
+    /// its bounds. A View hands a touch only to children under it; Compose
+    /// hit-tests a child wherever it is placed, and a Material bottom
+    /// sheet's panel sits below the container that holds it — a reader that
+    /// stopped at the container's edge found only the scrim, and called a
+    /// press of the sheet's button a miss.
     data class Node(
         val id: String,
         val label: String,
         val bounds: Box,
         val children: List<Node>,
         val drawingOrder: Int = 0,
-        val takesTouch: Boolean = true,
+        val touch: Touch = Touch.TAKES,
+        val clips: Boolean = true,
     )
 
     /// `pkg` and `application` say whose window it is, so the probe's tree
@@ -51,51 +62,110 @@ object HitChain {
 
     data class Entry(val id: String, val label: String, val bounds: Box)
 
+    /// What a touch at a point finds: the elements under it, innermost
+    /// first, and — when a View whose own code decides was chosen over
+    /// something under it that would take the touch — why the answer is
+    /// not certain.
+    data class Found(val entries: List<Entry>, val uncertain: String? = null)
+
     /// The elements under `(px, py)` in the window a touch there is
     /// delivered to, innermost first. Empty when no window holds the point.
-    ///
+    fun at(windows: List<Window>, px: Int, py: Int): List<Entry> = find(windows, px, py).entries
+
     /// The window is the topmost one containing the point — by layer, not
     /// by its place in the list, which is not the order on screen.
-    fun at(windows: List<Window>, px: Int, py: Int): List<Entry> {
+    fun find(windows: List<Window>, px: Int, py: Int): Found {
         val top = windows
             .filter { it.bounds.contains(px, py) }
             .maxByOrNull { it.layer }
-            ?: return emptyList()
-        val outermostFirst = mutableListOf<Entry>()
-        collect(top.root, px, py, outermostFirst)
-        return outermostFirst.asReversed()
+            ?: return Found(emptyList())
+        val walk = Walk(px, py)
+        walk.collect(top.root)
+        return Found(walk.path.asReversed() + walk.passed, walk.uncertain)
     }
 
-    private fun collect(n: Node, px: Int, py: Int, into: MutableList<Entry>) {
-        if (!n.bounds.contains(px, py)) return
-        into.add(Entry(n.id, n.label, n.bounds))
-        // One path down, into the child drawn on top of those holding the
-        // point — the one a touch there is dispatched to. Equal orders keep
-        // index order, the later on top: a group that sets no order of its
-        // own, and the probe's nodes, which it lists as drawn.
-        //
-        // On top among those that would take it. Compose hands a touch to
-        // the topmost node that acts on it, and one that does not lets it
-        // through: a consumer's player draws its detection boxes in a
-        // full-size layer over the "GO LIVE" pill, the tap went back to
-        // live, and a chain through the boxes reported it a miss. When
-        // none of them takes touches the topmost is still the answer.
-        val under = n.children.withIndex().filter { it.value.bounds.contains(px, py) }
-        val taking = under.filter { reaches(it.value, px, py) }
-        (taking.ifEmpty { under })
-            .maxWithOrNull(compareBy({ it.value.drawingOrder }, { it.index }))
-            ?.let { collect(it.value, px, py, into) }
+    /// One path down, into the child a touch there is dispatched to, and
+    /// every layer drawn over that child which the touch went through.
+    ///
+    /// The child is the topmost among those holding the point that would
+    /// take the touch — Compose hands it to the topmost node that acts on
+    /// it, a View group to the topmost child that keeps it. A consumer's
+    /// player draws its detection boxes in a full-size layer over the
+    /// "GO LIVE" pill; the tap went back to live, and a chain through the
+    /// boxes reported it a miss. When nothing takes it, the topmost.
+    ///
+    /// The layers passed through are listed because they are under the
+    /// point and the touch crossed them: a label inside a card is aimed at,
+    /// lets the touch through, and the card under it opens.
+    private class Walk(val px: Int, val py: Int) {
+        val path = mutableListOf<Entry>()
+        val passed = mutableListOf<Entry>()
+        var uncertain: String? = null
+
+        fun holds(n: Node): Boolean = n.bounds.contains(px, py) || (!n.clips && n.children.any(::holds))
+
+        fun reach(n: Node): Touch {
+            if (!holds(n)) return Touch.THROUGH
+            val own = if (n.bounds.contains(px, py)) n.touch else Touch.THROUGH
+            return (n.children.map(::reach) + own).maxBy(::rank)
+        }
+
+        fun collect(n: Node) {
+            if (n.bounds.contains(px, py)) path.add(n.entry())
+            val bottomFirst = n.children.withIndex()
+                .filter { holds(it.value) }
+                .sortedWith(compareBy({ it.value.drawingOrder }, { it.index }))
+                .map { it.value }
+            val over = mutableListOf<Node>()
+            var pick: Node? = null
+            for (i in bottomFirst.indices.reversed()) {
+                val c = bottomFirst[i]
+                when (reach(c)) {
+                    Touch.THROUGH -> {
+                        over.add(c)
+                        continue
+                    }
+                    Touch.TAKES -> pick = c
+                    Touch.MAYBE -> {
+                        pick = c
+                        val under = bottomFirst.subList(0, i).lastOrNull { reach(it) != Touch.THROUGH }
+                        if (under != null && uncertain == null) {
+                            uncertain = "the touch reaches ${c.describe()} first, a View whose own code " +
+                                "decides whether it keeps a touch; if it does not, ${under.describe()} " +
+                                "under it takes it"
+                        }
+                    }
+                }
+                break
+            }
+            if (pick == null) {
+                pick = bottomFirst.lastOrNull()
+            } else {
+                over.forEach(::addUnderPoint)
+            }
+            pick?.let(::collect)
+        }
+
+        private fun addUnderPoint(n: Node) {
+            if (n.bounds.contains(px, py)) passed.add(n.entry())
+            n.children.filter(::holds).forEach(::addUnderPoint)
+        }
+
+        private fun rank(t: Touch): Int = when (t) {
+            Touch.THROUGH -> 0
+            Touch.MAYBE -> 1
+            Touch.TAKES -> 2
+        }
+
+        private fun Node.entry() = Entry(id, label, bounds)
+
+        private fun Node.describe(): String = when {
+            id.isNotEmpty() -> "id=$id"
+            label.isNotEmpty() -> "\"$label\""
+            else -> "an unnamed element at (${bounds.left},${bounds.top} " +
+                "${bounds.right - bounds.left}x${bounds.bottom - bounds.top})"
+        }
     }
-
-    /// Whether a touch at the point stops in `n` or below it.
-    private fun reaches(n: Node, px: Int, py: Int): Boolean =
-        n.takesTouch || n.children.any { it.bounds.contains(px, py) && reaches(it, px, py) }
-
-    /// Semantics actions that mean a node acts on a touch at it.
-    private val TOUCH_ACTIONS = setOf(
-        "OnClick", "OnLongClick", "ScrollBy", "ScrollByOffset", "ScrollToIndex",
-        "SetProgress", "SetText", "Dismiss", "Expand", "Collapse",
-    )
 
     /// A reader of the screen, named as the wire names it.
     enum class Reader(val wire: String) {
@@ -116,7 +186,7 @@ object HitChain {
     /// host aimed from the one it named, and a chain from another is a
     /// verdict on some other aim.
     sealed class Reading {
-        data class Read(val reader: Reader, val chain: List<Entry>) : Reading()
+        data class Read(val reader: Reader, val chain: List<Entry>, val uncertain: String? = null) : Reading()
         data class Unreadable(val reader: Reader, val why: String) : Reading()
     }
 
@@ -132,13 +202,15 @@ object HitChain {
         probeRoots: List<Node>?,
         display: Box,
     ): Reading = when (reader) {
-        Reader.ACCESSIBILITY -> Reading.Read(reader, at(windows, px, py))
+        Reader.ACCESSIBILITY -> found(reader, find(windows, px, py))
         Reader.SEMANTICS -> when {
             app == null -> Reading.Unreadable(reader, "no application window to ask a probe about")
             probeRoots == null -> Reading.Unreadable(reader, "$app's probe did not answer")
-            else -> Reading.Read(reader, at(withProbe(windows, app, probeRoots, display), px, py))
+            else -> found(reader, find(withProbe(windows, app, probeRoots, display), px, py))
         }
     }
+
+    private fun found(reader: Reader, f: Found) = Reading.Read(reader, f.entries, f.uncertain)
 
     /// The windows with the app's own read from its semantics probe.
     ///
@@ -172,16 +244,35 @@ object HitChain {
     private fun node(o: org.json.JSONObject): Node {
         val b = (o.optJSONArray("visibleBounds") ?: o.getJSONArray("bounds"))
         val kids = o.optJSONArray("children") ?: org.json.JSONArray()
-        val actions = o.optJSONArray("actions")
-        // A hosted View carries its class and no actions; whether it takes
-        // a touch is not something the probe says, so it is taken to.
-        val acts = actions != null && (0 until actions.length()).any { actions.optString(it) in TOUCH_ACTIONS }
+        val view = o.has("className")
         return Node(
             id = o.optString("testTag").ifEmpty { o.optString("resourceId") },
             label = o.optString("contentDescription"),
             bounds = Box(b.getInt(0), b.getInt(1), b.getInt(2), b.getInt(3)),
             children = nodesFromProbe(kids),
-            takesTouch = actions == null || o.has("className") || acts,
+            touch = touchOf(o, view),
+            clips = view,
         )
     }
+
+    /// The probe's own reading when it gives one; a probe older than it
+    /// is read as before — a hosted View takes a touch, and a Compose node
+    /// does when its semantics act on one.
+    private fun touchOf(o: org.json.JSONObject, view: Boolean): Touch = when (o.optString("touch")) {
+        "takes" -> Touch.TAKES
+        "through" -> Touch.THROUGH
+        "maybe" -> Touch.MAYBE
+        else -> {
+            val actions = o.optJSONArray("actions")
+            val acts = actions != null && (0 until actions.length()).any { actions.optString(it) in TOUCH_ACTIONS }
+            if (actions == null || view || acts) Touch.TAKES else Touch.THROUGH
+        }
+    }
+
+    /// Semantics actions that mean a node acts on a touch at it, for a
+    /// probe that does not say.
+    private val TOUCH_ACTIONS = setOf(
+        "OnClick", "OnLongClick", "ScrollBy", "ScrollByOffset", "ScrollToIndex",
+        "SetProgress", "SetText", "Dismiss", "Expand", "Collapse",
+    )
 }

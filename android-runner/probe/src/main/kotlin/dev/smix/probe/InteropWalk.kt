@@ -68,6 +68,7 @@ fun interopNode(
     focused: Boolean,
     enabled: Boolean,
     children: List<ProbeNode>,
+    touch: String? = null,
 ): ProbeNode? {
     if (!placed) return null
     val shown = intersect(layout, clip)
@@ -89,6 +90,7 @@ fun interopNode(
         visible = shown.right > shown.left && shown.bottom > shown.top,
         actions = emptyList(),
         children = children,
+        touch = touch,
     )
 }
 
@@ -264,6 +266,7 @@ private fun viewSubtree(v: View): ProbeNode? {
         focused = v.isFocused,
         enabled = v.isEnabled,
         children = children,
+        touch = Touch.ofView(v),
     )
 }
 

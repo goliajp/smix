@@ -1,0 +1,123 @@
+package dev.smix.probe
+
+import android.view.MotionEvent
+import android.view.View
+import android.widget.AbsListView
+import android.widget.HorizontalScrollView
+import android.widget.ScrollView
+import android.widget.TextView
+import androidx.compose.ui.input.pointer.PointerInputModifier
+import androidx.compose.ui.layout.LayoutInfo
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.PointerInputModifierNode
+
+/**
+ * Whether a touch at a node stops there, as the toolkit that draws it
+ * decides — the question a reader of "what is under this point" has to
+ * ask of every layer it passes.
+ *
+ * Three answers, because one of them is honest only as a third: a View
+ * that overrides `onTouchEvent`, or carries a touch listener, decides
+ * each touch in code nothing outside it can read.
+ *
+ * - `takes` — the touch stops here (or below it): a Compose node with a
+ *   semantics action that acts on a touch or a pointer-input modifier, a
+ *   clickable View
+ * - `through` — the touch goes on to whatever is drawn under it: a Compose
+ *   node with neither, a View that is not clickable and leaves touches to
+ *   the default handling
+ * - `maybe` — a View whose own code decides
+ *
+ * A consumer's app showed all three being needed: a vertex handle dragged
+ * with `pointerInput` and no semantics action was read as letting touches
+ * through, and its zone underneath was reported as the target; a
+ * full-size non-clickable View over a player's controls was read as
+ * taking them.
+ */
+object Touch {
+    const val TAKES = "takes"
+    const val THROUGH = "through"
+    const val MAYBE = "maybe"
+
+    /// Semantics actions that mean a node acts on a touch at it.
+    private val TOUCH_ACTIONS = setOf(
+        "OnClick", "OnLongClick", "ScrollBy", "ScrollByOffset", "ScrollToIndex",
+        "SetProgress", "SetText", "Dismiss", "Expand", "Collapse",
+    )
+
+    fun ofCompose(actions: List<String>, pointerInput: Boolean): String =
+        if (pointerInput || actions.any { it in TOUCH_ACTIONS }) TAKES else THROUGH
+
+    /// `ownCode` is null when whether the View carries a touch listener
+    /// could not be read.
+    fun ofView(clickable: Boolean, scrolls: Boolean, ownCode: Boolean?): String = when {
+        clickable || scrolls -> TAKES
+        ownCode == false -> THROUGH
+        else -> MAYBE
+    }
+
+    /// Whether the layout node behind a semantics node has a modifier that
+    /// receives pointer input. Only its own modifiers: a gesture on a
+    /// descendant layout node with no semantics of its own is not visible
+    /// through any public API, and reads as none.
+    fun hasPointerInput(layout: LayoutInfo): Boolean = try {
+        layout.getModifierInfo().any { info ->
+            val m = info.modifier
+            m is PointerInputModifier || (m is ModifierNodeElement<*> && m.create() is PointerInputModifierNode)
+        }
+    } catch (_: LinkageError) {
+        // An app on a Compose older than these types: read as a gesture,
+        // so a layer is never let through on a guess.
+        true
+    }
+
+    fun ofView(v: View): String = ofView(
+        clickable = v.isClickable || v.isLongClickable || v.isContextClickable,
+        scrolls = v is ScrollView || v is HorizontalScrollView || v is AbsListView || scrollsByName(v),
+        ownCode = ownCode(v),
+    )
+
+    /// A RecyclerView, NestedScrollView or ViewPager takes the touch that
+    /// might start a scroll; they are AndroidX, which this module does not
+    /// depend on, so they are known by name.
+    private fun scrollsByName(v: View): Boolean {
+        var c: Class<*>? = v.javaClass
+        while (c != null && c != View::class.java) {
+            if (c.name in SCROLLING) return true
+            c = c.superclass
+        }
+        return false
+    }
+
+    private val SCROLLING = setOf(
+        "androidx.recyclerview.widget.RecyclerView",
+        "androidx.core.widget.NestedScrollView",
+        "androidx.viewpager.widget.ViewPager",
+        "androidx.viewpager2.widget.ViewPager2",
+    )
+
+    /// Whether code of the View's own decides its touches: an `onTouchEvent`
+    /// it overrides, or a touch listener. A `TextView` overrides it and
+    /// keeps a touch only for links, selection or editing.
+    private fun ownCode(v: View): Boolean? {
+        val listener = touchListener(v) ?: return null
+        if (listener) return true
+        if (v is TextView) return v.movementMethod != null || v.isTextSelectable || v.onCheckIsTextEditor()
+        val declared = v.javaClass.getMethod("onTouchEvent", MotionEvent::class.java).declaringClass
+        return declared != View::class.java
+    }
+
+    /// Null when the listener field cannot be read on this platform.
+    private fun touchListener(v: View): Boolean? = try {
+        val info = View::class.java.getDeclaredField("mListenerInfo").apply { isAccessible = true }.get(v)
+        if (info == null) {
+            false
+        } else {
+            info.javaClass.getDeclaredField("mOnTouchListener").apply { isAccessible = true }.get(info) != null
+        }
+    } catch (_: ReflectiveOperationException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    }
+}

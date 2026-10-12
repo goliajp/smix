@@ -66,6 +66,9 @@ data class ProbeNode(
     /// `FLAG_NOT_TOUCH_MODAL`, as a dialog is. What stands below it cannot
     /// be reached. Null on every other node.
     val modal: Boolean? = null,
+    /// Whether a touch at the node stops there: `takes`, `through` or
+    /// `maybe` (see [Touch]). Null where nobody read it.
+    val touch: String? = null,
 )
 
 data class Bounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
@@ -104,6 +107,7 @@ private fun ProbeNode.toJson(): String = buildString {
         .append(actions.joinToString(prefix = "[", separator = ",", postfix = "]") { it.quoted() })
     append(",\"children\":").append(children.toWireJson())
     if (modal != null) append(",\"modal\":").append(modal)
+    appendField("touch", touch)
     append('}')
 }
 

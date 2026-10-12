@@ -137,3 +137,26 @@ fn a_runner_with_one_reader_answers_for_the_accessibility_tree() {
     .expect("the one reader aimed and judged");
     assert_eq!(outcome.verdict, ActVerdict::Confirmed);
 }
+
+// A runner that had to guess which layer kept the touch says so, and a
+// miss read through that guess is not a verdict: a View whose own code
+// decides took the point over the target under it.
+#[test]
+fn a_miss_the_runner_could_not_be_sure_of_is_unconfirmed_not_failed() {
+    let mut l = landed(containers_only(), Some(TreeReader::Semantics));
+    l.uncertain = Some("the touch reaches id=overlay a View whose own code decides".into());
+    let outcome = landing_outcome(&field(), aimed_from(TreeReader::Semantics), &l)
+        .expect("an uncertain miss does not fail the step");
+    match outcome.verdict {
+        ActVerdict::Unconfirmable(why) => assert!(why.contains("id=overlay"), "{why}"),
+        other => panic!("expected unconfirmable, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_hit_is_a_hit_whatever_the_runner_was_unsure_of() {
+    let mut l = landed(with_field(), Some(TreeReader::Semantics));
+    l.uncertain = Some("somewhere else on the path".into());
+    let outcome = landing_outcome(&field(), aimed_from(TreeReader::Semantics), &l).expect("hit");
+    assert_eq!(outcome.verdict, ActVerdict::Confirmed);
+}

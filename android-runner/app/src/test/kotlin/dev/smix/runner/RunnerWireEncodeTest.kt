@@ -446,4 +446,12 @@ class KeyboardRoleTest {
         assertEquals(2, JSONObject(RunnerWire.doubleTapBody(true, 1, 2, chain)).getJSONArray("chain").length())
         assertEquals(2, JSONObject(RunnerWire.longPressBody(true, 1, 2, 800L, chain)).getJSONArray("chain").length())
     }
+
+    @Test
+    fun aGuessAboutWhereTheTouchWentIsSaidAndAbsentWhenThereWasNone() {
+        val sure = HitChain.Reading.Read(HitChain.Reader.SEMANTICS, emptyList())
+        assertEquals(false, JSONObject(RunnerWire.tapAtNormCoordBody(true, 1, 2, 3, 4, sure)).has("uncertain"))
+        val guessed = HitChain.Reading.Read(HitChain.Reader.SEMANTICS, emptyList(), "a View decides")
+        assertEquals("a View decides", JSONObject(RunnerWire.tapAtNormCoordBody(true, 1, 2, 3, 4, guessed)).getString("uncertain"))
+    }
 }

@@ -101,6 +101,11 @@ pub struct TapAtCoordResult {
     /// chain is then empty and not complete: nothing was read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reader_error: Option<String>,
+    /// Why `chain` may not be where the touch went, when the runner had to
+    /// guess: a View whose own code decides whether it keeps a touch was
+    /// taken to keep it, over something under it that would.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uncertain: Option<String>,
     /// The tapped point in the display's pixels, as the runner turned the
     /// normalised coordinate back into one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
