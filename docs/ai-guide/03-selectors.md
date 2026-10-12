@@ -250,6 +250,7 @@ looking for a pause instead:
 - iOS: Apple Vision VNRecognizeTextRequest.
 - Android: ML Kit Latin TextRecognition.
 - Slow (~150-300ms per call) — use only when target has no testid AND text-based selectors miss (e.g., text rendered as image, PDF viewer, video frame label).
+- Text an app keeps from accessibility is in no tree, and only `ocrText` sees it. On iOS two common ways: a view at alpha 0 is not accessible, and `UIView.animate(withDuration:delay:)` sets the end values the moment it is called — a toast that schedules its fade-out as it appears is at alpha 0 for as long as it shows, so it is on screen and missing from `smix tree`; start the fade-out when the delay is over (`DispatchQueue.main.asyncAfter`) instead. And a view that sets its own `accessibilityElements` leaves out every subview added to it later. Until the app changes, wait for such text with `ocrText`.
 
 ### 10. Point (direct coordinate)
 

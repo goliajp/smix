@@ -1185,19 +1185,7 @@ impl IosDriver {
                         let target = base_text_or_id(selector);
                         let suggestions =
                             smix_error::build_suggestions(target.as_deref(), &screen.elements);
-                        let hint = if tree_hit_offscreen {
-                            Some(
-                                "the a11y tree matched this selector but the LIVE \
-                                 on-screen check refuted it every time — the element \
-                                 exists with a stale/drifted snapshot frame (typically \
-                                 below the fold on iOS 26.5 + RN Fabric). Use \
-                                 scrollUntilVisible to bring it into the viewport \
-                                 first, or an ocrText tier to assert by pixels."
-                                    .to_string(),
-                            )
-                        } else {
-                            None
-                        };
+                        let hint = wait_miss_hint(selector, tree_hit_offscreen);
                         return Err(ExpectationFailure::new(
                             FailureInit {
                                 code: Some(FailureCode::Timeout),
@@ -1318,6 +1306,39 @@ pub(crate) fn hit_element(n: &A11yNode) -> HitElement {
 
 /// `ELEMENT_NOT_FOUND` for `selector` on `tree`, with what was on screen
 /// and the near misses — the shape every "not found" takes.
+/// What a wait that never found its element says beyond the failure.
+///
+/// Text that is on screen and in no accessibility tree is the app keeping
+/// it from accessibility, and no reader of that tree can see it. Measured
+/// on iOS 27 with a consumer's toast: its fade-out was scheduled with a
+/// delay the moment it appeared, which sets its alpha to 0 at once, and a
+/// view at alpha 0 is not accessible while it is still on screen; and on
+/// iOS 26.5 and 27, a toast added to a view that lists its own
+/// `accessibilityElements`. Pixels still show both.
+pub(crate) fn wait_miss_hint(selector: &Selector, tree_hit_offscreen: bool) -> Option<String> {
+    if tree_hit_offscreen {
+        return Some(
+            "the a11y tree matched this selector but the LIVE \
+             on-screen check refuted it every time — the element \
+             exists with a stale/drifted snapshot frame (typically \
+             below the fold on iOS 26.5 + RN Fabric). Use \
+             scrollUntilVisible to bring it into the viewport \
+             first, or an ocrText tier to assert by pixels."
+                .to_string(),
+        );
+    }
+    matches!(selector, Selector::Text { .. }).then(|| {
+        "if this text is on screen, the app keeps it from accessibility and \
+         no tree has it — a view at alpha 0 is not accessible, and \
+         `UIView.animate(withDuration:delay:)` sets the end alpha the moment \
+         it is scheduled, so a toast whose fade-out is scheduled on arrival \
+         is at alpha 0 the whole time it shows; a view that lists its own \
+         `accessibilityElements` also leaves out what is added to it later. \
+         Or look for it by pixels with `ocrText:`."
+            .to_string()
+    })
+}
+
 pub(crate) fn element_not_found(tree: &A11yNode, selector: &Selector) -> ExpectationFailure {
     let screen = screen_facts(tree, 10);
     let target = base_text_or_id(selector);
@@ -2198,5 +2219,35 @@ mod find_route_dispatch_tests {
             "a conjoined selector must resolve host-side; /find would \
              evaluate the text and ignore the conjunction"
         );
+    }
+}
+
+#[cfg(test)]
+mod wait_miss_hint_tests {
+    use super::*;
+    use smix_selector::{Modifiers, Pattern};
+
+    #[test]
+    fn text_in_no_tree_points_at_what_keeps_it_from_accessibility_and_at_pixels() {
+        let sel = Selector::Text {
+            text: Pattern::Text("Screenshot saved".into()),
+            modifiers: Modifiers::default(),
+        };
+        let hint = wait_miss_hint(&sel, false).expect("a text that was never found says why it may not be");
+        assert!(hint.contains("alpha 0"), "{hint}");
+        assert!(hint.contains("accessibilityElements"), "{hint}");
+        assert!(hint.contains("ocrText"), "{hint}");
+    }
+
+    #[test]
+    fn an_id_that_was_never_found_is_not_told_about_text() {
+        let sel = Selector::Id { id: "toast".into(), modifiers: Modifiers::default() };
+        assert!(wait_miss_hint(&sel, false).is_none());
+    }
+
+    #[test]
+    fn a_match_the_live_check_refuted_keeps_its_own_hint() {
+        let sel = Selector::Id { id: "row".into(), modifiers: Modifiers::default() };
+        assert!(wait_miss_hint(&sel, true).expect("hint").contains("scrollUntilVisible"));
     }
 }

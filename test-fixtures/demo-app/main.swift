@@ -689,6 +689,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       root = UIKitRowsController()
     } else if CommandLine.arguments.contains("-blink") {
       root = BlinkController()
+    } else if CommandLine.arguments.contains("-toast") {
+      root = ToastController()
     } else if CommandLine.arguments.contains("-sheet-over-form") {
       root = UIHostingController(rootView: SheetOverFormView())
     } else {
