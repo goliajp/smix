@@ -5,7 +5,9 @@ import android.view.View
 import android.view.WindowManager
 import android.view.inspector.WindowInspector
 import android.os.Looper
+import androidx.compose.runtime.Recomposer
 import androidx.compose.ui.node.RootForTest
+import androidx.compose.ui.platform.findViewTreeCompositionContext
 import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
@@ -63,11 +65,29 @@ object SemanticsProbe {
      * Returns -1 when nothing has been seen yet — "not settled" and "never
      * looked" are different, and one value for both is how a waiter learns
      * to trust a number that means nothing.
+     *
+     * Only stillness the sampler saw counts: from the last change to the
+     * last sample, not to now. The sampler runs on the main thread, and on
+     * a starved device it ran up to 225 ms late (an emulator whose guest
+     * CPUs were held by busy loops); counted to now, that time was added
+     * to a stillness nobody had seen.
      */
     fun quiescentForMs(): Long {
         startSamplerOnce()
         synchronized(this) {
-            return if (lastChangedAtMs == 0L) -1 else System.currentTimeMillis() - lastChangedAtMs
+            return if (lastChangedAtMs == 0L) -1 else lastSampleAtMs - lastChangedAtMs
+        }
+    }
+
+    /**
+     * How long ago the sampler last looked, or -1 before it first has.
+     * Well over [SAMPLE_INTERVAL_MS] means the main thread is not getting
+     * to it, and [quiescentForMs] is as old as that.
+     */
+    fun sampleLateMs(): Long {
+        startSamplerOnce()
+        synchronized(this) {
+            return if (lastSampleAtMs == 0L) -1 else System.currentTimeMillis() - lastSampleAtMs
         }
     }
 
@@ -113,9 +133,10 @@ object SemanticsProbe {
             return
         }
         val behind = synchronized(this) {
+            lastSampleAtMs = System.currentTimeMillis()
             if (fp != lastFingerprint || lastChangedAtMs == 0L) {
                 lastFingerprint = fp
-                lastChangedAtMs = System.currentTimeMillis()
+                lastChangedAtMs = lastSampleAtMs
                 false
             } else {
                 (lastRead?.atMs ?: 0L) < lastChangedAtMs
@@ -179,6 +200,7 @@ object SemanticsProbe {
     private var sampler: Handler? = null
     private var lastFingerprint: Int? = null
     private var lastChangedAtMs: Long = 0
+    private var lastSampleAtMs: Long = 0
 
     /** Fast enough to catch a fling, slow enough not to be the thing that moves. */
     private const val SAMPLE_INTERVAL_MS = 50L
@@ -270,6 +292,26 @@ object SemanticsProbe {
 
     /** The signal that was tried first, kept so its verdict can be re-checked. */
     fun hasPendingLayout(): Boolean = attached().any { it.hasPendingMeasureOrLayout }
+
+    /**
+     * Whether a Compose root has work waiting for a frame: an animation in
+     * flight (a fling, a transition) or a recomposition not yet run. A
+     * still tree alone cannot tell the end of a fling from a gap between
+     * two of its frames; this can. Measured on the fixture's list: true at
+     * most readings through a fling, false between frames now and then,
+     * and false through a drag — a finger, not an animation, moves the
+     * list then, and a drag the device injects slowly holds it still.
+     *
+     * Null when the app's Compose has no recomposer this can read.
+     */
+    fun framesPending(): Boolean? = try {
+        val states = attached().mapNotNull {
+            (it.view.findViewTreeCompositionContext() as? Recomposer)?.currentState?.value
+        }
+        if (states.isEmpty()) null else states.any { it == Recomposer.State.PendingWork }
+    } catch (_: LinkageError) {
+        null
+    }
 
     /** Whether anything is there to read — the honest answer to "is the probe live". */
     fun rootCount(): Int = attached().size

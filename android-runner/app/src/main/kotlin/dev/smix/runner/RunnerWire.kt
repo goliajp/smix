@@ -326,7 +326,18 @@ object RunnerWire {
     /// needs it to tell the app's windows from everyone else's.
     /// `library` is the smix release the app's probe was built from; null
     /// for a probe too old to say.
-    fun probePresentBody(app: String, version: String, roots: Int, quietMs: Long, library: String? = null): String =
+    /// `sampleLateMs` is how long ago the probe's sampler last looked, and
+    /// `framesPending` whether a Compose root has work waiting for a frame;
+    /// each null for a probe too old to say.
+    fun probePresentBody(
+        app: String,
+        version: String,
+        roots: Int,
+        quietMs: Long,
+        library: String? = null,
+        sampleLateMs: Long? = null,
+        framesPending: Boolean? = null,
+    ): String =
         JSONObject()
             .put("present", true)
             .put("app", app)
@@ -334,6 +345,8 @@ object RunnerWire {
             .put("roots", roots)
             .put("quietMs", quietMs)
             .apply { if (library != null) put("library", library) }
+            .apply { if (sampleLateMs != null) put("sampleLateMs", sampleLateMs) }
+            .apply { if (framesPending != null) put("framesPending", framesPending) }
             .toString()
 
     fun pressKeyBody(ok: Boolean, key: String, keyCode: Int): String = JSONObject()

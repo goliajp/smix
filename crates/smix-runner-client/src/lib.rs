@@ -1617,7 +1617,8 @@ impl HttpRunnerClient {
         // `json_get` builds its own query from `include`, and this route
         // takes a different one. Passing the whole thing as the endpoint is
         // what the url builder does with `None` anyway.
-        self.json_get(&format!("/probe?app={app}"), None).await
+        let said: ProbeSaid = self.json_get(&format!("/probe?app={app}"), None).await?;
+        Ok(said.status())
     }
 
     /// `GET /system-popups?include=` — list system popups.
@@ -2571,9 +2572,62 @@ pub struct ProbeStatus {
     /// the app has no Compose on screen — a different thing from no probe.
     #[serde(default)]
     pub roots: u32,
-    /// Whether the screen has settled. `None` when there is no probe to ask.
+    /// Whether the screen has settled (see [`settled`]). `None` when there
+    /// is no probe to ask, or one too old to say.
     #[serde(default)]
     pub idle: Option<bool>,
+}
+
+/// `/probe` as the runner sends it: the status, and the three readings the
+/// host turns into `idle`. The runner passes the numbers on rather than a
+/// verdict, so the threshold lives in one place, here.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProbeSaid {
+    #[serde(flatten)]
+    status: ProbeStatus,
+    quiet_ms: Option<i64>,
+    sample_late_ms: Option<i64>,
+    frames_pending: Option<bool>,
+}
+
+impl ProbeSaid {
+    fn status(self) -> ProbeStatus {
+        let idle = settled(self.quiet_ms, self.sample_late_ms, self.frames_pending);
+        ProbeStatus {
+            idle: if self.status.present { idle } else { None },
+            ..self.status
+        }
+    }
+}
+
+/// How long the semantics tree has to have held still.
+pub const SETTLED_AFTER_MS: i64 = 300;
+/// How late the probe's sampler may be and its stillness still count:
+/// two of its 50 ms ticks.
+pub const SAMPLER_ON_TIME_MS: i64 = 100;
+
+/// Whether the screen has settled, from what the probe reported.
+///
+/// `None` from a probe too old to say how late its sampler is: its
+/// stillness ran on the wall clock and could not tell a starved app from a
+/// still one, so it is no answer. Otherwise settled only when the tree has
+/// held still long enough, the sampler that saw it is on time, and no
+/// animation is waiting for a frame — an unchanged tree between two frames
+/// of a fling on a starved device is a pause, not the end.
+#[must_use]
+pub fn settled(
+    quiet_ms: Option<i64>,
+    sample_late_ms: Option<i64>,
+    frames_pending: Option<bool>,
+) -> Option<bool> {
+    let late = sample_late_ms?;
+    let quiet = quiet_ms?;
+    Some(
+        quiet >= SETTLED_AFTER_MS
+            && (0..=SAMPLER_ON_TIME_MS).contains(&late)
+            && frames_pending != Some(true),
+    )
 }
 
 impl ProbeStatus {
