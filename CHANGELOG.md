@@ -2,6 +2,35 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **An Android tap is judged to land where the toolkit sends the touch.**
+  A consumer's suite on 14.2.0 had five taps the app answered reported
+  `TAP_MISSED`. Read from their screens the moment before, the judgement
+  had gone wrong four ways, each now read the way Android dispatches a
+  touch:
+  - a Compose child is reached wherever it is placed, not only inside its
+    parent: a sheet's panel sits below the short container that holds it,
+    and only the scrim was found;
+  - a Compose node with a pointer-input modifier takes the touch though its
+    semantics carry no action: a polygon handle that drags was passed
+    through to the zone under it (named as a limitation in 14.1.1);
+  - a View hosted in Compose takes a touch only when it is clickable,
+    scrolls, or decides in code of its own; a full-size View that is none of
+    these lets it through, as it did to a player's "GO LIVE";
+  - the layers a touch went through on its way are listed with where it
+    stopped, so a label inside a card is under the point when the card opens.
+
+  A View whose own code decides (it overrides `onTouchEvent`, or carries a
+  touch listener) cannot be read from outside. When the judgement had to
+  take one to keep the touch over something under it, a tap that does not
+  find its target there is reported as not confirmable, with that View
+  named, rather than as a miss. The probe reports how each node handles a
+  touch; the first point holds with an older probe, the rest need this
+  one.
+
 ## [14.2.0] — 2026-10-12
 
 ### Fixed

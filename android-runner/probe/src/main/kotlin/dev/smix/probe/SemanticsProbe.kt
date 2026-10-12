@@ -395,6 +395,11 @@ internal fun SemanticsNode.toProbeNode(): ProbeNode? {
         windowLeftOnScreen = (origin.x - inWindow.x).toInt(),
         windowTopOnScreen = (origin.y - inWindow.y).toInt(),
     )
+    // What the node will accept, rather than what a toolkit says it is.
+    // `isEditable` is a claim; taking SetText is a fact.
+    val actions = c.mapNotNull { entry ->
+        entry.key.name.takeIf { entry.value is androidx.compose.ui.semantics.AccessibilityAction<*> }
+    }.sorted()
     return ProbeNode(
         id = id,
         testTag = c.getOrElseNullable(SemanticsProperties.TestTag) { null },
@@ -425,11 +430,8 @@ internal fun SemanticsNode.toProbeNode(): ProbeNode? {
         focused = c.getOrElseNullable(SemanticsProperties.Focused) { false } ?: false,
         enabled = !c.contains(SemanticsProperties.Disabled),
         visible = shown.right > shown.left && shown.bottom > shown.top,
-        // What the node will accept, rather than what a toolkit says it is.
-        // `isEditable` is a claim; taking SetText is a fact.
-        actions = c.mapNotNull { entry ->
-            entry.key.name.takeIf { entry.value is androidx.compose.ui.semantics.AccessibilityAction<*> }
-        }.sorted(),
+        actions = actions,
         children = children.mapNotNull { it.toProbeNode() },
+        touch = Touch.ofCompose(actions, Touch.hasPointerInput(layoutInfo)),
     )
 }

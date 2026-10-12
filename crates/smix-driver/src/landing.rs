@@ -171,7 +171,15 @@ pub fn landing_outcome(
             describe_hit(&aimed)
         ))
     } else {
-        tap_landed_within(&aimed, &chain, coverage)
+        match (
+            tap_landed_within(&aimed, &chain, coverage),
+            &landed.uncertain,
+        ) {
+            (ActVerdict::Missed(why), Some(guess)) => ActVerdict::Unconfirmable(format!(
+                "{why} — but the runner could not be sure where the touch went: {guess}"
+            )),
+            (verdict, _) => verdict,
+        }
     };
     if let ActVerdict::Missed(why) = &verdict {
         if tap_mismatch_is_fatal() {
