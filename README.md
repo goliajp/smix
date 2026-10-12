@@ -114,7 +114,9 @@ smix sim screenshot phone shot.png                # Xcode 27: straight from devi
 
 Erasing, uninstalling and keychain resets are refused on it until
 `smix sim allow-destructive phone` — recorded once, not confirmed per command,
-because a confirmation typed every time ends up pasted into a script.
+because a confirmation typed every time ends up pasted into a script. So are
+the flow steps that change the phone's own state and outlive the test:
+`setClipboard`, `setLocation`, `travel`, `addMedia` and quieting animations.
 
 Full surface: [docs/ai-guide/05-cli.md](docs/ai-guide/05-cli.md#physical-devices).
 

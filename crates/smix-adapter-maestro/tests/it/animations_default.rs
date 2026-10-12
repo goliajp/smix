@@ -55,16 +55,21 @@ fn it_happens_before_the_app_comes_up() {
 /// is decided by serial, and only an Android serial can name one.
 #[test]
 fn neither_platform_is_exempt() {
-    let ios = ANIMATIONS
-        .find("FlowPlatform::Ios => false")
-        .expect("an iOS device is never taken for somebody's phone");
-    let android = ANIMATIONS
-        .find("FlowPlatform::Android => !smix_sdk::android_serial_is_emulator(id)")
-        .expect("an Android device is somebody's phone by its serial alone");
+    assert!(
+        ANIMATIONS.contains("FlowPlatform::Ios => false"),
+        "an iOS simulator is never taken for somebody's phone"
+    );
+    assert!(
+        ANIMATIONS.contains("FlowPlatform::Android => !smix_sdk::android_serial_is_emulator(id)"),
+        "an Android device is somebody's phone by its serial alone"
+    );
+    let decided = ANIMATIONS
+        .find("if someones(platform, id, registered_phone) {")
+        .expect("the run decides whose device it is");
     let asked = ANIMATIONS
         .find("set_animations_quiet(true)")
         .expect("the run still asks for quiet");
-    assert!(ios < asked && android < asked);
+    assert!(decided < asked, "both platforms are asked before quiet is");
 }
 
 /// What was quietened is put back when the run ends, after the flow
@@ -102,9 +107,9 @@ fn the_run_puts_the_settings_back_after_the_flow() {
 /// A phone's animation scales are its owner's. A run leaves them alone
 /// and says so once.
 #[test]
-fn a_physical_android_device_is_left_as_it_is() {
+fn a_phone_is_left_as_it_is() {
     let someones = ANIMATIONS
-        .find("if device_is_someones {")
+        .find("if someones(platform, id, registered_phone) {")
         .expect("the run no longer tells a phone apart");
     let asked = ANIMATIONS
         .find("set_animations_quiet(true)")

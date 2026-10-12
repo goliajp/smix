@@ -398,7 +398,7 @@ one that stops.
 - copyTextFrom:
     id: "form-result-label"              # copies result to clipboard env
 - pasteText                              # paste clipboard into focused field
-- setClipboard: "hello"                  # set clipboard programmatically
+- setClipboard: "hello"                  # set clipboard programmatically — on a simulator this is also the Mac's clipboard
 - hideKeyboard                           # dismiss soft keyboard
 ```
 
@@ -2027,7 +2027,10 @@ pasteboard copy` and `paste`. What comes back is checked against the byte count
 replacement characters. Under Xcode <= 26 `devicectl` has no such verb and the
 error is its own. Mind whose clipboard it is: a phone's general pasteboard
 travels by Universal Clipboard to every device on the same Apple ID, so a flow
-that sets it also sets the one on the Mac beside it.
+that sets it also sets the one on the Mac beside it. A simulator is no
+different: its general pasteboard is kept in step with the Mac's, so
+`setClipboard` on a simulator replaces what you last copied on the Mac — and,
+through Universal Clipboard, on your phone.
 
 `setLocation` and `travel` work on a registered iPhone from Xcode 27 on too,
 through `devicectl device simulate location coordinate` and `route`. `travel`
@@ -2158,7 +2161,11 @@ If it is a phone or tablet, say so once and it becomes addressable:
 This is the enforcement of "registered before it can be addressed". It is a
 separate question from whether a destructive action is allowed: registering a
 phone makes it *reachable*, and `allow-destructive` is still needed before
-anything may be taken away from it. Two gates, asked in that order.
+anything may be taken away from it — or before a flow changes the phone's own
+state that outlives the test (`setClipboard`, `setLocation`, `travel`,
+`addMedia`, quieting animations): the clipboard reaches the owner's other
+devices, and a simulated location stays after the cable is out. Two gates,
+asked in that order.
 
 ### Runner management
 
@@ -3726,7 +3733,10 @@ smix sim register <name> --udid <UDID> --kind physical-ios
 ### "… is a physical device and destructive actions are not allowed on it"
 
 Erase, uninstall and keychain-reset are refused on a phone until allowed
-once — recorded per device, not confirmed per command:
+once — recorded per device, not confirmed per command — and so are the steps
+that change the phone's own state: setting its clipboard or location, adding
+to its photos, quieting its animations ("… would change <device>'s own
+state"):
 
 ```
 smix sim allow-destructive <alias>

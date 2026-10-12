@@ -226,7 +226,7 @@ one that stops.
 - copyTextFrom:
     id: "form-result-label"              # copies result to clipboard env
 - pasteText                              # paste clipboard into focused field
-- setClipboard: "hello"                  # set clipboard programmatically
+- setClipboard: "hello"                  # set clipboard programmatically — on a simulator this is also the Mac's clipboard
 - hideKeyboard                           # dismiss soft keyboard
 ```
 

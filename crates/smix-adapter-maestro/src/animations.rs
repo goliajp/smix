@@ -23,6 +23,7 @@ pub(crate) async fn quieten(
     platform: FlowPlatform,
     udid: Option<&str>,
     keep_device_settings: bool,
+    registered_phone: bool,
 ) -> Result<bool, ()> {
     let Some(id) = udid else {
         return Ok(false);
@@ -30,11 +31,7 @@ pub(crate) async fn quieten(
     if keep_device_settings {
         return Ok(false);
     }
-    let device_is_someones = match platform {
-        FlowPlatform::Ios => false,
-        FlowPlatform::Android => !smix_sdk::android_serial_is_emulator(id),
-    };
-    if device_is_someones {
+    if someones(platform, id, registered_phone) {
         eprintln!(
             "animations: {id} is a physical device; its own animation settings \
              are left as they are and the flow runs with them"
@@ -49,6 +46,19 @@ pub(crate) async fn quieten(
         return Err(());
     }
     Ok(true)
+}
+
+/// Whether the device's animation settings are its owner's, and left alone.
+///
+/// A registered phone on either platform. iOS was asked only whether it was
+/// Android: a flow on an iPhone tried to quieten it, devicectl has no way
+/// to, and every such run stopped here unless `--animations` was passed.
+fn someones(platform: FlowPlatform, id: &str, registered_phone: bool) -> bool {
+    registered_phone
+        || match platform {
+            FlowPlatform::Ios => false,
+            FlowPlatform::Android => !smix_sdk::android_serial_is_emulator(id),
+        }
 }
 
 /// Put the device's animation settings back.
@@ -70,5 +80,35 @@ pub(crate) async fn put_back(app: &smix_sdk::App) {
         Err(_) => eprintln!(
             "WARN: putting the device's animation settings back timed out after 10s\n{NEXT_RUN}"
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_registered_iphone_keeps_its_animations() {
+        assert!(someones(
+            FlowPlatform::Ios,
+            "00008110-000A1B2C3D4E5F60",
+            true
+        ));
+    }
+
+    #[test]
+    fn a_phone_on_android_keeps_them_registered_or_not() {
+        assert!(someones(FlowPlatform::Android, "R5XXXXXXXXX", true));
+        assert!(someones(FlowPlatform::Android, "R5XXXXXXXXX", false));
+    }
+
+    #[test]
+    fn a_simulator_and_an_emulator_are_quietened() {
+        assert!(!someones(
+            FlowPlatform::Ios,
+            "A6E0D8D5-E9AA-43CD-BBFE-0F7CBC7F4150",
+            false
+        ));
+        assert!(!someones(FlowPlatform::Android, "emulator-5554", false));
     }
 }
