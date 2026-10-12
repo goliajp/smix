@@ -62,8 +62,20 @@ All notable changes to the `smix` workspace are documented here. The format foll
   failed on the missing `xcrun` before reaching them; it now says no iOS
   simulators are listed and why.
 
+- **A flow on a registered iPhone no longer stops before it starts.** The
+  run quietened the device's animations first, devicectl has no way to, and
+  every flow on a phone failed there unless `--animations` was passed. A
+  registered phone's animations are its owner's on iOS as on Android, and
+  are left as they are.
+
 ### Changed
 
+- **A registered phone's own state needs the same opt-in as erasing it.**
+  `setClipboard`, `setLocation`, `travel`, `addMedia` and quieting
+  animations change things the phone's owner keeps after the test — the
+  clipboard reaches their other devices — and on a registered phone they are
+  now refused until `smix sim allow-destructive <device>`. Simulators and
+  emulators are unchanged. New: `smix_sdk::user_state::UserStateGuard`.
 - **`SmixRunnerCore.SmixRunnerServer.TapAtCoordHandler` takes the aimed-at
   target and returns whether it was gone.** Only a runner constructs this
   server.

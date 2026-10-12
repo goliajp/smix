@@ -335,7 +335,10 @@ smix sim register <name> --udid <UDID> --kind physical-ios
 ### "… is a physical device and destructive actions are not allowed on it"
 
 Erase, uninstall and keychain-reset are refused on a phone until allowed
-once — recorded per device, not confirmed per command:
+once — recorded per device, not confirmed per command — and so are the steps
+that change the phone's own state: setting its clipboard or location, adding
+to its photos, quieting its animations ("… would change <device>'s own
+state"):
 
 ```
 smix sim allow-destructive <alias>

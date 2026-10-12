@@ -31,6 +31,7 @@ mod platform;
 mod tree_cmd;
 use platform::{DeviceDial, RunPlatform, dial_platform, resolve_run_platform};
 mod departures;
+mod device_for;
 mod device_hub;
 mod down;
 /// Distributed `smix run --nodes`: roster parsing, cross-node flow
@@ -45,6 +46,7 @@ mod readiness;
 mod record_cmd;
 mod runner_list;
 mod sim_list;
+use device_for::device_control_for;
 
 mod script;
 
@@ -2501,27 +2503,6 @@ fn guard_sim_verb(action: &SimAction, device: &str) -> Result<(), CliError> {
         return Ok(());
     }
     Err(CliError::Other(refusal_for(action, device, kind)))
-}
-
-/// Whatever drives this kind of device.
-///
-/// One place decides which tool addresses which kind. It was three
-/// hand-written `match device_kind_of(...)` arms before this, on their
-/// way to six, and one of them was already wrong: `uninstall` sent a
-/// registered iPhone to `simctl`, which lists no phones. A verb that
-/// reaches a new kind of device should not also have to know how.
-fn device_control_for(
-    kind: smix_simctl::registry::DeviceKind,
-    udid: &str,
-) -> Box<dyn smix_sdk::device_control::DeviceControl> {
-    use smix_simctl::registry::DeviceKind;
-    match kind {
-        DeviceKind::Simulator => Box::new(smix_sdk::ios_device::IosDeviceControl::new()),
-        DeviceKind::Emulator | DeviceKind::PhysicalAndroid => {
-            Box::new(smix_sdk::android_device::AndroidDeviceControl::new())
-        }
-        DeviceKind::PhysicalIos => Box::new(smix_sdk::devicectl_device::DevicectlClient::new(udid)),
-    }
 }
 
 /// What to say when a verb has no path on this kind of device.

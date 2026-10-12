@@ -221,7 +221,10 @@ pasteboard copy` and `paste`. What comes back is checked against the byte count
 replacement characters. Under Xcode <= 26 `devicectl` has no such verb and the
 error is its own. Mind whose clipboard it is: a phone's general pasteboard
 travels by Universal Clipboard to every device on the same Apple ID, so a flow
-that sets it also sets the one on the Mac beside it.
+that sets it also sets the one on the Mac beside it. A simulator is no
+different: its general pasteboard is kept in step with the Mac's, so
+`setClipboard` on a simulator replaces what you last copied on the Mac — and,
+through Universal Clipboard, on your phone.
 
 `setLocation` and `travel` work on a registered iPhone from Xcode 27 on too,
 through `devicectl device simulate location coordinate` and `route`. `travel`
@@ -352,7 +355,11 @@ If it is a phone or tablet, say so once and it becomes addressable:
 This is the enforcement of "registered before it can be addressed". It is a
 separate question from whether a destructive action is allowed: registering a
 phone makes it *reachable*, and `allow-destructive` is still needed before
-anything may be taken away from it. Two gates, asked in that order.
+anything may be taken away from it — or before a flow changes the phone's own
+state that outlives the test (`setClipboard`, `setLocation`, `travel`,
+`addMedia`, quieting animations): the clipboard reaches the owner's other
+devices, and a simulated location stays after the cable is out. Two gates,
+asked in that order.
 
 ### Runner management
 

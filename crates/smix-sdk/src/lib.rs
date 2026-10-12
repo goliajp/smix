@@ -45,6 +45,7 @@ pub mod device_control;
 pub mod devicectl_device;
 pub mod ios_device;
 pub mod leased;
+pub mod user_state;
 pub use device_control::{DeviceControl, Permission};
 pub use ios_device::IosDeviceControl;
 
