@@ -61,7 +61,35 @@ impl HttpRunnerClient {
         // On the fixture's watch screen (2026-09-27, load 7-9) that took
         // `neverVisible` from 12-14 looks in about 2.2 s to 12-19.
         let named = self.target_bundle_id.as_deref();
+        // Once this app's probe has answered present, a look asks for its
+        // tree and the rest of the screen at once, without first asking
+        // whether it is there: that question cost a round trip of its own
+        // on every look — 3 ms on an idle emulator, 36-70 ms with the
+        // guest's CPUs held by busy loops — and its answer does not change
+        // while the app runs. A tree that cannot be had forgets it, and the
+        // look below asks again.
+        if let Some(app) = named
+            && self.probe_seen_for(app)
+        {
+            let endpoint = format!("/tree?hollow={app}");
+            let hollow = self.json_get::<A11yNode>(&endpoint, include);
+            let (app_tree, screen) = tokio::join!(self.probe_tree(named), hollow);
+            if let Some(app_tree) = app_tree {
+                let mut screen = screen?;
+                derive_roles_recursive(&mut screen);
+                let mut root = smix_screen::beside_other_windows(screen, app_tree, Some(app));
+                self.mark_a_one_app_root(&mut root);
+                return Ok(PerceivedTree {
+                    source: TreeSource::Semantics,
+                    root,
+                });
+            }
+            self.forget_probe();
+        }
         if let Some(answered_for) = self.probe_present(named).await {
+            if let Some(app) = named {
+                self.remember_probe(app);
+            }
             let app = self.target_bundle_id.clone().or(answered_for);
             // `None`: no app to leave hollow, so the rest of the screen is
             // read whole, and only once the probe's tree is in hand.
@@ -195,6 +223,18 @@ impl HttpRunnerClient {
             SAID.call_once(|| eprintln!("{note}"));
         }
         Some(raw.get("app").and_then(|a| a.as_str()).map(str::to_owned))
+    }
+
+    fn probe_seen_for(&self, app: &str) -> bool {
+        self.probe_seen.lock().expect("never poisoned").as_deref() == Some(app)
+    }
+
+    fn remember_probe(&self, app: &str) {
+        *self.probe_seen.lock().expect("never poisoned") = Some(app.to_owned());
+    }
+
+    fn forget_probe(&self) {
+        *self.probe_seen.lock().expect("never poisoned") = None;
     }
 
     /// The probe's tree, or `None` when it could not be had.

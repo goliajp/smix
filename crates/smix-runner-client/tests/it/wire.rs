@@ -921,3 +921,51 @@ async fn a_relay_that_cannot_name_its_device_is_driven_and_said_out_loud() {
         .expect("a relay that cannot name its device must still be driven");
     // wiremock verifies .expect(1) on drop — the request arrived.
 }
+
+/// A look does not ask whether the probe is there once it has answered:
+/// the question cost a round trip of its own on every look, and its
+/// answer does not change while the app runs. A tree that cannot be had
+/// is what sends the next look back to asking.
+#[tokio::test]
+async fn a_probe_that_has_answered_is_not_asked_again_until_its_tree_fails() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/probe"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "present": true, "app": "dev.smix.fixture", "version": "1", "roots": 1, "quietMs": 40,
+        })))
+        .expect(2)
+        .mount(&server)
+        .await;
+    let probe_tree = serde_json::json!({
+        "screen": [1080, 2400],
+        "roots": [{"id": 1, "testTag": "compose_submit", "text": "Submit",
+                   "bounds": [0, 0, 1080, 200], "children": []}],
+    });
+    // Three looks read the probe's tree; the fourth finds it gone.
+    Mock::given(method("GET"))
+        .and(path("/probe/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(probe_tree.clone()))
+        .up_to_n_times(3)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/probe/tree"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(minimal_tree()))
+        .mount(&server)
+        .await;
+    let client =
+        HttpRunnerClient::with_base(server.uri()).with_target_bundle_id("dev.smix.fixture");
+    for _ in 0..3 {
+        let tree = client.get_tree(None).await.expect("tree");
+        assert_eq!(tree.source, smix_runner_client::TreeSource::Semantics);
+    }
+    // The tree is gone: this look falls back and asks again.
+    let tree = client.get_tree(None).await.expect("tree");
+    assert_eq!(tree.source, smix_runner_client::TreeSource::Accessibility);
+}
