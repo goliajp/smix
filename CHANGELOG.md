@@ -2,7 +2,14 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [15.0.0] — 2026-10-12
+
+### Breaking
+
+- **Rust API: `smix_runner_wire::TapAtCoordResult` has a new field,
+  `uncertain`.** It carries the runner's reason when it could not be sure
+  where a touch went. A struct literal outside the crate needs the field or
+  `..Default::default()`.
 
 ### Fixed
 
