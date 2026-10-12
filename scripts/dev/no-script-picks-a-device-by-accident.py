@@ -162,6 +162,9 @@ DELIBERATE = [
     # from whoever ran it -- the same answer `$SERIAL` gives in a shell
     # script, spelled the way argparse spells it.
     re.compile(r'add_argument\(\s*[\'"]--device[\'"]'),
+    # The shell spelling of the same thing: the serial is one of the
+    # script's own arguments, so whoever ran it named the device.
+    re.compile(r'^\s*SERIAL="\$\{?[1-9][:}"]', re.M),
 ]
 
 # Scripts whose subject IS the accident — a guard test feeding it inputs
