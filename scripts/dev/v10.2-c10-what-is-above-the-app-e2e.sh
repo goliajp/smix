@@ -155,7 +155,14 @@ log "  keyboard-is-not-a-popup: input-method windows=$ime_seen popups=$pop_count
 step "a dialog from another package, over the app"
 # Not held, so asking raises the dialog. Revoking is also the only way
 # to know the dialog is this run's and not one left on screen.
+#
+# Revoking alone is not enough: this run presses Deny, and a permission
+# denied twice is marked user-fixed — Android then refuses the request
+# itself and shows nothing, so every run from the third on found no
+# dialog. The marks go with the grant.
 adb -s "$SERIAL" shell pm revoke "$APPID" android.permission.CAMERA >/dev/null 2>&1 || true
+adb -s "$SERIAL" shell pm clear-permission-flags "$APPID" android.permission.CAMERA user-set user-fixed \
+  >/dev/null 2>&1 || true
 launch
 post /tap-by-id '{"id":"fixture_ask_camera"}' >"$WORK/ask.json"
 asked="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("ok"))' "$WORK/ask.json")"
