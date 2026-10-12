@@ -20,12 +20,11 @@ import androidx.compose.ui.node.PointerInputModifierNode
  * that overrides `onTouchEvent`, or carries a touch listener, decides
  * each touch in code nothing outside it can read.
  *
- * - `takes` — the touch stops here (or below it): a Compose node with a
- *   semantics action that acts on a touch or a pointer-input modifier, a
- *   clickable View
+ * - `takes` — the touch stops here (or below it): a Compose node with
+ *   pointer input it does not share, a clickable View
  * - `through` — the touch goes on to whatever is drawn under it: a Compose
- *   node with neither, a View that is not clickable and leaves touches to
- *   the default handling
+ *   node without such input, a View that is not clickable and leaves
+ *   touches to the default handling
  * - `maybe` — a View whose own code decides
  *
  * A consumer's app showed all three being needed: a vertex handle dragged
@@ -39,14 +38,14 @@ object Touch {
     const val THROUGH = "through"
     const val MAYBE = "maybe"
 
-    /// Semantics actions that mean a node acts on a touch at it.
-    private val TOUCH_ACTIONS = setOf(
-        "OnClick", "OnLongClick", "ScrollBy", "ScrollByOffset", "ScrollToIndex",
-        "SetProgress", "SetText", "Dismiss", "Expand", "Collapse",
-    )
-
-    fun ofCompose(actions: List<String>, pointerInput: Boolean): String =
-        if (pointerInput || actions.any { it in TOUCH_ACTIONS }) TAKES else THROUGH
+    /// A Compose node takes a touch when its layout node has pointer input
+    /// that keeps the touch from what is under it — `clickable`,
+    /// `toggleable`, `selectable`, `draggable`, `scrollable` and
+    /// `pointerInput` all do. A semantics action alone does not: it is what
+    /// accessibility is offered, and a consumer's polygon zones carried
+    /// `semantics { onClick }` on their bounding boxes while a gesture layer
+    /// under them decided by the polygon.
+    fun ofCompose(pointerInput: Boolean): String = if (pointerInput) TAKES else THROUGH
 
     /// `ownCode` is null when whether the View carries a touch listener
     /// could not be read.

@@ -92,7 +92,8 @@ object HitChain {
     /// it, a View group to the topmost child that keeps it. A consumer's
     /// player draws its detection boxes in a full-size layer over the
     /// "GO LIVE" pill; the tap went back to live, and a chain through the
-    /// boxes reported it a miss. When nothing takes it, the topmost.
+    /// boxes reported it a miss. When nothing takes it, every one of them
+    /// is passed through.
     ///
     /// The layers passed through are listed because they are under the
     /// point and the touch crossed them: a label inside a card is aimed at,
@@ -138,11 +139,11 @@ object HitChain {
                 }
                 break
             }
-            if (pick == null) {
-                pick = bottomFirst.lastOrNull()
-            } else {
-                over.forEach(::addUnderPoint)
-            }
+            // Nothing here takes it: the touch goes through every one of them
+            // to whatever above them does, which may be a gesture layer with
+            // no semantics of its own — a consumer's polygon zones are boxes
+            // over one, and it decides by the polygon which zone was meant.
+            over.forEach(::addUnderPoint)
             pick?.let(::collect)
         }
 

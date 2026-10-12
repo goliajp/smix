@@ -2,6 +2,27 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **Two more Android taps the app answered are no longer reported
+  `TAP_MISSED`.** With 15.0.0, a consumer's suite still had three:
+  - a full-size `AndroidView` drawn over another (a player's chrome over its
+    picture) was read as taking the touch. Compose shares a touch on a
+    hosted View with what is drawn under it; the probe no longer counts
+    pointer input that shares as taking one, and the Views inside decide;
+  - a Compose node whose semantics offer a click, with no gesture of its own,
+    was read as taking the touch. A polygon zone editor puts such a box on
+    each zone's bounding rectangle over a gesture layer that picks the zone
+    by its polygon, and the tap was given to the overlapping box drawn on
+    top. A Compose node now takes a touch only when it has pointer input —
+    `clickable`, `toggleable`, `selectable`, `draggable`, `scrollable` and
+    `pointerInput` all give it one — and where nothing under the point takes
+    it, every layer there is listed as one the touch went through.
+
+  Both need the probe from this release.
+
 ## [15.0.0] — 2026-10-12
 
 ### Breaking
