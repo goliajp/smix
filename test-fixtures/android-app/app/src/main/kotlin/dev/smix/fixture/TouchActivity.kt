@@ -8,6 +8,7 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
@@ -53,6 +57,19 @@ import androidx.compose.ui.viewinterop.AndroidView
  *   panel placed below the short container that holds it, over a
  *   clickable scrim — the shape a consumer's sheet had (`touch-panel-30`)
  */
+/** Whether `p` is inside `poly`, by the ray crossing count. */
+private fun inside(poly: List<Offset>, p: Offset): Boolean {
+    var hit = false
+    var j = poly.lastIndex
+    for (i in poly.indices) {
+        val a = poly[i]
+        val b = poly[j]
+        if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) hit = !hit
+        j = i
+    }
+    return hit
+}
+
 class TouchActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +79,8 @@ class TouchActivity : ComponentActivity() {
             var zone by remember { mutableIntStateOf(0) }
             var pills by remember { mutableIntStateOf(0) }
             var pills2 by remember { mutableIntStateOf(0) }
+            var polyA by remember { mutableIntStateOf(0) }
+            var polyB by remember { mutableIntStateOf(0) }
             var card by remember { mutableIntStateOf(0) }
             var sheet by remember { mutableIntStateOf(0) }
             var sheetOpen by remember { mutableStateOf(false) }
@@ -70,10 +89,10 @@ class TouchActivity : ComponentActivity() {
             Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
             Column(Modifier.fillMaxSize().padding(16.dp)) {
                 Text(
-                    "handle=$handle zone=$zone pill=$pills pill2=$pills2 card=$card sheet=$sheet panel=$panel",
+                    "handle=$handle zone=$zone pill=$pills pill2=$pills2 card=$card sheet=$sheet panel=$panel polyA=$polyA polyB=$polyB",
                     Modifier.testTag("touch-counts"),
                 )
-                Box(Modifier.size(300.dp, 140.dp).testTag("touch-canvas")) {
+                Box(Modifier.size(300.dp, 130.dp).testTag("touch-canvas")) {
                     Box(
                         Modifier.offset(60.dp, 40.dp).size(160.dp, 80.dp)
                             .background(Color(0xFF80DEEA))
@@ -108,13 +127,65 @@ class TouchActivity : ComponentActivity() {
                             addView(View(ctx), FrameLayout.LayoutParams(-1, -1))
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().height(160.dp).padding(top = 12.dp),
+                    modifier = Modifier.fillMaxWidth().height(120.dp).padding(top = 8.dp),
                 )
+                // Polygon zones the way a consumer's editor draws them: a
+                // gesture layer with no semantics decides by the polygon, and
+                // over it each zone is a box on its bounding rectangle with
+                // only semantics { onClick }. The boxes overlap; the centre
+                // of zone 0's box is inside zone 0's polygon and not zone 1's.
+                val polygons = remember {
+                    listOf(
+                        listOf(Offset(0f, 0f), Offset(160f, 0f), Offset(160f, 60f), Offset(0f, 200f)),
+                        listOf(Offset(300f, 0f), Offset(300f, 200f), Offset(60f, 200f), Offset(170f, 40f)),
+                    )
+                }
+                // Polygon units are a 300-wide canvas, drawn at 240dp.
+                val u = 0.8f
+                Box(Modifier.padding(top = 8.dp).size(240.dp, 160.dp).testTag("touch-polys")) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        val k = size.width / 300f
+                        polygons.forEachIndexed { i, poly ->
+                            val path = Path().apply {
+                                moveTo(poly[0].x * k, poly[0].y * k)
+                                poly.drop(1).forEach { lineTo(it.x * k, it.y * k) }
+                                close()
+                            }
+                            drawPath(path, if (i == 0) Color(0x8081C784) else Color(0x80FFB74D))
+                        }
+                    }
+                    Box(
+                        Modifier.fillMaxSize().pointerInput(Unit) {
+                            detectTapGestures { at ->
+                                val p = Offset(at.x * 300f / size.width, at.y * 300f / size.width)
+                                when (polygons.indexOfLast { inside(it, p) }) {
+                                    0 -> polyA += 1
+                                    1 -> polyB += 1
+                                }
+                            }
+                        },
+                    )
+                    polygons.forEachIndexed { i, poly ->
+                        val left = poly.minOf { it.x }
+                        val top = poly.minOf { it.y }
+                        Box(
+                            Modifier.offset((left * u).dp, (top * u).dp)
+                                .size(((poly.maxOf { it.x } - left) * u).dp, ((poly.maxOf { it.y } - top) * u).dp)
+                                .testTag("touch-poly-$i")
+                                .semantics {
+                                    onClick {
+                                        if (i == 0) polyA += 1 else polyB += 1
+                                        true
+                                    }
+                                },
+                        )
+                    }
+                }
                 // A second hosted View drawn over the player, full size, its
                 // View hidden — the shape of a consumer's detection overlay.
                 // Compose shares a touch on a hosted View with what is under
                 // it, so the control below still gets it.
-                Box(Modifier.fillMaxWidth().height(120.dp).padding(top = 12.dp)) {
+                Box(Modifier.fillMaxWidth().height(100.dp).padding(top = 8.dp)) {
                     AndroidView(
                         factory = { ctx ->
                             FrameLayout(ctx).apply {
@@ -140,7 +211,7 @@ class TouchActivity : ComponentActivity() {
                     )
                 }
                 Box(
-                    Modifier.fillMaxWidth().height(160.dp).padding(top = 12.dp)
+                    Modifier.fillMaxWidth().height(110.dp).padding(top = 8.dp)
                         .clickable { card += 1 }
                         .testTag("touch-card"),
                 ) {
