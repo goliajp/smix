@@ -45,6 +45,14 @@ All notable changes to the `smix` workspace are documented here. The format foll
   `HttpRunnerClient::tap_at_norm_coord_aimed_at`,
   `smix_runner_client::target_gone_before_touch`.
 
+- **A wait for text that never appeared on iOS says why text can be on
+  screen and in no tree.** A consumer's toast scheduled its fade-out with
+  `UIView.animate(withDuration:delay:)` the moment it appeared, which sets
+  its alpha to 0 at once: the card stays on screen for the delay and is
+  not accessible all that time. The failure now names that, a view that
+  lists its own `accessibilityElements`, and `ocrText:` as the way to wait
+  by pixels.
+
 ### Changed
 
 - **`SmixRunnerCore.SmixRunnerServer.TapAtCoordHandler` takes the aimed-at

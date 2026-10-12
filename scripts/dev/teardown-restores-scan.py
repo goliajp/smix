@@ -84,6 +84,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v14.2-c4-a-touch-goes-where-compose-sends-it-e2e.sh",
     "load-our-emulator-e2e.sh",
     "v15.1-c7-a-target-gone-before-the-touch-e2e.sh",
+    "v15.1-c8-text-kept-from-accessibility-e2e.sh",
     "smoke-chain-e2e.sh",
     "v11.0-c5-runner-brings-the-app-back-e2e.sh",
     "v11.0-c2-a-failure-says-whose-screen-e2e.sh",
