@@ -37,6 +37,7 @@ import re
 import subprocess
 import os
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -214,8 +215,13 @@ def once(a, d):
             changes.append((rows_at, now_at))
             if polled is None and now_at - changes[0][0] >= SAMPLER_CATCHES_UP_S:
                 # The other strategy, asked once while the list is seen
-                # moving: does the tag resolve in the tree it polls?
-                polled = bool(visible_rows(a.port))
+                # moving: does the tag resolve in the tree it polls? Asked
+                # beside the readings, not between them — the accessibility
+                # tree took 1.8 s a read with the guest's CPUs held, and the
+                # whole drag went by while this side waited for it.
+                polled = []
+                asker = threading.Thread(target=lambda: polled.append(bool(visible_rows(a.port))))
+                asker.start()
         rows, rows_at = now, now_at
     began = changes[0][0] if changes else None
     if os.environ.get("SMIX_WAIT_TRACE"):
@@ -229,7 +235,9 @@ def once(a, d):
         if moved_before and asked - began >= SAMPLER_CATCHES_UP_S:
             moving.append(q)
             lates_moving.append(extra)
-    polling_says_ready = bool(polled)
+    if polled is not None:
+        asker.join()
+    polling_says_ready = bool(polled) and polled[0]
     after = visible_rows(a.port)
     settled = probe(a.port)
     settled_quiet = settled.get("quietMs", -1)
