@@ -65,7 +65,29 @@ impl HttpRunnerClient {
         hold_ms: Option<u32>,
         aimed_by: Option<TreeReader>,
     ) -> Result<TapAtCoordResult, RunnerTransportError> {
-        self.tap_request(nx, ny, times, interval_ms, hold_ms, aimed_by, false)
+        self.tap_request(nx, ny, times, interval_ms, hold_ms, aimed_by, None, false)
+            .await
+    }
+
+    /// [`Self::tap_at_norm_coord_aimed`], naming the element aimed at.
+    ///
+    /// The runner reads what is under the point before the touch goes in;
+    /// told what was aimed at, it does not send the touch when that is no
+    /// longer there, and answers with [`target_gone_before_touch`]'s error.
+    /// A consumer's player took its "go live" pill away by itself between
+    /// the aim and the touch, and the touch went to the overlay under it.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn tap_at_norm_coord_aimed_at(
+        &self,
+        nx: f64,
+        ny: f64,
+        times: u32,
+        interval_ms: Option<u32>,
+        hold_ms: Option<u32>,
+        aimed_by: Option<TreeReader>,
+        target: Option<&TapTarget>,
+    ) -> Result<TapAtCoordResult, RunnerTransportError> {
+        self.tap_request(nx, ny, times, interval_ms, hold_ms, aimed_by, target, false)
             .await
     }
 
@@ -78,7 +100,7 @@ impl HttpRunnerClient {
         ny: f64,
         aimed_by: Option<TreeReader>,
     ) -> Result<TapAtCoordResult, RunnerTransportError> {
-        self.tap_request(nx, ny, 2, None, None, aimed_by, true)
+        self.tap_request(nx, ny, 2, None, None, aimed_by, None, true)
             .await
     }
 
@@ -91,15 +113,19 @@ impl HttpRunnerClient {
         interval_ms: Option<u32>,
         hold_ms: Option<u32>,
         aimed_by: Option<TreeReader>,
+        aimed_at: Option<&TapTarget>,
         double_tap: bool,
     ) -> Result<TapAtCoordResult, RunnerTransportError> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
-        struct Req {
+        struct Req<'a> {
             nx: f64,
             ny: f64,
             #[serde(skip_serializing_if = "Option::is_none")]
             aimed_by: Option<TreeReader>,
+            // A runner older than this field ignores it and touches.
+            #[serde(skip_serializing_if = "Option::is_none")]
+            aimed_at: Option<&'a TapTarget>,
             // Omitted for an ordinary tap, so the common case puts
             // exactly the bytes on the wire it always did — including
             // for a runner that has never heard of a burst.
@@ -131,6 +157,7 @@ impl HttpRunnerClient {
                     nx,
                     ny,
                     aimed_by,
+                    aimed_at,
                     times,
                     interval_ms,
                     hold_ms,
@@ -240,4 +267,37 @@ impl HttpRunnerClient {
             .await?;
         body.into_result("/long-press-at-norm-coord")
     }
+}
+
+/// The element a touch is aimed at, as the runner looks for it in what is
+/// under the point: by identifier, else by label, else by frame — the
+/// order the host judges a landing in.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TapTarget {
+    /// Empty when the element has none.
+    pub identifier: String,
+    /// Empty when the element has none.
+    pub label: String,
+    /// In the coordinate space the runner reports its chain in.
+    pub frame: smix_screen::Rect,
+}
+
+/// The runner's note when it did not send a touch because the element
+/// aimed at was no longer under the point — what it found there instead —
+/// or `None` for any other error.
+#[must_use]
+pub fn target_gone_before_touch(e: &RunnerTransportError) -> Option<String> {
+    let RunnerTransportError::NonSuccessStatus {
+        status: 409, body, ..
+    } = e
+    else {
+        return None;
+    };
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    (v.get("error")?.as_str()? == "target_gone_before_touch").then(|| {
+        v.get("saw")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .to_owned()
+    })
 }

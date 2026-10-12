@@ -318,7 +318,7 @@ fn same_element(a: &HitElement, b: &HitElement) -> bool {
     false
 }
 
-fn describe_hit(e: &HitElement) -> String {
+pub(crate) fn describe_hit(e: &HitElement) -> String {
     if !e.identifier.is_empty() {
         format!("id={}", e.identifier)
     } else if !e.label.is_empty() {

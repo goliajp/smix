@@ -47,7 +47,7 @@ xcrun --sdk iphonesimulator swiftc \
   -target "$TRIPLE" \
   -sdk "$SDK" \
   -o "$OUT/$EXE" \
-  "$SRC/main.swift" \
+  "$SRC"/*.swift \
   || fail "swiftc failed"
 
 cat > "$OUT/Info.plist" <<PLIST

@@ -1,3 +1,4 @@
+import CoreGraphics
 import FlyingFox
 import Foundation
 
@@ -29,20 +30,37 @@ public enum TapAtCoordRoute {
     /// delivered in one synthesise, closer together than separate
     /// synthesises can be, which is what a double-tap recogniser needs.
     public let doubleTap: Bool
+    /// The element the host aimed at, from a host that says.
+    public let aimedAt: AimTarget?
 
     public init(
       nx: Double, ny: Double,
       times: Int = 1,
       intervalMs: Int = TouchTimeline.defaultIntervalMs,
       holdMs: Int = TouchTimeline.defaultHoldMs,
-      doubleTap: Bool = false
+      doubleTap: Bool = false,
+      aimedAt: AimTarget? = nil
     ) {
+      self.aimedAt = aimedAt
       self.nx = nx
       self.ny = ny
       self.times = times
       self.intervalMs = intervalMs
       self.holdMs = holdMs
       self.doubleTap = doubleTap
+    }
+  }
+
+  /// The element a touch is aimed at, as the host describes it.
+  public struct AimTarget: Sendable, Equatable {
+    public let identifier: String
+    public let label: String
+    public let frame: CGRect
+
+    public init(identifier: String, label: String, frame: CGRect) {
+      self.identifier = identifier
+      self.label = label
+      self.frame = frame
     }
   }
 
@@ -75,7 +93,16 @@ public enum TapAtCoordRoute {
     let doubleTap = (root["doubleTap"] as? Bool) ?? false
     return TapAtCoordRequest(
       nx: nx, ny: ny, times: times, intervalMs: intervalMs, holdMs: holdMs,
-      doubleTap: doubleTap)
+      doubleTap: doubleTap, aimedAt: aimTarget(root["aimedAt"]))
+  }
+
+  private static func aimTarget(_ raw: Any?) -> AimTarget? {
+    guard let o = raw as? [String: Any], let f = o["frame"] as? [String: Any] else { return nil }
+    func n(_ k: String) -> Double? { (f[k] as? NSNumber)?.doubleValue }
+    guard let x = n("x"), let y = n("y"), let w = n("w"), let h = n("h") else { return nil }
+    return AimTarget(
+      identifier: o["identifier"] as? String ?? "", label: o["label"] as? String ?? "",
+      frame: CGRect(x: x, y: y, width: w, height: h))
   }
 
   /// Bounds on when the touch was actually down, measured around the
@@ -170,6 +197,12 @@ public enum TapAtCoordRoute {
     }
     let body = Data((json + "}").utf8)
     return envelope(.ok, body)
+  }
+
+  /// The touch was not sent: what it was aimed at had left the point.
+  public static func targetGone(saw: String) -> HTTPResponse {
+    let body = Data(#"{"ok":false,"error":"target_gone_before_touch","saw":"\#(jsonEscape(saw))"}"#.utf8)
+    return envelope(.conflict, body)
   }
 
   public static func badRequest(reason: String) -> HTTPResponse {

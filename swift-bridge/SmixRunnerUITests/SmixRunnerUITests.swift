@@ -2494,7 +2494,7 @@ final class SmixRunnerUITests: XCTestCase {
       // event carries XCUIElement-owner metadata that stops RN list
       // rendering from triggering its data fetch — the list sits on a
       // skeleton loader for 30 s instead of populating.
-      tapAtCoordHandler: { nx, ny, times, intervalMs, holdMs, doubleTap in
+      tapAtCoordHandler: { nx, ny, times, intervalMs, holdMs, doubleTap, aimedAt in
         let entryMs = Date().timeIntervalSince1970 * 1000.0
         let app = await resolveApp()  // Per-request target-app rebind.
         // Compute the physical point (nx × app.frame.width + frame.origin)
@@ -2509,7 +2509,7 @@ final class SmixRunnerUITests: XCTestCase {
           tapLayout = smixLayout(of: app)
           return true
         }
-        guard setupOk == true else { return (ok: false, chain: [], press: nil) }
+        guard setupOk == true else { return (ok: false, chain: [], press: nil, gone: nil) }
 
         let delivery = smixDelivery(
           of: CGPoint(x: px, y: py), layout: tapLayout)
@@ -2526,7 +2526,7 @@ final class SmixRunnerUITests: XCTestCase {
           guard let record = SmixEventRecord(orientation: delivery.orientation) else {
             FileHandle.standardError.write(
               Data("smix-runner: tap-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
-            return (ok: false, chain: [], press: nil)
+            return (ok: false, chain: [], press: nil, gone: nil)
           }
           let added = doubleTap
             ? record.addPointerDoubleTap(
@@ -2535,7 +2535,7 @@ final class SmixRunnerUITests: XCTestCase {
           guard added else {
             FileHandle.standardError.write(
               Data("smix-runner: tap-at-norm-coord: XCPointerEventPath unavailable\n".utf8))
-            return (ok: false, chain: [], press: nil)
+            return (ok: false, chain: [], press: nil, gone: nil)
           }
           records.append(record)
         }
@@ -2564,11 +2564,16 @@ final class SmixRunnerUITests: XCTestCase {
         // failed tap: the touch still happens, and the host reads an
         // empty chain as "could not be judged" rather than as a pass.
         var chain: [HitChainEntry] = []
-        _ = smixGuarded("tap-at-norm-coord-chain") { () -> Bool in
+        let readable = smixGuarded("tap-at-norm-coord-chain") { () -> Bool in
           guard let snap = try? app.snapshot() else { return false }
           chain = HitChain.at(
             point: CGPoint(x: px, y: py), in: convertSnapshot(snap))
           return true
+        } == true
+        // Gone from the point already: no touch, so nothing under it is
+        // pressed in its place.
+        if let aimedAt, let saw = AimCheck.gone(target: aimedAt, chain: chain, readable: readable) {
+          return (ok: false, chain: chain, press: nil, gone: saw)
         }
         // Timed around the synthesise alone: this process authors the
         // timeline, so the call's span and the hold bound when a single
@@ -2587,7 +2592,7 @@ final class SmixRunnerUITests: XCTestCase {
         } catch {
           FileHandle.standardError.write(
             Data("smix-runner: tap-at-norm-coord: synthesize error: \(error)\n".utf8))
-          return (ok: false, chain: [], press: nil)
+          return (ok: false, chain: [], press: nil, gone: nil)
         }
         let callEndMs = Date().timeIntervalSince1970 * 1000.0
         let press = times == 1
@@ -2595,7 +2600,7 @@ final class SmixRunnerUITests: XCTestCase {
             callStartMs: callStartMs, callEndMs: callEndMs,
             holdMs: UInt32(max(0, holdMs)), handlerEntryMs: entryMs)
           : nil
-        return (ok: true, chain: chain, press: press)
+        return (ok: true, chain: chain, press: press, gone: nil)
       },
       // POST /tap-by-id handler. XCUIElement.tap() via the XCTest
       // gesture-recognizer chain for SwiftUI .sheet / .alert /

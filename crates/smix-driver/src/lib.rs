@@ -473,13 +473,26 @@ impl IosDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<ActOutcome, ExpectationFailure> {
-        let (nx, ny, aimed, reader) = self.resolve_aimed(selector, include).await?;
-        let landed = self
-            .runner
-            .tap_at_norm_coord_aimed(nx, ny, 1, None, None, Some(reader))
-            .await
-            .map_err(transport_to_failure)?;
-        landing_outcome(selector, (nx, ny, aimed, reader), &landed)
+        let (aimed, landed) = touch_aimed::touch_where_aimed(
+            selector,
+            || self.resolve_aimed(selector, include),
+            |nx, ny, reader, target| async move {
+                self.runner
+                    .tap_at_norm_coord_aimed_at(
+                        nx,
+                        ny,
+                        1,
+                        None,
+                        None,
+                        Some(reader),
+                        target.as_ref(),
+                    )
+                    .await
+            },
+            transport_to_failure,
+        )
+        .await?;
+        landing_outcome(selector, aimed, &landed)
     }
 
     /// Where a touch aimed at `selector` goes, and the node it is aimed
@@ -647,13 +660,26 @@ impl IosDriver {
         hold_ms: Option<u32>,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        let (nx, ny, aimed, reader) = self.resolve_aimed(selector, include).await?;
-        let landed = self
-            .runner
-            .tap_at_norm_coord_aimed(nx, ny, times.max(1), interval_ms, hold_ms, Some(reader))
-            .await
-            .map_err(transport_to_failure)?;
-        landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())
+        let (aimed, landed) = touch_aimed::touch_where_aimed(
+            selector,
+            || self.resolve_aimed(selector, include),
+            |nx, ny, reader, target| async move {
+                self.runner
+                    .tap_at_norm_coord_aimed_at(
+                        nx,
+                        ny,
+                        times.max(1),
+                        interval_ms,
+                        hold_ms,
+                        Some(reader),
+                        target.as_ref(),
+                    )
+                    .await
+            },
+            transport_to_failure,
+        )
+        .await?;
+        landing_outcome(selector, aimed, &landed).map(|_| ())
     }
 
     /// Tap a selector via an explicit dispatch mode. Used to opt into
@@ -1938,6 +1964,7 @@ pub use landing::{Aimed, ChainCoverage, landing_outcome, tap_landed_within, verd
 mod ios;
 mod scroll_until;
 pub mod settle;
+mod touch_aimed;
 mod traits;
 
 pub use android::AndroidDriver;
