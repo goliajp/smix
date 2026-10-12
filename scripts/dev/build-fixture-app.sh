@@ -102,4 +102,6 @@ ACTUAL_ID="$(plutil -extract CFBundleIdentifier raw "$OUT/Info.plist")" \
 file "$OUT/$EXE" | grep -q 'Mach-O.*executable' \
   || fail "$EXE is not a Mach-O executable: $(file "$OUT/$EXE")"
 
+python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --write --kind ios >/dev/null \
+  || fail "the app was built and its source stamp could not be written"
 log "built $OUT ($BUNDLE_ID)"

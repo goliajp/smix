@@ -124,6 +124,36 @@ def stamp_is_json(root):
     return len(got) == 5, f"{len(got)} digests, expected 5"
 
 
+IOS_SRC = ("test-fixtures", "demo-app", "main.swift")
+IOS_APP_BIN = ("test-fixtures", "demo-app", "build", "SmixFixture.app", "SmixFixture")
+
+
+def run_ios(root, mode):
+    return subprocess.run(
+        [sys.executable, STAMP, mode, "--kind", "ios", "--root", root],
+        capture_output=True, text=True,
+    )
+
+
+def ios_swift_edited(root):
+    """The iOS fixture is checked in built: an edit to its Swift with no
+    build after it is the stale app every iOS gate would install. The app
+    itself, under `build/`, is not an input."""
+    write(root, IOS_SRC, "let a = 1\n")
+    write(root, ("scripts", "dev", "build-fixture-app.sh"), "swiftc\n")
+    write(root, IOS_APP_BIN, "a binary\n")
+    run_ios(root, "--write")
+    first = run_ios(root, "--check")
+    write(root, IOS_APP_BIN, "rebuilt binary\n")
+    still = run_ios(root, "--check")
+    write(root, IOS_SRC, "let a = 2\n")
+    r = run_ios(root, "--check")
+    named = "main.swift" in r.stderr
+    ok = first.returncode == 0 and still.returncode == 0 and r.returncode == 1 and named
+    return ok, (f"fresh exit {first.returncode}, app-only change exit {still.returncode}, "
+                f"source edit exit {r.returncode}, names it: {named}")
+
+
 def main() -> int:
     cases = [
         ("an apk built from these sources passes", built_here),
@@ -134,6 +164,7 @@ def main() -> int:
         ("a source file removed after the build is caught", source_removed),
         ("an input set that hashes nothing is a failure", nothing_to_hash),
         ("the stamp records every input", stamp_is_json),
+        ("an iOS fixture source edited after the build is caught", ios_swift_edited),
     ]
     bad = [name for name, fn in cases if not case(name, fn)]
     if bad:

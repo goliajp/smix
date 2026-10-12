@@ -368,6 +368,8 @@ jobs:
       # counterpart: preflight.sh.
       - name: the fixture stamp can still go red
         run: python3 scripts/dev/fixture-apk-stamp.test.py
+      - name: the checked-in iOS fixture is built from its sources
+        run: python3 scripts/dev/fixture-apk-stamp.py --check --kind ios
       # The two-paths gate over recorded payloads. Device-free: it reads
       # files, not a runner. Local counterpart: preflight.sh.
       - name: the two-paths gate can still go red

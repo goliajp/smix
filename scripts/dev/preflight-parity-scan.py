@@ -36,6 +36,7 @@ LOCAL = {
     "an e2e says whether it judged": "an-e2e-says-whether-it-judged.py",
     "the judged-or-not scan can still go red": "an-e2e-says-whether-it-judged.test.py",
     "the fixture stamp can still go red": "fixture-apk-stamp.test.py",
+    "the checked-in iOS fixture is built from its sources": "fixture-apk-stamp.py --check --kind ios",
     "the two-paths gate can still go red": "two-paths-agree.test.py",
     "the runner waits fit the host": "runner-waits-fit-the-host.py",
     "the runner-waits gate can still go red": "runner-waits-fit-the-host.test.py",

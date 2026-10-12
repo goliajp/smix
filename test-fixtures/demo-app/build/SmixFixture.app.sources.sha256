@@ -1,0 +1,9 @@
+{
+"files": {
+"scripts/dev/build-fixture-app.sh": "bb2efc0d0bf12d1e748695ba1cd45e02e37d500497bdfa51ed2bca2d30347c1e",
+"test-fixtures/demo-app/Blink.swift": "6bf6acc36bb61ef657848c5c559c1f06a6166193261a0c7bfb0a3a1a7199872d",
+"test-fixtures/demo-app/Toast.swift": "4bc516cf1102c5e0d2e9225018c091725439d6f39d6b58aa99ab4d3601f0e080",
+"test-fixtures/demo-app/UIKitRows.swift": "1973f96484f44ecd94e2df9587cfbbbe3e8b8655dc36478c0bf151c0e672983f",
+"test-fixtures/demo-app/main.swift": "4f643a01496a4f6c90aaf532d1065585d1766bcc3769a1cd8789736a0393e9e7"
+}
+}

@@ -25,8 +25,8 @@ One recipe, two callers: `--write` from the build script, `--check` from
 every gate that installs the thing. A second copy of the file list is
 the copy that goes stale (`code/derive-dont-copy`).
 
-    fixture-apk-stamp.py --write [--root DIR]
-    fixture-apk-stamp.py --check [--root DIR]
+    fixture-apk-stamp.py --write [--kind android|ios] [--root DIR]
+    fixture-apk-stamp.py --check [--kind android|ios] [--root DIR]
 
 Exit: 0 the apk is current, 1 it is not (and the verdict names why).
 """
@@ -39,8 +39,16 @@ import sys
 
 # What ends up inside the apk, in the two trees it comes from. Each entry
 # is a directory walked for source files, or a single file.
-def source_inputs(root: str) -> list[str]:
-    """Every path whose content decides what the apk contains."""
+def source_inputs(root: str, kind: str = "android") -> list[str]:
+    """Every path whose content decides what the built fixture contains."""
+    if kind == "ios":
+        # The iOS fixture is checked in, built: a change to its Swift that
+        # was not followed by a build left the gates installing the old
+        # app (IO27a in the record). `build/` under it is the output.
+        return [
+            os.path.join(root, "test-fixtures", "demo-app"),
+            os.path.join(root, "scripts", "dev", "build-fixture-app.sh"),
+        ]
     return [
         os.path.join(root, "test-fixtures", "android-app", "app", "src", "main"),
         os.path.join(root, "test-fixtures", "android-app", "app", "build.gradle.kts"),
@@ -52,26 +60,29 @@ def source_inputs(root: str) -> list[str]:
     ]
 
 
-def apk_path(root: str) -> str:
+def apk_path(root: str, kind: str = "android") -> str:
+    if kind == "ios":
+        return os.path.join(root, "test-fixtures", "demo-app", "build", "SmixFixture.app")
     return os.path.join(
         root, "test-fixtures", "android-app", "app", "build", "outputs", "apk",
         "debug", "app-debug.apk",
     )
 
 
-def stamp_path(root: str) -> str:
-    return apk_path(root) + ".sources.sha256"
+def stamp_path(root: str, kind: str = "android") -> str:
+    return apk_path(root, kind) + ".sources.sha256"
 
 
-def hashes(root: str) -> dict[str, str]:
+def hashes(root: str, kind: str = "android") -> dict[str, str]:
     """Every source file, by its path relative to the root, with its digest."""
     out: dict[str, str] = {}
-    for entry in source_inputs(root):
+    for entry in source_inputs(root, kind):
         if os.path.isfile(entry):
             files = [entry]
         elif os.path.isdir(entry):
             files = []
-            for dirpath, _dirs, names in os.walk(entry):
+            for dirpath, dirs, names in os.walk(entry):
+                dirs[:] = [d for d in dirs if d != "build"]
                 files.extend(os.path.join(dirpath, n) for n in names)
         else:
             # A path that is not there is a change like any other: the
@@ -90,12 +101,15 @@ def main() -> int:
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write", action="store_true")
     mode.add_argument("--check", action="store_true")
+    ap.add_argument("--kind", choices=["android", "ios"], default="android")
     ap.add_argument("--root", default=os.path.dirname(os.path.dirname(
         os.path.dirname(os.path.abspath(__file__)))))
     args = ap.parse_args()
     root = os.path.abspath(args.root)
 
-    now = hashes(root)
+    kind = args.kind
+    build = "bash scripts/dev/build-android-fixture.sh" if kind == "android" else "bash scripts/dev/build-fixture-app.sh"
+    now = hashes(root, kind)
     # An empty file list would agree with every apk ever built. The
     # inputs moving is a real possibility — this walks two trees by name
     # — and a scan that hashes nothing must say so rather than pass.
@@ -105,23 +119,22 @@ def main() -> int:
         return 1
 
     if args.write:
-        with open(stamp_path(root), "w", encoding="utf-8") as fh:
+        with open(stamp_path(root, kind), "w", encoding="utf-8") as fh:
             json.dump({"files": now}, fh, indent=0, sort_keys=True)
         print(f"fixture-apk-stamp: wrote {len(now)} source digests beside the apk")
         return 0
 
-    apk = apk_path(root)
+    apk = apk_path(root, kind)
     if not os.path.exists(apk):
-        print(f"fixture-apk-stamp: FAIL — no fixture apk at {apk}. "
-              "Build it: bash scripts/dev/build-android-fixture.sh", file=sys.stderr)
+        print(f"fixture-apk-stamp: FAIL — no {kind} fixture at {apk}. "
+              f"Build it: {build}", file=sys.stderr)
         return 1
-    stamp = stamp_path(root)
+    stamp = stamp_path(root, kind)
     if not os.path.exists(stamp):
         # Not "no stamp, carry on": an apk from before stamps existed is
         # exactly an apk nobody can vouch for.
         print(f"fixture-apk-stamp: FAIL — {os.path.basename(apk)} carries no record of "
-              "the sources it was built from. Rebuild it: "
-              "bash scripts/dev/build-android-fixture.sh", file=sys.stderr)
+              f"the sources it was built from. Rebuild it: {build}", file=sys.stderr)
         return 1
     with open(stamp, encoding="utf-8") as fh:
         was = json.load(fh).get("files", {})
@@ -130,12 +143,12 @@ def main() -> int:
     added = sorted(p for p in now if p not in was)
     removed = sorted(p for p in was if p not in now)
     if not (changed or added or removed):
-        print(f"fixture-apk-stamp: clean — the apk is the one these {len(now)} "
+        print(f"fixture-apk-stamp: clean — the {kind} fixture is the one these {len(now)} "
               "source files build")
         return 0
 
-    print("fixture-apk-stamp: FAIL — the fixture apk was built from other sources. "
-          "Rebuild it: bash scripts/dev/build-android-fixture.sh", file=sys.stderr)
+    print(f"fixture-apk-stamp: FAIL — the {kind} fixture was built from other sources. "
+          f"Rebuild it: {build}", file=sys.stderr)
     for label, paths in (("changed", changed), ("added", added), ("removed", removed)):
         for path in paths[:4]:
             print(f"  {label}: {path}", file=sys.stderr)
