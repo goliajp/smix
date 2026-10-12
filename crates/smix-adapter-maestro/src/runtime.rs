@@ -1744,14 +1744,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         // this — reading a duration back out of a message would be
         // parsing prose for a decision.
         const REFUSED_RETRY: Duration = Duration::from_millis(100);
-        let deadline = std::time::Instant::now() + Duration::from_millis(ceiling_ms);
         let budget = smix_driver::poll::Budget::new(Duration::from_millis(ceiling_ms));
 
         let mut previous = loop {
+            let look = budget.look();
             match self.app.capture_frame().await {
                 Ok(frame) => break frame,
                 Err(e) if e.code == FailureCode::CaptureBackpressure => {
-                    if std::time::Instant::now() >= deadline {
+                    if budget.spent_by(look) {
                         return Ok(Stillness::NeverObserved);
                     }
                     tokio::time::sleep(REFUSED_RETRY).await;
@@ -1764,7 +1764,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             let next = match self.app.capture_frame().await {
                 Ok(frame) => frame,
                 Err(e) if e.code == FailureCode::CaptureBackpressure => {
-                    if std::time::Instant::now() >= deadline {
+                    if budget.spent_by(look) {
                         return Ok(Stillness::NeverObserved);
                     }
                     tokio::time::sleep(REFUSED_RETRY).await;

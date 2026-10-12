@@ -539,6 +539,10 @@ jobs:
         run: python3 scripts/dev/no-script-picks-a-device-by-accident.py
       - name: no-script-picks-a-device-by-accident harness
         run: python3 scripts/dev/no-script-picks-a-device-by-accident.test.py
+      - name: a-wait-ends-by-when-it-looked
+        run: python3 scripts/dev/a-wait-ends-by-when-it-looked.py
+      - name: a-wait-ends-by-when-it-looked harness
+        run: python3 scripts/dev/a-wait-ends-by-when-it-looked.test.py
       - name: generated-artifacts-are-load-bearing
         run: python3 scripts/dev/generated-artifacts-are-load-bearing.py
       - name: generated-artifacts-are-load-bearing harness

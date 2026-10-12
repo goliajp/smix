@@ -936,14 +936,15 @@ fn parse_http_status(buf: &[u8]) -> Option<u16> {
 
 /// Poll `GET /health` until it answers 200 or the deadline passes.
 fn wait_health_back(port: u16, timeout: std::time::Duration) -> bool {
-    let deadline = std::time::Instant::now() + timeout;
+    let deadline = smix_adb::wait::Deadline::after(timeout);
     loop {
+        let look = deadline.look();
         // health-not-a-decider: waits for the socket to come back after a
         // bounce. Its answer is one input to a judgement made elsewhere.
         if health_ok(port) {
             return true;
         }
-        if std::time::Instant::now() >= deadline {
+        if deadline.passed_by(look) {
             return false;
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -1706,7 +1707,7 @@ fn one_bring_up(
             log.display()
         );
     }
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    let deadline = smix_adb::wait::Deadline::after(std::time::Duration::from_secs(timeout_secs));
     // Heartbeat every 30 s during a cold rebuild so anyone watching
     // stdout sees progress instead of a stall.
     let started_at = std::time::Instant::now();
@@ -1720,7 +1721,8 @@ fn one_bring_up(
     // the timeout can say "the server came up and the session never did"
     // instead of "never became healthy", which would be false.
     let mut last_session_gap: Option<String> = None;
-    while std::time::Instant::now() < deadline {
+    loop {
+        let look = deadline.look();
         if !announced_block && let Some(blocked) = device_preflight_block(&log) {
             println!("runner up: waiting on the device — {blocked}");
             use std::io::Write;
@@ -1877,6 +1879,9 @@ fn one_bring_up(
             }
             return Ok(Attempt::Up);
         }
+        if deadline.passed_by(look) {
+            break;
+        }
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
     // Gone before the row goes: the caller retries with a second xcodebuild
@@ -2007,8 +2012,12 @@ fn down_with(port: u16, consent: bool, take_over: bool) -> Result<(), String> {
         {
             println!("stopping supervisor: pid={sup_pid}");
             signal(sup_pid, "-TERM");
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-            while pid_command(sup_pid).is_some() && std::time::Instant::now() < deadline {
+            let deadline = smix_adb::wait::Deadline::after(std::time::Duration::from_secs(5));
+            loop {
+                let look = deadline.look();
+                if pid_command(sup_pid).is_none() || deadline.passed_by(look) {
+                    break;
+                }
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
             if pid_command(sup_pid).is_some() {
@@ -2079,10 +2088,14 @@ fn down_with(port: u16, consent: bool, take_over: bool) -> Result<(), String> {
     }
 
     if acted {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-        // health-not-a-decider: waits for the port to go quiet after a
-        // teardown. A session that is gone is the point here.
-        while health_ok(port) && std::time::Instant::now() < deadline {
+        let deadline = smix_adb::wait::Deadline::after(std::time::Duration::from_secs(15));
+        loop {
+            let look = deadline.look();
+            // health-not-a-decider: waits for the port to go quiet after a
+            // teardown. A session that is gone is the point here.
+            if !health_ok(port) || deadline.passed_by(look) {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
     }
@@ -2257,9 +2270,10 @@ fn spawn_forwarder(root: &Path, udid: &str, port: u16) -> Result<u32, String> {
     // about a process that was already gone, wrote a ledger row for it,
     // and let xcodebuild run for two minutes against a pipe that never
     // existed. A check that cannot fail is decoration.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let deadline = smix_adb::wait::Deadline::after(std::time::Duration::from_secs(10));
     let mut ready = false;
-    while std::time::Instant::now() < deadline {
+    loop {
+        let look = deadline.look();
         if let Ok(Some(status)) = child.try_wait() {
             return Err(format!(
                 "the port forwarder exited immediately ({status}). It is a \
@@ -2271,6 +2285,9 @@ fn spawn_forwarder(root: &Path, udid: &str, port: u16) -> Result<u32, String> {
         }
         if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
             ready = true;
+            break;
+        }
+        if deadline.passed_by(look) {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(100));

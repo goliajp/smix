@@ -332,10 +332,11 @@ impl MetroLogTail {
         let mut interval = time::interval(Duration::from_millis(25));
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
         loop {
+            let began = Instant::now();
             if let Some(entry) = self.find_matching(matcher, window) {
                 return Ok(entry);
             }
-            if Instant::now() >= deadline {
+            if began >= deadline {
                 return Err(AwaitError::Timeout {
                     regex: matcher.regex.as_str().to_string(),
                     timeout_ms: timeout.as_millis() as u64,
@@ -360,10 +361,11 @@ impl MetroLogTail {
         let mut interval = time::interval(Duration::from_millis(25));
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
         loop {
+            let began = Instant::now();
             if let Some(result) = self.try_match_all(matchers, order)? {
                 return Ok(result);
             }
-            if Instant::now() >= deadline {
+            if began >= deadline {
                 // Report the first unmet matcher as the timeout regex.
                 let idx = self.first_unmet(matchers, window);
                 let regex = matchers[idx].regex.as_str().to_string();

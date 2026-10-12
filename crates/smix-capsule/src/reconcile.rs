@@ -9,6 +9,7 @@
 //! uniform.
 
 use smix_lease::{CleanupAction, ProcIdentity};
+use std::time::Duration;
 
 /// What became of one owed close.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +63,23 @@ fn still_the_same(recorded: &ProcIdentity) -> Result<bool, Outcome> {
     Ok(true)
 }
 
+/// Whether `pid` is gone within `limit`, asked every `step`. Timed rather
+/// than counted: a count of asks left the wait as long as the asks took,
+/// and on a loaded machine one `ps` takes far longer than the step.
+fn exited_within(pid: u32, limit: Duration, step: Duration) -> bool {
+    let deadline = smix_adb::wait::Deadline::after(limit);
+    loop {
+        let look = deadline.look();
+        if smix_lease::store::identify(pid).is_none() {
+            return true;
+        }
+        if deadline.passed_by(look) {
+            return false;
+        }
+        std::thread::sleep(step);
+    }
+}
+
 /// SIGINT and wait, so a `simctl` recording flushes its mp4 trailer.
 ///
 /// The wait is the point: SIGINT then walking away leaves the encoder
@@ -75,11 +93,12 @@ fn stop_recording(path: &str, proc: &ProcIdentity) -> Outcome {
     // `kill` shell-out `runner.rs` uses, so there is one spelling of
     // "send a signal" in here rather than two.
     crate::runner::signal(proc.pid, "-INT");
-    for _ in 0..100 {
-        if smix_lease::store::identify(proc.pid).is_none() {
-            return Outcome::Closed(format!("recording stopped, {path} kept its trailer"));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+    if exited_within(
+        proc.pid,
+        Duration::from_secs(10),
+        Duration::from_millis(100),
+    ) {
+        return Outcome::Closed(format!("recording stopped, {path} kept its trailer"));
     }
     Outcome::Failed(format!(
         "recording pid {} ignored SIGINT for 10s — {path} may be truncated; \
@@ -139,11 +158,8 @@ fn stop_supervisor(proc: &ProcIdentity) -> Outcome {
         return o;
     }
     crate::runner::signal(proc.pid, "-TERM");
-    for _ in 0..20 {
-        if smix_lease::store::identify(proc.pid).is_none() {
-            return Outcome::Closed(format!("supervisor pid {} stopped", proc.pid));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(250));
+    if exited_within(proc.pid, Duration::from_secs(5), Duration::from_millis(250)) {
+        return Outcome::Closed(format!("supervisor pid {} stopped", proc.pid));
     }
     crate::runner::signal(proc.pid, "-9");
     Outcome::Closed(format!(
@@ -187,11 +203,8 @@ pub(crate) fn stop_port_forward(local_port: u16, proc: &ProcIdentity) -> Outcome
         return o;
     }
     crate::runner::signal(proc.pid, "-TERM");
-    for _ in 0..20 {
-        if smix_lease::store::identify(proc.pid).is_none() {
-            return Outcome::Closed(format!("port forward on {local_port} stopped"));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(250));
+    if exited_within(proc.pid, Duration::from_secs(5), Duration::from_millis(250)) {
+        return Outcome::Closed(format!("port forward on {local_port} stopped"));
     }
     Outcome::Failed(format!(
         "port forward on {local_port} (pid {}) ignored SIGTERM for 5s",

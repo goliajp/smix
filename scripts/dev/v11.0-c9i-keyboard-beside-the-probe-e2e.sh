@@ -45,6 +45,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# What smix said, whole, when a leg fails: the first FAIL line alone left a
+# red in a loaded release run with nothing to say why, and the log went
+# with $WORK. SMIX_E2E_KEEP names a directory to keep it in.
+said_by_smix() { # $1 the run's log name
+  printf '[c9i-keyboard] smix said (%s, last 40 lines):\n' "$1" >&2
+  tail -40 "$WORK/$1.log" >&2
+  if [ -n "${SMIX_E2E_KEEP:-}" ]; then
+    mkdir -p "$SMIX_E2E_KEEP" && cp "$WORK/$1.log" "$SMIX_E2E_KEEP/c9i-$1.log"
+  fi
+}
+
 [ -f "$APK" ] || cannot_judge "no Android fixture — run: bash scripts/dev/build-android-fixture.sh"
 SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1 | tr -d '[:space:]')" || true
 if [ -z "$SERIAL" ] || ! adb devices 2>/dev/null | grep -q "^$SERIAL[[:space:]]*device"; then
@@ -108,7 +119,7 @@ shown="$(ime_shown)"
 [ "$shown" = "true" ] \
   || cannot_judge "the device shows no keyboard after the tap (mInputShown=$shown) — there is nothing to see"
 [ "$rc" = 0 ] \
-  || fail "the device shows the keyboard and the flow did not see it (exit $rc): $(grep -m1 'FAIL' "$WORK/up-run.log" | cut -c1-240)"
+  || { said_by_smix up-run; fail "the device shows the keyboard and the flow did not see it (exit $rc)"; }
 log "keyboard up: the device says so and the flow saw it"
 
 rc=0
@@ -117,7 +128,7 @@ rc=0
   >"$WORK/down-run.log" 2>&1 || rc=$?
 after="$(ime_shown)"
 [ "$rc" = 0 ] \
-  || fail "hideKeyboard then assertNotVisible failed (exit $rc): $(grep -m1 'FAIL' "$WORK/down-run.log" | cut -c1-240)"
+  || { said_by_smix down-run; fail "hideKeyboard then assertNotVisible failed (exit $rc, the device's mInputShown=$after)"; }
 [ "$after" = "false" ] || fail "the flow passed and the device still shows the keyboard (mInputShown=$after)"
 log "keyboard down: the flow says so and the device agrees"
 log "PASS"
