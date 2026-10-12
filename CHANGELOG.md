@@ -2,6 +2,26 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **The Android probe's stillness no longer grows while the app is not
+  looking.** `quietMs` counted from the last change to now; the sampler that
+  sees changes runs on the app's main thread, so on a starved device the
+  number kept growing between samples. It now runs from the last change to
+  the last sample, and `/probe` also reports how late the sampler is
+  (`sampleLateMs`) and whether a Compose root has an animation or
+  recomposition waiting for a frame (`framesPending`).
+
+### Changed
+
+- **`ProbeStatus::idle` now has a value.** `HttpRunnerClient::probe_status`
+  reads it from the probe's report through the new
+  `smix_runner_client::settled`: settled when the tree has held still for
+  300 ms, the sampler is on time and nothing waits for a frame. A probe
+  older than this release leaves it `None`, as before.
+
 ## [15.0.1] — 2026-10-13
 
 ### Fixed

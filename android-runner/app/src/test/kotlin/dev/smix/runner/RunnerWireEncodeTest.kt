@@ -50,6 +50,17 @@ class RunnerWireEncodeTest {
         assertEquals("1", obj.getString("version"))
         assertEquals(2, obj.getInt("roots"))
         assertEquals(40L, obj.getLong("quietMs"))
+        assertTrue(!obj.has("sampleLateMs"))
+        assertTrue(!obj.has("framesPending"))
+    }
+
+    // How stale the stillness is travels with it; a probe too old to say
+    // leaves the field out rather than claiming the sampler is on time.
+    @Test
+    fun aProbeThatSaysHowLateItsSamplerIsPassesItOn() {
+        val obj = JSONObject(RunnerWire.probePresentBody("dev.smix.fixture", "1", 2, 40L, null, 900L, true))
+        assertEquals(900L, obj.getLong("sampleLateMs"))
+        assertTrue(obj.getBoolean("framesPending"))
     }
 
     // MARK: - /display

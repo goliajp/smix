@@ -44,6 +44,10 @@ step() {
   if [ $rc -eq 0 ]; then
     printf 'v10-exit: PASS  %s\n' "$name"
     printf '%s\n' "$out" | tail -1 | sed 's/^/          /'
+  elif [ $rc -eq 2 ]; then
+    # could not judge: named, not passed and not failed
+    printf 'v10-exit: COULD NOT JUDGE  %s\n' "$name"
+    printf '%s\n' "$out" | tail -1 | sed 's/^/          /'
   else
     printf 'v10-exit: FAIL  %s\n' "$name"
     printf '%s\n' "$out" | tail -3 | sed 's/^/          /'

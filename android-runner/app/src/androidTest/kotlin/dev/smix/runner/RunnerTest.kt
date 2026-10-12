@@ -484,11 +484,14 @@ class SmixHttpServer(
                 // -1 for "never looked". Not a boolean: the caller decides
                 // how still is still enough, and a boolean would bake that
                 // threshold in here where nobody can see it.
-                val quiet = ProbeCall.call(ctx, app, "idle")
-                    ?.getLong("quietMs") ?: -1L
+                val idle = ProbeCall.call(ctx, app, "idle")
+                val quiet = idle?.getLong("quietMs") ?: -1L
+                // absent from a probe older than the field: null, not -1
+                val late = idle?.takeIf { it.containsKey("sampleLateMs") }?.getLong("sampleLateMs")
+                val pending = idle?.takeIf { it.containsKey("framesPending") }?.getBoolean("framesPending")
                 val roots = hello.getInt("roots", 0)
                 val version = hello.getString("version") ?: "?"
-                RunnerWire.probePresentBody(app, version, roots, quiet, hello.getString("library"))
+                RunnerWire.probePresentBody(app, version, roots, quiet, hello.getString("library"), late, pending)
             }
         } catch (e: IllegalArgumentException) {
             // Resolving an authority nothing declares throws rather than

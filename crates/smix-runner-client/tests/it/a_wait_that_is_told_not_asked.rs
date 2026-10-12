@@ -115,3 +115,83 @@ fn an_idle_flag_from_an_absent_probe_counts_for_nothing() {
         "an absent probe's idle flag was believed"
     );
 }
+
+// What the probe reports, turned into whether the screen has settled.
+// Measured on an emulator with its guest's CPUs held by busy loops: the
+// tree can hold still for over a second in the middle of an injected
+// drag, and for a few hundred milliseconds between two frames of a fling,
+// so stillness alone is not the answer.
+
+#[test]
+fn still_long_enough_on_time_and_nothing_waiting_for_a_frame_is_settled() {
+    assert_eq!(
+        smix_runner_client::settled(Some(400), Some(20), Some(false)),
+        Some(true)
+    );
+}
+
+#[test]
+fn an_animation_waiting_for_a_frame_is_not_settled_however_still_the_tree() {
+    assert_eq!(
+        smix_runner_client::settled(Some(600), Some(20), Some(true)),
+        Some(false)
+    );
+}
+
+#[test]
+fn a_sampler_running_late_is_not_believed() {
+    assert_eq!(
+        smix_runner_client::settled(Some(600), Some(400), Some(false)),
+        Some(false)
+    );
+}
+
+#[test]
+fn not_still_long_enough_is_not_settled() {
+    assert_eq!(
+        smix_runner_client::settled(Some(120), Some(20), Some(false)),
+        Some(false)
+    );
+}
+
+#[test]
+fn a_probe_that_never_looked_is_not_settled() {
+    assert_eq!(
+        smix_runner_client::settled(Some(-1), Some(-1), None),
+        Some(false)
+    );
+}
+
+#[test]
+fn a_probe_too_old_to_say_how_late_it_is_gives_no_answer() {
+    // Its stillness ran on the wall clock, which kept counting while the
+    // app's main thread was starved.
+    assert_eq!(smix_runner_client::settled(Some(4000), None, None), None);
+}
+
+#[tokio::test]
+async fn the_status_read_from_the_runner_carries_the_verdict() {
+    use smix_runner_client::HttpRunnerClient;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/probe"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "present": true, "app": "dev.smix.fixture", "version": "1", "roots": 1,
+            "quietMs": 900, "sampleLateMs": 10, "framesPending": true,
+        })))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    let status = client
+        .probe_status("dev.smix.fixture")
+        .await
+        .expect("status");
+    assert_eq!(
+        status.idle,
+        Some(false),
+        "a fling in flight was read as settled"
+    );
+    assert_eq!(status.plan(), WaitPlan::AskAgainWhenTold);
+}

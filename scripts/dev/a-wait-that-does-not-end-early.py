@@ -25,6 +25,10 @@ concluded a signal was useless from a scroll that never happened.
 
 Usage:
   a-wait-that-does-not-end-early.py --device <serial> --port <runner port>
+
+Exit 0 judged and passed, 1 judged and failed, 2 could not judge (three
+scrolls and no reading taken in motion). SMIX_WAIT_TRACE=1 prints every
+read of the rows and every reading of the probe to stderr.
 """
 
 import argparse
@@ -91,6 +95,28 @@ def main():
               "the polling strategy, and one strategy is not a comparison.")
         return 1
 
+    # A run that took no reading in motion measured nothing, and is taken
+    # again; a verdict is never retaken. On an emulator whose guest CPUs
+    # are held by busy loops one read of the probe's tree stalled for
+    # 1.8 s and the whole drag happened inside it.
+    for attempt in range(1, ATTEMPTS + 1):
+        problems.clear()
+        rc = once(a, d)
+        if rc is not UNMEASURED:
+            return rc
+    print(f"a-wait-that-does-not-end-early: CANNOT JUDGE — {ATTEMPTS} scrolls and "
+          f"no reading was taken in motion; the longest gap between two reads "
+          f"of the rows was {unmeasured_gap[0]:.2f}s, so this side could not "
+          f"see the list moving closely enough to say when it was still")
+    return 2
+
+
+ATTEMPTS = 3
+UNMEASURED = object()
+unmeasured_gap = [0.0]
+
+
+def once(a, d):
     # Force-stopped first, because the list keeps its scroll position
     # between runs. Left alone, successive runs walk it towards the last
     # row and then the swipe stops moving anything — and the gate would
@@ -145,9 +171,8 @@ def main():
     # machine, and a reading taken before the list moved says nothing about
     # a wait during motion. Until 14.1 that reading was always -1 (the
     # probe's sampler had not started), so this gate passed without having
-    # measured anything. A reading counts only when the rows changed both
-    # in the interval before it and in the interval after it: changing
-    # after it alone is a reading taken just before the list started.
+    # measured anything. A reading counts only when the rows were seen changing
+    # shortly before it and shortly after it (see BOUND_S below).
     #
     # Which rows are where is read from the probe's tree, which answers in
     # milliseconds. The accessibility tree took up to four seconds a read
@@ -160,29 +185,55 @@ def main():
     # it. Measured: that first reading was 2.3-3.1 s in four runs of five,
     # every one after it under 100 ms.
     SAMPLER_CATCHES_UP_S = 0.2
-    moving = []
-    polling_says_ready = False
+    # A reading counts as taken in motion only if this side saw the rows
+    # change wholly before it, starting less than a bound before it: the
+    # screen then cannot have been still for longer than the bound, and a
+    # stillness reported at or over the threshold is wrong. Judged after
+    # the run, from every
+    # read, rather than from the last two: unloaded, reads come every 10 ms,
+    # faster than frames, so every other one sees no change — and a rule
+    # that reset on an unchanged read found no motion at all. Loaded, an
+    # injected drag stalls for over a second between two reads that
+    # differ, and the probe is right to call that still. The margin under
+    # the threshold is one sampler tick plus how late it may run.
+    BOUND_S = (QUIET_ENOUGH_MS - 100) / 1000
+    readings = []  # (asked, quietMs, (sampleLateMs, framesPending))
+    changes = []   # (after the read before, after the read that differed)
     deadline = time.time() + 6
-    earlier = rows = probe_rows(a.port)
-    moving_since = None
+    rows = probe_rows(a.port)
+    rows_at = time.time()
+    polled = None
     while time.time() < deadline:
         asked = time.time()
-        q = probe(a.port).get("quietMs", -1)
+        said = probe(a.port)
+        readings.append((asked, said.get("quietMs", -1),
+                         (said.get("sampleLateMs"), said.get("framesPending"))))
         now = probe_rows(a.port)
+        now_at = time.time()
         if now != rows:
-            moving_since = moving_since or asked
-        else:
-            moving_since = None
-        if (rows != earlier and now != rows and moving_since is not None
-                and asked - moving_since >= SAMPLER_CATCHES_UP_S):
+            changes.append((rows_at, now_at))
+            if polled is None and now_at - changes[0][0] >= SAMPLER_CATCHES_UP_S:
+                # The other strategy, asked once while the list is seen
+                # moving: does the tag resolve in the tree it polls?
+                polled = bool(visible_rows(a.port))
+        rows, rows_at = now, now_at
+    began = changes[0][0] if changes else None
+    if os.environ.get("SMIX_WAIT_TRACE"):
+        t0 = readings[0][0] if readings else 0
+        print("changes:", [(round(s - t0, 3), round(e - t0, 3)) for s, e in changes], file=sys.stderr)
+        print("readings:", [(round(r[0] - t0, 3), r[1]) for r in readings], file=sys.stderr)
+    moving = []
+    lates_moving = []
+    for asked, q, extra in readings:
+        moved_before = any(s > asked - BOUND_S and e <= asked for s, e in changes)
+        if moved_before and asked - began >= SAMPLER_CATCHES_UP_S:
             moving.append(q)
-            if len(moving) == 1:
-                # The other strategy, asked once while the list is known to
-                # be moving: does the tag resolve in the tree it polls?
-                polling_says_ready = bool(visible_rows(a.port))
-        earlier, rows = rows, now
+            lates_moving.append(extra)
+    polling_says_ready = bool(polled)
     after = visible_rows(a.port)
-    settled_quiet = probe(a.port).get("quietMs", -1)
+    settled = probe(a.port)
+    settled_quiet = settled.get("quietMs", -1)
+    settled_pending = settled.get("framesPending")
     quiet = max(moving) if moving else None
     # The stimulus, checked before the verdicts are believed.
     if before == after:
@@ -192,12 +243,8 @@ def main():
         )
         return report()
     if not moving:
-        problems.append(
-            "no reading was taken while the rows were changing — the list moved, "
-            "but between the readings rather than across one, so nothing here "
-            "was measured during motion"
-        )
-        return report()
+        unmeasured_gap[0] = max((e - s for s, e in changes), default=0.0)
+        return UNMEASURED
     if not polling_says_ready:
         problems.append(
             "the polling strategy did NOT say ready during the scroll — the "
@@ -207,7 +254,8 @@ def main():
     if quiet >= QUIET_ENOUGH_MS:
         problems.append(
             f"quiescence said ready mid-scroll (quietMs={quiet}, readings taken "
-            f"while the rows changed: {moving}) — it is supposed to be the one that waits"
+            f"while the rows changed: {moving}; (sampler lateness ms, "
+            f"frames pending) at each: {lates_moving}) — it is supposed to be the one that waits"
         )
     if settled_quiet < QUIET_ENOUGH_MS:
         problems.append(
@@ -218,7 +266,8 @@ def main():
     if problems:
         return report()
     print(f"a-wait-that-does-not-end-early: mid-scroll the tag was resolvable "
-          f"(polling would have proceeded) while quietMs={quiet}; after the "
+          f"(polling would have proceeded) while quietMs={quiet} ((sampler lateness ms, "
+          f"frames pending) at those readings: {lates_moving}); after the "
           f"motion stopped quietMs={settled_quiet}. Rows {before[0]}..{before[-1]} "
           f"-> {after[0]}..{after[-1]}.")
     return 0

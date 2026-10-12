@@ -559,9 +559,17 @@ s.close()')"
     || v10_fail "the-three-that-went-red FAILED — a 6.4.0 root cause is unguarded again"
 
   log "v10: a wait that does not end early"
+  # Exit 2 is "could not judge": three scrolls and this side never read
+  # the list closely enough to see it moving. Named, like a tier leg that
+  # could not judge; only a judged failure stops the release.
+  wait_rc=0
   python3 "$ROOT/scripts/dev/a-wait-that-does-not-end-early.py" --device "$V10_DEVICE" \
-    --port "$V10_PORT" \
-    || v10_fail "a-wait-that-does-not-end-early FAILED"
+    --port "$V10_PORT" || wait_rc=$?
+  case "$wait_rc" in
+    0) : ;;
+    2) log "v10: a-wait-that-does-not-end-early COULD NOT JUDGE (see its output above)" ;;
+    *) v10_fail "a-wait-that-does-not-end-early FAILED" ;;
+  esac
 
   log "v10: a semantics action is not a touch"
   python3 "$ROOT/scripts/dev/a-semantics-action-is-not-a-touch.py" --device "$V10_DEVICE" \

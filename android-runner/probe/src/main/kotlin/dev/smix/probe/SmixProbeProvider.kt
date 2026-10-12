@@ -81,6 +81,8 @@ class SmixProbeProvider : ContentProvider() {
                 }
                 METHOD_IDLE -> {
                     putLong(KEY_QUIET_MS, SemanticsProbe.quiescentForMs())
+                    putLong(KEY_SAMPLE_LATE_MS, SemanticsProbe.sampleLateMs())
+                    SemanticsProbe.framesPending()?.let { putBoolean(KEY_FRAMES_PENDING, it) }
                     putBoolean("pendingLayout", SemanticsProbe.hasPendingLayout())
                 }
                 // Experimental, and named so. Whether it survives depends on
@@ -163,6 +165,8 @@ class SmixProbeProvider : ContentProvider() {
         const val KEY_ROOTS = "roots"
         const val KEY_TREE = "tree"
         const val KEY_QUIET_MS = "quietMs"
+        const val KEY_SAMPLE_LATE_MS = "sampleLateMs"
+        const val KEY_FRAMES_PENDING = "framesPending"
         const val KEY_ERROR = "error"
         const val KEY_WINDOW_IDS = "windowIds"
         const val KEY_LIBRARY = "library"
