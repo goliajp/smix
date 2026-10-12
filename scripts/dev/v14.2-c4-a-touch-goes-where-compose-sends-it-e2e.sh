@@ -8,7 +8,9 @@
 # drags with `pointerInput` (no semantics action) be passed through; it took
 # every View hosted in Compose to keep a touch, so a full-size View that is
 # not clickable stood over a player's "GO LIVE"; and it did not list a label
-# the touch went through to the card it opens.
+# the touch went through to the card it opens. On 15.0.0 one more: a hosted
+# View drawn over the player is an AndroidView, whose touch Compose shares
+# with what is under it, and the chain took it to keep the touch.
 #
 # The fixture's touch screen has each shape and counts what it receives, so
 # where a tap went is read from the app: a tap on each, with no allowance for
@@ -107,21 +109,28 @@ adb -s "$SERIAL" logcat -b crash -c >/dev/null 2>&1 || fail "could not clear the
 fresh
 must_pass handle "a tap on the handle that only drags was not judged to land on it" <<'FLOW'
 - tapOn: { id: touch-handle }
-- assertVisible: "handle=1 zone=0 pill=0 card=0 sheet=0 panel=0"
+- assertVisible: "handle=1 zone=0 pill=0 pill2=0 card=0 sheet=0 panel=0"
 FLOW
 log "handle: the handle counted it, the zone under it did not"
 
 fresh
 must_pass pill "a tap on GO LIVE under a View that is not clickable was not judged to land on it" <<'FLOW'
 - tapOn: "GO LIVE"
-- assertVisible: "handle=0 zone=0 pill=1 card=0 sheet=0 panel=0"
+- assertVisible: "handle=0 zone=0 pill=1 pill2=0 card=0 sheet=0 panel=0"
 FLOW
 log "GO LIVE: the hosted control counted it through the View over it"
 
 fresh
+must_pass pill2 "a tap on GO LIVE 2 under a hosted View drawn over it was not judged to land on it" <<'FLOW'
+- tapOn: "GO LIVE 2"
+- assertVisible: "handle=0 zone=0 pill=0 pill2=1 card=0 sheet=0 panel=0"
+FLOW
+log "GO LIVE 2: a hosted View drawn over the player shared the touch with the control under it"
+
+fresh
 must_pass label "a tap on the label was not judged to land, though the card it is in opened" <<'FLOW'
 - tapOn: { id: touch-card-label }
-- assertVisible: "handle=0 zone=0 pill=0 card=1 sheet=0 panel=0"
+- assertVisible: "handle=0 zone=0 pill=0 pill2=0 card=1 sheet=0 panel=0"
 FLOW
 log "label: the touch went through it, and the card counted it"
 
@@ -129,7 +138,7 @@ fresh
 must_pass panel "a tap on the panel below its container was not judged to land on it" <<'FLOW'
 - tapOn: { id: touch-open-panel }
 - tapOn: { id: touch-panel-30 }
-- assertVisible: "handle=0 zone=0 pill=0 card=0 sheet=0 panel=1"
+- assertVisible: "handle=0 zone=0 pill=0 pill2=0 card=0 sheet=0 panel=1"
 FLOW
 log "panel: the panel below its container counted it"
 
@@ -141,7 +150,7 @@ must_pass sheet "a tap on the Material sheet's row was not judged to land on it"
     timeout: 10000
 - tapOn: { id: touch-sheet-30 }
 - extendedWaitUntil:
-    visible: "handle=0 zone=0 pill=0 card=0 sheet=1 panel=0"
+    visible: "handle=0 zone=0 pill=0 pill2=0 card=0 sheet=1 panel=0"
     timeout: 10000
 FLOW
 log "sheet: the Material sheet's row counted it"
@@ -161,7 +170,7 @@ grep -q "TAP_MISSED" "$WORK/under.log" || { tail -10 "$WORK/under.log" >&2; fail
 grep -q 'Close panel' "$WORK/under.log" || { tail -10 "$WORK/under.log" >&2; fail "the miss does not name the scrim that took the touch"; }
 must_pass after "after the tap under the scrim the app is not where a scrim tap leaves it" <<'FLOW'
 - assertNotVisible: { id: touch-panel-30 }
-- assertVisible: "handle=0 zone=0 pill=0 card=0 sheet=0 panel=0"
+- assertVisible: "handle=0 zone=0 pill=0 pill2=0 card=0 sheet=0 panel=0"
 FLOW
 log "under the scrim: reported TAP_MISSED naming the scrim, and the scrim is what the app says took it"
 

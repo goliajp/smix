@@ -57,13 +57,25 @@ object Touch {
     }
 
     /// Whether the layout node behind a semantics node has a modifier that
-    /// receives pointer input. Only its own modifiers: a gesture on a
-    /// descendant layout node with no semantics of its own is not visible
-    /// through any public API, and reads as none.
+    /// receives pointer input and keeps it from the siblings drawn under
+    /// it. Only its own modifiers: a gesture on a descendant layout node
+    /// with no semantics of its own is not visible through any public API,
+    /// and reads as none.
+    ///
+    /// A modifier that shares its input with its siblings does not count:
+    /// Compose goes on to hit-test what is drawn under it. The one that
+    /// carries a touch into a hosted View is such a modifier, so a
+    /// full-size `AndroidView` drawn over a player's controls — a consumer's
+    /// detection overlay — lets a tap through to them; whether the View
+    /// inside it keeps the touch is the View's to say.
     fun hasPointerInput(layout: LayoutInfo): Boolean = try {
         layout.getModifierInfo().any { info ->
-            val m = info.modifier
-            m is PointerInputModifier || (m is ModifierNodeElement<*> && m.create() is PointerInputModifierNode)
+            when (val m = info.modifier) {
+                is PointerInputModifier -> !m.pointerInputFilter.shareWithSiblings
+                is ModifierNodeElement<*> ->
+                    (m.create() as? PointerInputModifierNode)?.sharePointerInputWithSiblings() == false
+                else -> false
+            }
         }
     } catch (_: LinkageError) {
         // An app on a Compose older than these types: read as a gesture,

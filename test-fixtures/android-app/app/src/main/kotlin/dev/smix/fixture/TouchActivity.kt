@@ -61,6 +61,7 @@ class TouchActivity : ComponentActivity() {
             var handle by remember { mutableIntStateOf(0) }
             var zone by remember { mutableIntStateOf(0) }
             var pills by remember { mutableIntStateOf(0) }
+            var pills2 by remember { mutableIntStateOf(0) }
             var card by remember { mutableIntStateOf(0) }
             var sheet by remember { mutableIntStateOf(0) }
             var sheetOpen by remember { mutableStateOf(false) }
@@ -69,7 +70,7 @@ class TouchActivity : ComponentActivity() {
             Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
             Column(Modifier.fillMaxSize().padding(16.dp)) {
                 Text(
-                    "handle=$handle zone=$zone pill=$pills card=$card sheet=$sheet panel=$panel",
+                    "handle=$handle zone=$zone pill=$pills pill2=$pills2 card=$card sheet=$sheet panel=$panel",
                     Modifier.testTag("touch-counts"),
                 )
                 Box(Modifier.size(300.dp, 140.dp).testTag("touch-canvas")) {
@@ -109,6 +110,35 @@ class TouchActivity : ComponentActivity() {
                     },
                     modifier = Modifier.fillMaxWidth().height(160.dp).padding(top = 12.dp),
                 )
+                // A second hosted View drawn over the player, full size, its
+                // View hidden — the shape of a consumer's detection overlay.
+                // Compose shares a touch on a hosted View with what is under
+                // it, so the control below still gets it.
+                Box(Modifier.fillMaxWidth().height(120.dp).padding(top = 12.dp)) {
+                    AndroidView(
+                        factory = { ctx ->
+                            FrameLayout(ctx).apply {
+                                addView(
+                                    TextView(ctx).apply {
+                                        text = "GO LIVE 2"
+                                        setPadding(48, 32, 48, 32)
+                                        setOnClickListener { pills2 += 1 }
+                                    },
+                                    FrameLayout.LayoutParams(
+                                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                                        Gravity.BOTTOM or Gravity.START,
+                                    ),
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    AndroidView(
+                        factory = { View(it).apply { visibility = View.INVISIBLE } },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
                 Box(
                     Modifier.fillMaxWidth().height(160.dp).padding(top = 12.dp)
                         .clickable { card += 1 }
