@@ -53,6 +53,15 @@ All notable changes to the `smix` workspace are documented here. The format foll
   lists its own `accessibilityElements`, and `ocrText:` as the way to wait
   by pixels.
 
+- **`smix record stop` checks that it stopped a movie.** It said
+  `stopped:` once the recorder process had ended, about a file that could
+  be empty or cut short; it now fails, naming the file, when the file is
+  missing, empty or has no `moov` box, and when the recorder did not stop
+  cleanly.
+- **`smix sim list` on a host without Xcode lists its Android devices.** It
+  failed on the missing `xcrun` before reaching them; it now says no iOS
+  simulators are listed and why.
+
 ### Changed
 
 - **`SmixRunnerCore.SmixRunnerServer.TapAtCoordHandler` takes the aimed-at

@@ -44,6 +44,7 @@ mod parallel;
 mod readiness;
 mod record_cmd;
 mod runner_list;
+mod sim_list;
 
 mod script;
 
@@ -2848,7 +2849,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     if registered {
                         cmd_sim_list_registered(json)?;
                     } else {
-                        cmd_sim_list(&simctl, json).await?;
+                        sim_list::cmd_sim_list(&simctl, json).await?;
                     }
                 }
                 SimAction::Migrate { from, dry_run } => cmd_sim_migrate(from, dry_run)?,
@@ -6693,65 +6694,6 @@ fn cmd_sim_migrate(from: Vec<PathBuf>, dry_run: bool) -> Result<(), CliError> {
             "the source registries are untouched — delete them yourself once \
              every tree you use has been migrated"
         );
-    }
-    Ok(())
-}
-
-async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
-    let devices = simctl.list_devices().await?;
-    let android = android_devices();
-    if json {
-        let mut all: Vec<serde_json::Value> = Vec::new();
-        for d in &devices {
-            let mut v =
-                serde_json::to_value(d).map_err(|e| CliError::Other(format!("serialize: {e}")))?;
-            if let Some(obj) = v.as_object_mut() {
-                obj.insert("platform".into(), "ios".into());
-            }
-            all.push(v);
-        }
-        for a in &android {
-            all.push(serde_json::json!({
-                "platform": "android",
-                "udid": a.serial,
-                "name": if a.model.is_empty() { a.serial.clone() } else { a.model.clone() },
-                "state": a.state,
-                "release": a.release,
-                "registered": a.registered,
-            }));
-        }
-        let out = serde_json::to_string_pretty(&all)
-            .map_err(|e| CliError::Other(format!("serialize: {e}")))?;
-        println!("{}", out);
-        return Ok(());
-    }
-    // Compact human-readable table.
-    println!("{:<40} {:<28} {:<10} RUNTIME", "UDID", "NAME", "STATE");
-    for d in &devices {
-        let runtime_short = d
-            .runtime_identifier
-            .rsplit('.')
-            .next()
-            .unwrap_or(d.runtime_identifier.as_str());
-        println!(
-            "{:<40} {:<28} {:<10} {runtime_short}",
-            d.udid, d.name, d.state
-        );
-    }
-    for a in &android {
-        let name = if a.model.is_empty() {
-            a.serial.as_str()
-        } else {
-            a.model.as_str()
-        };
-        let release = if !may_ask_release(&a.serial, a.registered) {
-            "Android (not registered; smix does not address it)".to_string()
-        } else if a.release.is_empty() {
-            "Android".to_string()
-        } else {
-            format!("Android-{}", a.release)
-        };
-        println!("{:<40} {:<28} {:<10} {release}", a.serial, name, a.state);
     }
     Ok(())
 }

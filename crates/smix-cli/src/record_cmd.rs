@@ -117,21 +117,25 @@ pub async fn run(action: RecordAction) -> Result<(), crate::CliError> {
             for o in &outcomes {
                 println!("  {}", o.line());
             }
-            if outcomes
+            if !outcomes
                 .iter()
                 .all(smix_capsule::reconcile::Outcome::is_clean)
             {
-                store::drop_resource_kind(
-                    &leases,
-                    &udid,
-                    &Resource::Recording {
-                        path: String::new(),
-                        proc: store::identify_self(),
-                    },
-                )
-                .map_err(to_cli_error)?;
-                println!("stopped: {path}");
+                return Err(crate::CliError::Other(format!(
+                    "{udid}: the recording to {path} was not stopped cleanly (above)"
+                )));
             }
+            store::drop_resource_kind(
+                &leases,
+                &udid,
+                &Resource::Recording {
+                    path: String::new(),
+                    proc: store::identify_self(),
+                },
+            )
+            .map_err(to_cli_error)?;
+            playable(std::path::Path::new(&path)).map_err(crate::CliError::Other)?;
+            println!("stopped: {path}");
         }
         RecordAction::Status { device } => {
             let udid = crate::resolve_device(&device)?;
@@ -142,6 +146,51 @@ pub async fn run(action: RecordAction) -> Result<(), crate::CliError> {
     Ok(())
 }
 
+/// Whether a stopped recording is a movie: there, not empty, and holding
+/// the `moov` box a player needs, which the recorder writes only when it
+/// is stopped cleanly. `simctl io recordVideo` answers "Recording started"
+/// on a device that is not booted and leaves zero bytes, and a stop that
+/// only checked the process had ended said "stopped:" about that file.
+/// Reads the top-level box headers and nothing else.
+fn playable(path: &std::path::Path) -> Result<(), String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path)
+        .map_err(|e| format!("the recording is not at {}: {e}", path.display()))?;
+    let len = f.metadata().map_err(|e| e.to_string())?.len();
+    if len == 0 {
+        return Err(format!(
+            "{} is empty — nothing was recorded",
+            path.display()
+        ));
+    }
+    let mut at = 0u64;
+    while at + 8 <= len {
+        let mut head = [0u8; 8];
+        f.seek(SeekFrom::Start(at)).map_err(|e| e.to_string())?;
+        f.read_exact(&mut head).map_err(|e| e.to_string())?;
+        if &head[4..8] == b"moov" {
+            return Ok(());
+        }
+        let size = match u32::from_be_bytes([head[0], head[1], head[2], head[3]]) {
+            0 => break,
+            1 => {
+                let mut wide = [0u8; 8];
+                f.read_exact(&mut wide).map_err(|e| e.to_string())?;
+                u64::from_be_bytes(wide)
+            }
+            n => u64::from(n),
+        };
+        if size < 8 {
+            break;
+        }
+        at += size;
+    }
+    Err(format!(
+        "{} has no `moov` box ({len} bytes) — the recorder did not finish it, and players will not open it",
+        path.display()
+    ))
+}
+
 fn to_cli_error(e: store::LeaseError) -> crate::CliError {
     crate::CliError::Other(e.to_string())
 }
@@ -149,6 +198,46 @@ fn to_cli_error(e: store::LeaseError) -> crate::CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn boxes(parts: &[(&[u8; 4], usize)]) -> Vec<u8> {
+        let mut v = Vec::new();
+        for (kind, body) in parts {
+            v.extend_from_slice(&((8 + body) as u32).to_be_bytes());
+            v.extend_from_slice(*kind);
+            v.extend(std::iter::repeat_n(0u8, *body));
+        }
+        v
+    }
+
+    #[test]
+    fn a_finished_movie_is_playable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = dir.path().join("ok.mp4");
+        std::fs::write(&p, boxes(&[(b"ftyp", 12), (b"mdat", 100), (b"moov", 40)])).expect("write");
+        assert!(playable(&p).is_ok());
+    }
+
+    #[test]
+    fn an_empty_file_is_not() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = dir.path().join("empty.mp4");
+        std::fs::write(&p, b"").expect("write");
+        assert!(playable(&p).expect_err("empty").contains("empty"));
+    }
+
+    #[test]
+    fn a_file_the_recorder_did_not_finish_is_not() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = dir.path().join("cut.mp4");
+        std::fs::write(&p, boxes(&[(b"ftyp", 12), (b"mdat", 100)])).expect("write");
+        assert!(playable(&p).expect_err("no moov").contains("moov"));
+    }
+
+    #[test]
+    fn a_missing_file_is_not() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(playable(&dir.path().join("gone.mp4")).is_err());
+    }
     use smix_lease::{Lease, ProcIdentity};
 
     fn lease_with(resources: Vec<Resource>) -> Lease {

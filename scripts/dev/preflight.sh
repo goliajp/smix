@@ -414,6 +414,7 @@ python3 scripts/dev/e2e-lanes.py --selftest
 # Whether the apk a device gate installs is the one this tree builds.
 # C7 spent a day measuring a probe that was not this one (open-items O1).
 python3 scripts/dev/fixture-apk-stamp.test.py
+python3 scripts/dev/fixture-apk-stamp.py --check --kind ios
 # The inline-python gate still goes red on an indented snippet.
 python3 scripts/dev/inline-python-compiles.test.py
 # The two-paths gate over recorded payloads, without a runner.
