@@ -171,7 +171,7 @@ fn each_attempt_starts_its_own_clock() {
     );
     let body = helper.split("\n}\n").next().expect("its body");
     assert!(
-        body.contains("let deadline = std::time::Instant::now()"),
+        body.contains("let deadline = smix_adb::wait::Deadline::after("),
         "the attempt no longer starts its own clock: it has to, or the two \
          attempts share one"
     );

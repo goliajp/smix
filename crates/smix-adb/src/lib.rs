@@ -18,6 +18,7 @@
 use serde::{Deserialize, Serialize};
 use std::io;
 mod binary;
+pub mod wait;
 
 pub use binary::{
     AdbSource, adb_path, adb_usable, did_not_start, resolve_adb, sdk_candidates, sdk_root,
@@ -944,8 +945,9 @@ impl AdbClient {
         serial: &str,
         within: std::time::Duration,
     ) -> Result<(), AdbError> {
-        let deadline = std::time::Instant::now() + within;
+        let deadline = wait::Deadline::after(within);
         loop {
+            let look = deadline.look();
             if let Ok((out, _)) = self
                 .run_capture(Some(serial), "shell", &["getprop", "sys.boot_completed"])
                 .await
@@ -953,7 +955,7 @@ impl AdbClient {
             {
                 return Ok(());
             }
-            if std::time::Instant::now() >= deadline {
+            if deadline.passed_by(look) {
                 return Err(AdbError::Malformed {
                     subcommand: "getprop sys.boot_completed".to_string(),
                     detail: format!("{serial} did not report a completed boot"),
@@ -997,8 +999,9 @@ impl AdbClient {
         within: std::time::Duration,
     ) -> Result<(), AdbError> {
         self.emu(serial, &["kill"]).await?;
-        let started = std::time::Instant::now();
+        let deadline = wait::Deadline::after(within);
         loop {
+            let look = deadline.look();
             let (listed, _) = self.run_capture(None, "devices", &[]).await?;
             let still = parse_devices_stdout(&listed)?
                 .iter()
@@ -1006,7 +1009,7 @@ impl AdbClient {
             if !still {
                 return Ok(());
             }
-            if started.elapsed() >= within {
+            if deadline.passed_by(look) {
                 return Err(AdbError::StillListed {
                     serial: serial.to_string(),
                     waited: within,

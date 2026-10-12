@@ -872,6 +872,8 @@ impl SmixMcpService {
                 let timeout = Duration::from_secs(5);
                 let start = std::time::Instant::now();
                 loop {
+                    // judged by when this look began: one OCR pass takes seconds
+                    let began = std::time::Instant::now();
                     let hit = app
                         .find_by_text_ocr(needle, ocr_locales_of(&sel))
                         .await
@@ -879,7 +881,7 @@ impl SmixMcpService {
                     if hit.is_some() {
                         break;
                     }
-                    if start.elapsed() >= timeout {
+                    if began.duration_since(start) >= timeout {
                         return Err(McpError::internal_error(
                             format!(
                                 "expect.toBeVisible: not visible — {} (Apple Vision OCR \

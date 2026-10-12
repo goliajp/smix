@@ -8,6 +8,7 @@
 //! cycling one is `--force`'s decision), and nothing waits a fixed time:
 //! each step ends when the device says it is done, or at the deadline.
 
+use smix_adb::wait::Deadline;
 use std::time::{Duration, Instant};
 
 use crate::android_foreground::{Screen, Step, describe, next_step, parse_windows};
@@ -53,11 +54,12 @@ pub(crate) fn settle(
     app: Option<&str>,
     relaunch: bool,
 ) -> Result<(), Unsettled> {
-    let deadline = Instant::now() + SETTLE;
+    let deadline = Deadline::after(SETTLE);
     let mut collapsed = false;
     let mut started = false;
     let mut covered_since: Option<Instant> = None;
     loop {
+        let look = deadline.look();
         // A runner too old to serve /windows, or a transport hiccup,
         // gives nothing to plan from. That is not a verdict: what came
         // after this call before it existed runs as it always did.
@@ -121,7 +123,7 @@ pub(crate) fn settle(
                 await_in_front(serial, &name, deadline)?;
             }
             Step::NotYet => {
-                if Instant::now() >= deadline {
+                if deadline.passed_by(look) {
                     return Err(Unsettled::Screen(format!(
                         "no application window became readable within {}s (windows: {})",
                         SETTLE.as_secs(),
@@ -132,7 +134,7 @@ pub(crate) fn settle(
             }
             Step::Covered { by } => {
                 let since = *covered_since.get_or_insert_with(Instant::now);
-                if since.elapsed() >= COVERED_FOR || Instant::now() >= deadline {
+                if since.elapsed() >= COVERED_FOR || deadline.passed_by(look) {
                     return Err(Unsettled::Covered(covered(&by, &screen)));
                 }
                 std::thread::sleep(LOOK_AGAIN);
@@ -175,19 +177,20 @@ fn read_screen(serial: &str, port: u16) -> Option<Screen> {
     })
 }
 
-fn wait_until(deadline: Instant, mut done: impl FnMut() -> bool) -> bool {
+fn wait_until(deadline: Deadline, mut done: impl FnMut() -> bool) -> bool {
     loop {
+        let look = deadline.look();
         if done() {
             return true;
         }
-        if Instant::now() >= deadline {
+        if deadline.passed_by(look) {
             return false;
         }
         std::thread::sleep(LOOK_AGAIN);
     }
 }
 
-fn await_in_front(serial: &str, name: &str, deadline: Instant) -> Result<(), Unsettled> {
+fn await_in_front(serial: &str, name: &str, deadline: Deadline) -> Result<(), Unsettled> {
     if wait_until(deadline, || {
         resumed_package(serial).as_deref() == Some(name)
     }) {
@@ -243,7 +246,7 @@ fn start_app(serial: &str, port: u16, name: &str, relaunch: bool) -> Result<(), 
         // that window is what "in front" would be read from. Measured: a
         // relaunch answered while the old window was still listed, and the
         // runner's next read found only system UI.
-        let gone = wait_until(Instant::now() + SETTLE, || {
+        let gone = wait_until(Deadline::after(SETTLE), || {
             read_screen(serial, port).is_some_and(|s| !s.windows.iter().any(|w| w.package == name))
         });
         if !gone {

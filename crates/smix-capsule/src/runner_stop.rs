@@ -19,14 +19,17 @@ pub(crate) fn running(pid: u32) -> bool {
 }
 
 fn gone_within(pid: u32, limit: Duration) -> bool {
-    let deadline = std::time::Instant::now() + limit;
-    while running(pid) {
-        if std::time::Instant::now() >= deadline {
+    let deadline = smix_adb::wait::Deadline::after(limit);
+    loop {
+        let look = deadline.look();
+        if !running(pid) {
+            return true;
+        }
+        if deadline.passed_by(look) {
             return false;
         }
         std::thread::sleep(Duration::from_millis(250));
     }
-    true
 }
 
 /// Interrupt `pid`, give it `grace` to wind down, kill it if it has not,

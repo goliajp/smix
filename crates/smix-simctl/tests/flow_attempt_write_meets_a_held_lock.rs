@@ -96,9 +96,13 @@ fn a_record_written_under_a_held_lock_is_waited_for_not_skipped() {
         .expect("spawn the lock holder");
 
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !held.exists() {
+    loop {
+        let began = Instant::now();
+        if held.exists() {
+            break;
+        }
         assert!(
-            Instant::now() < deadline,
+            began < deadline,
             "the neighbour never took the store lock — the gate measured nothing"
         );
         std::thread::sleep(Duration::from_millis(20));

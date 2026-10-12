@@ -28,9 +28,14 @@ source "$ROOT/scripts/lib/gate-port.sh"
 PORT="$SMIX_RUNNER_PORT"
 APPID="dev.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
-# Three seconds of the window holding still, and a bring-up around it; the
-# old answer took the whole twenty-second settle and then blamed the runner.
-WITHIN=15
+# The old answer took the whole twenty-second settle and then blamed the
+# runner. What is judged is the refusal itself — from the moment the runner
+# first answers /health to the moment `runner up` returns: three seconds of
+# the window holding still, and the reads around it. The bring-up before
+# /health is not this script's subject, and on a loaded machine it took
+# the whole of an older fifteen-second limit by itself (a release dry-run at
+# load 17: 17 s, with nothing to say where they went).
+WITHIN_AFTER_HEALTH=12
 
 log()  { printf '[v13.1-c2] %s\n' "$*" >&2; }
 fail() { printf '[v13.1-c2] FAIL: %s\n' "$*" >&2; exit 1; }
@@ -110,12 +115,20 @@ done
 [ -n "$premise" ] || fail "the overlay did not leave the screen as wanted — the runner's windows: $(cat "$WORK/windows.json")"
 log "the screen: $premise"
 
+now_s() { python3 -c 'import time; print(f"{time.time():.2f}")'; }
+
 judge() {
-  local path="$1" began rc=0 took
-  began=$(date +%s)
+  local path="$1" began ended healthy rc=0 watcher
+  rm -f "$WORK/$path.healthy"
+  began=$(now_s)
+  ( until curl -s -m 1 -o /dev/null "http://localhost:$PORT/health"; do sleep 0.2; done
+    now_s >"$WORK/$path.healthy" ) &
+  watcher=$!
   "$SMIX" runner up "$ALIAS" --platform android --runner-port "$PORT" >"$WORK/$path.log" 2>&1 || rc=$?
-  took=$(( $(date +%s) - began ))
-  [ "$rc" -ne 0 ] || fail "$path: runner up reported success with nothing of the app on the screen"
+  ended=$(now_s)
+  kill "$watcher" 2>/dev/null || true
+  wait "$watcher" 2>/dev/null || true
+  [ "$rc" -ne 0 ] || { cat "$WORK/$path.log" >&2; fail "$path: runner up reported success with nothing of the app on the screen"; }
   grep -q "$APPID" "$WORK/$path.log" && grep -qi "holds the focus" "$WORK/$path.log" \
     || { cat "$WORK/$path.log" >&2; fail "$path: the refusal does not name the window in front"; }
   if grep -q "crashed-and-restarted" "$WORK/$path.log"; then
@@ -124,8 +137,14 @@ judge() {
   if grep -q -- "--force" "$WORK/$path.log"; then
     cat "$WORK/$path.log" >&2; fail "$path: the refusal offers --force, which cannot move the window"
   fi
-  [ "$took" -le "$WITHIN" ] || fail "$path: the refusal took ${took}s"
-  log "  $path: refused in ${took}s, naming $APPID"
+  [ -s "$WORK/$path.healthy" ] || { cat "$WORK/$path.log" >&2; fail "$path: the runner never answered /health, so this refused before it could look"; }
+  healthy=$(cat "$WORK/$path.healthy")
+  local after total
+  after=$(python3 -c "print(f'{$ended - $healthy:.1f}')")
+  total=$(python3 -c "print(f'{$ended - $began:.1f}')")
+  python3 -c "import sys; sys.exit(not $ended - $healthy <= $WITHIN_AFTER_HEALTH)" \
+    || { cat "$WORK/$path.log" >&2; fail "$path: the refusal took ${after}s after the runner answered (${total}s in all)"; }
+  log "  $path: refused ${after}s after the runner answered (${total}s in all), naming $APPID"
 }
 
 log "--- a runner already answering"

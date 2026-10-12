@@ -162,6 +162,8 @@ LOCAL = {
     "a-tap-proves-aim-not-arrival harness": "a-tap-proves-aim-not-arrival.test",
     "no-script-picks-a-device-by-accident": "no-script-picks-a-device-by-accident",
     "no-script-picks-a-device-by-accident harness": "no-script-picks-a-device-by-accident.test",
+    "a-wait-ends-by-when-it-looked": "a-wait-ends-by-when-it-looked",
+    "a-wait-ends-by-when-it-looked harness": "a-wait-ends-by-when-it-looked.test",
     "generated-artifacts-are-load-bearing": "generated-artifacts-are-load-bearing",
     "generated-artifacts-are-load-bearing harness": "generated-artifacts-are-load-bearing.test",
     "project-pointer-holds-no-facts": "project-pointer-holds-no-facts",

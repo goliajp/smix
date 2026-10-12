@@ -19,6 +19,18 @@ All notable changes to the `smix` workspace are documented here. The format foll
   runner from the working tree and, when the build failed, started the
   installed one; it now stops with gradle's error.
 
+- **Waits judge their deadline by when their last look began.** Bringing a
+  runner up, waiting for its port forward, for a stopped process to go, for
+  an emulator to finish booting or to quit, for the app's window to settle
+  and for OCR text all checked the clock either before a look (skipping the
+  one that would have seen the change) or after it (ending on a look that
+  began in time and came back late). On a loaded device one look takes
+  seconds; the waits now end only when a look begun after the deadline
+  still says "not yet". `smix_adb::wait::Deadline` is that rule.
+- **A shell command the Android runner starts has a time limit.** A batch
+  of delete keys or a piece of typed text that hung held its request open
+  indefinitely; past ten seconds it is stopped and named in the error.
+
 ### Changed
 
 - **An Android look asks one question fewer.** Once the app's probe has

@@ -2056,10 +2056,9 @@ class SmixHttpServer(
     private fun runShellCommand(cmd: String) {
         val pfd = instrumentation.uiAutomation.executeShellCommand(cmd)
         try {
-            // Drain so the shell command completes before we return.
-            val buf = ByteArray(256)
-            val input = java.io.FileInputStream(pfd.fileDescriptor)
-            while (input.read(buf) >= 0) { /* drain */ }
+            // Drained so the command has finished before this returns, and
+            // stopped if it has not within its limit.
+            ShellLimit.drain(cmd, java.io.FileInputStream(pfd.fileDescriptor)) { pfd.close() }
         } finally {
             pfd.close()
         }

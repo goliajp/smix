@@ -67,6 +67,23 @@ trap cleanup EXIT
 get()  { curl -s -m 30 -H "App-Bundle-Id: $APPID" "http://localhost:$PORT$1"; }
 post() { curl -s -m 30 -H "App-Bundle-Id: $APPID" -X POST "http://localhost:$PORT$1" -d "${2:-{\}}"; }
 
+# until_seen <seconds> <python predicate over the /windows json> — 0 once the
+# runner's window list satisfies it, 1 when it never did. A fixed sleep and
+# one look was how this script judged; on a loaded emulator the keyboard
+# and the permission dialog took longer than the sleep, and the run went
+# red on a screen that had not been arranged yet.
+until_seen() {
+  local within="$1" test="$2" i=0
+  while [ "$i" -lt $((within * 4)) ]; do
+    if get /windows | python3 -c "import json,sys
+w=json.load(sys.stdin).get('windows',[])
+sys.exit(0 if ($test) else 1)" 2>/dev/null; then return 0; fi
+    sleep 0.25
+    i=$((i + 1))
+  done
+  return 1
+}
+
 command -v adb >/dev/null 2>&1 || fail "no adb on PATH — this judges an Android runner and cannot"
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
 [ -f "$APK" ] || fail "no fixture apk — run: bash scripts/dev/build-android-fixture.sh"
@@ -140,7 +157,8 @@ log "  then-screenshot=ok $tsize bytes via $(grep -o 'frame via [a-z-]*' "$WORK/
 # ---- the keyboard is a foreign window and is not a popup --------------
 step "the keyboard is not a popup"
 post /tap-by-id '{"id":"fixture_input"}' >"$WORK/tap-input.json"
-sleep 2
+until_seen 10 'any(r.get("type")==2 for r in w)' \
+  || cannot_judge "the keyboard did not come up within 10 s of tapping the field — there is nothing here to judge"
 wins="$(get /windows)"
 pops="$(get /system-popups)"
 ime_seen=$(printf '%s' "$wins" | python3 -c 'import json,sys
@@ -148,7 +166,6 @@ w=json.load(sys.stdin)["windows"]
 print(sum(1 for r in w if r.get("type")==2))')
 pop_count=$(printf '%s' "$pops" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["popups"]))')
 log "  keyboard-is-not-a-popup: input-method windows=$ime_seen popups=$pop_count"
-[ "$ime_seen" -ge 1 ] || fail "the keyboard never came up, so this proves nothing about it"
 [ "$pop_count" = "0" ] || fail "the keyboard was offered as a popup, and it has no button to dismiss it with"
 
 # ---- a dialog owned by somebody else ----------------------------------
@@ -168,7 +185,10 @@ post /tap-by-id '{"id":"fixture_ask_camera"}' >"$WORK/ask.json"
 asked="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("ok"))' "$WORK/ask.json")"
 [ "$asked" = "True" ] || fail "the fixture's ask-for-the-camera button was not pressed ($asked), \
 so nothing raised a dialog and the rest of this would be judging an empty screen"
-sleep 3
+# The dialog's window is the premise; whether /system-popups lists it is
+# what is judged below. A window that never came is a screen not arranged.
+until_seen 10 'any("permissioncontroller" in (r.get("package") or "") for r in w)' \
+  || cannot_judge "the permission dialog's window did not appear within 10 s of asking — there is nothing here to judge"
 pops="$(get /system-popups)"
 read -r pop_id pop_src pop_title pop_buttons <<EOF
 $(printf '%s' "$pops" | python3 -c 'import json,sys
@@ -208,7 +228,7 @@ b=json.load(sys.stdin)["popups"][0]["buttons"]
 hit=[x for x in b if "deny" in (x.get("label","")+x.get("id","")).lower()]
 print((hit or b)[0]["id"])')"
 post /system-popup-action "{\"popupId\":\"$pop_id\",\"buttonId\":\"$btn\"}" >"$WORK/dismiss.json"
-sleep 2
+until_seen 10 'not any("permissioncontroller" in (r.get("package") or "") for r in w)' || true
 after=$(get /system-popups | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["popups"]))')
 log "  dismissed: pressed '$btn', popups now=$after"
 [ "$after" = "0" ] || fail "the dialog is still listed after pressing '$btn' — listing it is only \

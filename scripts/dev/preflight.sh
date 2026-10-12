@@ -233,6 +233,7 @@ SOURCE_GATES=(
   an-authorised-hatch-reaches-every-surface
   a-tap-proves-aim-not-arrival
   no-script-picks-a-device-by-accident
+  a-wait-ends-by-when-it-looked
   generated-artifacts-are-load-bearing
   project-pointer-holds-no-facts
   publish-dag-is-complete
@@ -344,6 +345,7 @@ python3 scripts/dev/every-flag-says-what-it-does.test.py
 python3 scripts/dev/an-authorised-hatch-reaches-every-surface.test.py
 python3 scripts/dev/a-tap-proves-aim-not-arrival.test.py
 python3 scripts/dev/no-script-picks-a-device-by-accident.test.py
+python3 scripts/dev/a-wait-ends-by-when-it-looked.test.py
 python3 scripts/dev/generated-artifacts-are-load-bearing.test.py
 python3 scripts/dev/project-pointer-holds-no-facts.test.py
 

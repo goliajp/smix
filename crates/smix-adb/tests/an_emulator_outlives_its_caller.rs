@@ -54,15 +54,13 @@ fn a_started_emulator_has_a_process_group_of_its_own() {
 
     let deadline = Instant::now() + Duration::from_secs(5);
     let theirs = loop {
+        let began = Instant::now();
         if let Ok(s) = std::fs::read_to_string(&report)
             && !s.trim().is_empty()
         {
             break s.trim().to_string();
         }
-        assert!(
-            Instant::now() < deadline,
-            "the stand-in never reported its group"
-        );
+        assert!(began < deadline, "the stand-in never reported its group");
         std::thread::sleep(Duration::from_millis(20));
     };
     let ours = our_group();

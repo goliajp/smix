@@ -664,12 +664,17 @@ pub fn up_with_options(
             } else {
                 Ok(())
             };
-            for _ in 0..3 {
+            let asking = smix_adb::wait::Deadline::after(std::time::Duration::from_secs(3));
+            loop {
                 if verdict.is_ok() {
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_secs(1));
+                let look = asking.look();
                 verdict = runner_view_is_current(port, foreground.as_deref().unwrap_or(""));
+                if asking.passed_by(look) {
+                    break;
+                }
             }
             match verdict {
                 Ok(()) if settled => {
@@ -774,8 +779,9 @@ pub fn up_with_options(
         "runner starting: device={serial} port={port} pid={pid} — log: {}",
         log.display()
     );
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
-    while std::time::Instant::now() < deadline {
+    let deadline = smix_adb::wait::Deadline::after(std::time::Duration::from_secs(timeout_secs));
+    loop {
+        let look = deadline.look();
         // `am instrument -w` returns when the instrumentation does, so an
         // exit before /health ever answered is the runner having ended —
         // waiting out the rest of the timeout cannot change that.
@@ -834,6 +840,9 @@ pub fn up_with_options(
             }
             println!("runner up: http://localhost:{port}/health = 200");
             return Ok(());
+        }
+        if deadline.passed_by(look) {
+            break;
         }
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
