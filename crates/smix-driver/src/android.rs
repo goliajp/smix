@@ -310,19 +310,32 @@ impl Driver for AndroidDriver {
         // Host-resolve + tap_at_norm_coord (mirrors IosDriver Path B),
         // judged by what the runner says the touch was delivered to —
         // the same judgement the iOS tap gets.
-        let (nx, ny, aimed, reader) = resolve_aimed(self, selector, include).await?;
-        let landed = self
-            .runner
-            .tap_at_norm_coord_aimed(nx, ny, 1, None, None, Some(reader))
-            .await
-            .map_err(|e| {
+        let (aimed, landed) = crate::touch_aimed::touch_where_aimed(
+            selector,
+            || resolve_aimed(self, selector, include),
+            |nx, ny, reader, target| async move {
+                self.runner
+                    .tap_at_norm_coord_aimed_at(
+                        nx,
+                        ny,
+                        1,
+                        None,
+                        None,
+                        Some(reader),
+                        target.as_ref(),
+                    )
+                    .await
+            },
+            |e| {
                 ExpectationFailure::new(FailureInit {
                     code: Some(FailureCode::DriverError),
                     message: format!("AndroidDriver::tap: runner.tap_at_norm_coord: {e}"),
                     ..Default::default()
                 })
-            })?;
-        crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed)
+            },
+        )
+        .await?;
+        crate::landing_outcome(selector, aimed, &landed)
     }
 
     /// Found once — read and held still, as a tap is — then touched
@@ -340,19 +353,32 @@ impl Driver for AndroidDriver {
         hold_ms: Option<u32>,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        let (nx, ny, aimed, reader) = resolve_aimed(self, selector, include).await?;
-        let landed = self
-            .runner
-            .tap_at_norm_coord_aimed(nx, ny, times.max(1), interval_ms, hold_ms, Some(reader))
-            .await
-            .map_err(|e| {
+        let (aimed, landed) = crate::touch_aimed::touch_where_aimed(
+            selector,
+            || resolve_aimed(self, selector, include),
+            |nx, ny, reader, target| async move {
+                self.runner
+                    .tap_at_norm_coord_aimed_at(
+                        nx,
+                        ny,
+                        times.max(1),
+                        interval_ms,
+                        hold_ms,
+                        Some(reader),
+                        target.as_ref(),
+                    )
+                    .await
+            },
+            |e| {
                 ExpectationFailure::new(FailureInit {
                     code: Some(FailureCode::DriverError),
                     message: format!("AndroidDriver::tap_burst: runner.tap_at_norm_coord: {e}"),
                     ..Default::default()
                 })
-            })?;
-        crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())
+            },
+        )
+        .await?;
+        crate::landing_outcome(selector, aimed, &landed).map(|_| ())
     }
 
     async fn tap_with_mode(

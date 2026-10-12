@@ -641,8 +641,10 @@ public actor SmixRunnerServer {
   public typealias TapAtCoordHandler =
     @Sendable (
       _ nx: Double, _ ny: Double, _ times: Int, _ intervalMs: Int, _ holdMs: Int,
-      _ doubleTap: Bool
-    ) async -> (ok: Bool, chain: [HitChainEntry], press: TapAtCoordRoute.PressTimings?)
+      _ doubleTap: Bool, _ aimedAt: TapAtCoordRoute.AimTarget?
+    ) async -> (
+      ok: Bool, chain: [HitChainEntry], press: TapAtCoordRoute.PressTimings?, gone: String?
+    )
 
   /// POST /tap-by-id handler. Resolves an element by accessibility
   /// identifier and invokes `XCUIElement.tap()` (the XCTest gesture-recognizer
@@ -2065,7 +2067,8 @@ public actor SmixRunnerServer {
           fallback: TapAtCoordRoute.success(ok: false)
         ) {
           let outcome = await tapAtCoordHandler(
-            req.nx, req.ny, req.times, req.intervalMs, req.holdMs, req.doubleTap)
+            req.nx, req.ny, req.times, req.intervalMs, req.holdMs, req.doubleTap, req.aimedAt)
+          if let saw = outcome.gone { return TapAtCoordRoute.targetGone(saw: saw) }
           return TapAtCoordRoute.success(
             ok: outcome.ok, chain: outcome.chain, press: outcome.press)
         }

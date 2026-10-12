@@ -31,8 +31,25 @@ All notable changes to the `smix` workspace are documented here. The format foll
   of delete keys or a piece of typed text that hung held its request open
   indefinitely; past ten seconds it is stopped and named in the error.
 
+- **A tap is not sent at a point its target has already left.** The runner
+  reads what is under the point just before it touches; it now also knows
+  what the host aimed at (`aimedAt` in the request) and, when that is no
+  longer there, does not touch and answers 409 `target_gone_before_touch`
+  naming what is there instead. The host aims again for up to 5 s and then
+  fails with `ELEMENT_NOT_FOUND`, saying the element kept leaving and that
+  nothing was touched. A player's "go live" pill that hid itself between
+  the aim and the touch used to send the touch to the picture under it. On
+  iOS the runner reads the point from a snapshot of the app, so a target
+  that leaves during that snapshot (about 360 ms on the fixture) is still
+  touched. New: `smix_runner_client::TapTarget`,
+  `HttpRunnerClient::tap_at_norm_coord_aimed_at`,
+  `smix_runner_client::target_gone_before_touch`.
+
 ### Changed
 
+- **`SmixRunnerCore.SmixRunnerServer.TapAtCoordHandler` takes the aimed-at
+  target and returns whether it was gone.** Only a runner constructs this
+  server.
 - **An Android look asks one question fewer.** Once the app's probe has
   answered, a look reads its tree and the rest of the screen at once
   without first asking whether it is there, and the runner reads the

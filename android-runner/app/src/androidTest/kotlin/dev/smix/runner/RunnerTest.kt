@@ -674,6 +674,9 @@ class SmixHttpServer(
         val py = RunnerWire.normToPixel(req.ny, h)
         // Before the touch: a confirm that lands takes its dialog away.
         val chain = hitChainAt(session, RunnerWire.decodeAimedBy(payload), px, py)
+        AimCheck.decode(payload)?.let { AimCheck.gone(it, chain) }?.let { saw ->
+            return newFixedLengthResponse(Response.Status.CONFLICT, "application/json", AimCheck.goneBody(saw))
+        }
         val ok = TapBurst.decode(payload).touch(
             { device.click(px, py) }, { device.swipe(px, py, px, py, RunnerWire.longPressSteps(it)) }, Thread::sleep,
         )

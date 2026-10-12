@@ -32,6 +32,7 @@
 #![doc(html_root_url = "https://docs.smix.dev/smix-runner-client")]
 
 mod acts;
+pub use acts::{TapTarget, target_gone_before_touch};
 mod hide_keyboard;
 mod hittable;
 mod input_text;
