@@ -120,6 +120,9 @@ class HitChainTouchTest {
         val f = find(covered, 141, 831)
         assertEquals("top-scrim", ids(f).first())
         assertTrue(ids(f).toString(), "Kitchen" !in ids(f))
+        // still on the screen under the scrim, which is what tells a covered
+        // target from one that left
+        assertTrue("Kitchen" in f.under.map { it.label })
     }
 
     // A consumer's zone editor: polygons drawn on a canvas, a gesture layer
