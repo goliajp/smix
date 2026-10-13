@@ -26,5 +26,6 @@ pub mod runner_state;
 mod runner_stop;
 pub mod runner_view;
 pub mod signing;
+mod xctest_log;
 
 pub use runner::{health_ok, xcodebuild_argv};

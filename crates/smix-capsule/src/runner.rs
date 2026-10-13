@@ -1101,15 +1101,6 @@ pub(crate) fn signal(pid: u32, sig: &str) {
         .status();
 }
 
-fn tail_log(log: &Path, lines: usize) -> String {
-    let Ok(text) = std::fs::read_to_string(log) else {
-        return String::new();
-    };
-    let all: Vec<&str> = text.lines().collect();
-    let start = all.len().saturating_sub(lines);
-    all[start..].join("\n")
-}
-
 /// Resolve the SmixRunner.xcodeproj path via a 4-step cascade. First
 /// match wins:
 ///
@@ -1390,7 +1381,11 @@ pub fn up_on(
         runner_project,
         opts,
         target,
-    )
+    )?;
+    if matches!(target, RunnerTarget::Simulator) {
+        crate::xctest_log::quiet(udid);
+    }
+    Ok(())
 }
 
 /// Bring the runner up, retrying once as an attach if the first attempt
@@ -1513,7 +1508,7 @@ pub fn up_on_with(
                     attach_already_tried,
                     last_session_gap.as_deref(),
                     timeout_secs,
-                    &tail_log(&log, 25),
+                    &crate::runner_log::tail(&log, 25),
                 ) {
                     AfterTimeout::GiveUp { message } => return Err(message),
                     AfterTimeout::RetryAsAttach { because } => {
@@ -1745,7 +1740,7 @@ fn one_bring_up(
                 .unwrap_or_default();
             return Err(format!(
                 "{app}xcodebuild exited early ({status}) — log tail:\n{}",
-                tail_log(&log, 25)
+                crate::runner_log::tail(&log, 25)
             ));
         }
         // health-decider: whether the bring-up is finished — which has to
