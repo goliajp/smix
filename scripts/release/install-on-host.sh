@@ -25,8 +25,13 @@ case "$VERSION" in
   *) fail "'$VERSION' is not a version" ;;
 esac
 
+# A host that measures benchmarks has `bench-lock`: the install waits for a
+# measurement in progress instead of landing in the middle of it (mini is
+# a bench host and a consumer's test machine at once).
 log "installing @goliapkg/smix-cli@$VERSION on $HOST"
-ssh -o BatchMode=yes "$HOST" "zsh -lc 'npm install -g @goliapkg/smix-cli@$VERSION'" >&2 \
+INSTALL="zsh -lc 'npm install -g @goliapkg/smix-cli@$VERSION'"
+ssh -o BatchMode=yes "$HOST" \
+  "if [ -x /usr/local/bin/bench-lock ]; then /usr/local/bin/bench-lock heavy $INSTALL; else $INSTALL; fi" >&2 \
   || fail "npm install on $HOST failed"
 
 got="$(ssh -o BatchMode=yes "$HOST" "zsh -lc 'smix --version; smix-mcp --version'")" \

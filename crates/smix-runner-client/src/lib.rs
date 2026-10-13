@@ -1510,6 +1510,26 @@ impl HttpRunnerClient {
         )
     }
 
+    /// `POST /app/launched` — tell the runner the host just launched
+    /// `bundle_id` itself, and wait (up to 5 s) for XCUITest to see it in
+    /// front. Answers the state XCUITest saw: `running-foreground`,
+    /// `running-background`, `not-running`, `unknown`, or `not-asked` from
+    /// a runner that cannot wait.
+    pub async fn app_launched(&self, bundle_id: &str) -> Result<String, RunnerTransportError> {
+        let said: serde_json::Value = self
+            .json_post(
+                "/app/launched",
+                &serde_json::json!({ "bundleId": bundle_id }),
+                None,
+            )
+            .await?;
+        Ok(said
+            .get("seen")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_owned())
+    }
+
     /// `POST /session/open` — reserve a runner-side XCUIApplication
     /// binding and (optionally) activate it once. The returned session
     /// id becomes the `Session-Id` header on subsequent requests via

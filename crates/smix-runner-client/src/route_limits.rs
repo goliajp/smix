@@ -227,6 +227,8 @@ pub const ROUTES: &[Route] = &[
     // iOS: terminate() then launch().
     r("/soft-cycle", ms(2 * XCUI_APP_CALL_MS), NONE, false),
     r("/session/open", ms(XCUI_APP_CALL_MS), ms(500), false),
+    // iOS: XCUIApplication.wait(for: .runningForeground), 5 s.
+    r("/app/launched", ms(5_000), NONE, false),
     r("/session/close", ms(0), ms(0), false),
     r("/session/close-all", ms(0), ms(0), false),
     r("/session/list", ms(0), ms(0), false),

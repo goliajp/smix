@@ -68,6 +68,17 @@ All notable changes to the `smix` workspace are documented here. The format foll
   registered phone's animations are its owner's on iOS as on Android, and
   are left as they are.
 
+- **After `launchApp` on iOS, the next step no longer finds the app "not
+  running".** The host launches the app itself, and XCUITest learns of the
+  new process on its own time: on a slow machine the app was in front a
+  second before XCUITest saw it, and the step after `launchApp` failed with
+  `APP_NOT_RUNNING` about an app on screen (a CI corpus run, twice in a
+  row). `launchApp` now waits, up to 5 s, until the runner sees the app in
+  front, through the new route `POST /app/launched`
+  (`HttpRunnerClient::app_launched`), and says so as a warning when it
+  does not. An older runner has no such route and the run goes on as
+  before.
+
 ### Changed
 
 - **A registered phone's own state needs the same opt-in as erasing it.**

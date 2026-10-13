@@ -73,6 +73,8 @@ INFRASTRUCTURE = {
     "GET /screenshot",
     "GET /record/poll",
     "POST /session/open",
+    # names its app in the body, as /session/open does
+    "POST /app/launched",
     "POST /session/close",
     "POST /session/close-all",
     "POST /session/list",

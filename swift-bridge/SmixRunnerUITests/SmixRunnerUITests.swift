@@ -3374,6 +3374,18 @@ final class SmixRunnerUITests: XCTestCase {
           return .unknown
         }
       },
+      appRunningWaiter: { bundleId, timeout in
+        await SmixRunnerServer.onMain {
+          let app = XCUIApplication(bundleIdentifier: bundleId)
+          _ = app.wait(for: .runningForeground, timeout: timeout)
+          switch app.state {
+          case .runningForeground: return "running-foreground"
+          case .runningBackground, .runningBackgroundSuspended: return "running-background"
+          case .notRunning: return "not-running"
+          default: return "unknown"
+          }
+        }
+      },
       // App-rebind half of `POST /soft-cycle`. Terminate + launch the
       // runner-bound app fresh — the SAME semantics `up()`'s boot
       // `app.launch()` gives a hard cycle — so a soft cycle is a faster
