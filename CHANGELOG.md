@@ -2,7 +2,23 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [16.1.0] — 2026-10-14
+
+### Changed
+
+- **`hideKeyboard` on iOS refuses on a form it cannot put the keyboard
+  away from without acting on it.** A form whose only ways out are its
+  return key or a button — nothing to drag, nothing that ends editing on
+  a touch elsewhere — now answers `keyboard_did_not_close`, naming the
+  field that holds focus. Before, it answered `ok: true` while the
+  keyboard stayed up or came back a moment later (see Fixed). Submit such
+  a form with `pressKey: enter`, or tap its button.
+- **`hideKeyboard` on iOS presses only Return or Done.** Before, it
+  pressed the first of Return, Done, Continue, Search, Go, Next or Enter
+  it found; Go, Search, Continue and Next are the field's submit — on a
+  password field Go signs in — so a flow's `hideKeyboard` could submit
+  the form. Its last resort, a touch 15% down the screen whatever was
+  there, is gone as well.
 
 ### Fixed
 
@@ -17,17 +33,10 @@ All notable changes to the `smix` workspace are documented here. The format foll
   the nearest empty spot above the whole keyboard, never on a button,
   field, link or other control (a submit button pinned to the keyboard is
   exactly where "just above" used to land), and the keyboard counts as put
-  away only once it is gone and no field holds focus. A form whose only
-  ways out are its return key or a button now answers
-  `keyboard_did_not_close`, naming the field that holds focus, where it
-  used to answer `ok: true`: submit it with `pressKey: enter` or tap the
-  button.
-- **`hideKeyboard` on iOS no longer presses a return key named for an
-  action, or touches blindly.** It pressed the first of Return, Done,
-  Continue, Search, Go, Next or Enter it found; Go, Search, Continue and
-  Next are the field's submit — on a password field Go signs in. It now
-  presses only Return or Done. Its last resort, a touch 15% down the
-  screen whatever was there, is gone as well.
+  away only once it is gone and no field holds focus.
+
+### Added
+
 - **A successful `hideKeyboard` on iOS says how.** The runner's answer
   carries `saw: "dismissed by <strategy>"`.
 
