@@ -1843,7 +1843,7 @@ impl App {
         for (perm, action) in &opts.permissions {
             self.set_permission(&opts.bundle_id, *perm, *action).await?;
         }
-        let warnings = if opts.clear_state || opts.clear_keychain {
+        let mut warnings = if opts.clear_state || opts.clear_keychain {
             self.launch_fresh(
                 &opts.bundle_id,
                 opts.clear_state,
@@ -1870,6 +1870,25 @@ impl App {
                 .map_err(simctl_to_failure)?;
             Vec::new()
         };
+        // The app was launched here, not through the runner, and XCUITest
+        // learns of the new process on its own time: on a slow CI machine
+        // the app was in front a second before XCUITest saw it, and the
+        // next step's tree read was answered "not running" (a corpus run,
+        // 2026-10-11). The launch is done when the runner sees the app.
+        // An older runner has no such route and answers 404, and the run
+        // goes on as it always did; a transport failure is met again by
+        // the next step, which reports it.
+        if self.device.platform() == smix_driver::Platform::Ios
+            && let Some(runner) = self.http_runner_client()
+            && let Ok(seen) = runner.app_launched(&opts.bundle_id).await
+            && seen != "running-foreground"
+            && seen != "not-asked"
+        {
+            warnings.push(format!(
+                "{} was launched and after 5 s XCUITest sees it as {seen}, not in front",
+                opts.bundle_id
+            ));
+        }
         Ok(warnings)
     }
 

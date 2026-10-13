@@ -969,3 +969,28 @@ async fn a_probe_that_has_answered_is_not_asked_again_until_its_tree_fails() {
     let tree = client.get_tree(None).await.expect("tree");
     assert_eq!(tree.source, smix_runner_client::TreeSource::Accessibility);
 }
+
+/// After launching the app itself, the host asks the runner to wait until
+/// XCUITest sees it in front, and reads back what it saw.
+#[tokio::test]
+async fn a_launch_the_host_made_is_reported_to_the_runner_and_its_answer_read() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/app/launched"))
+        .and(body_json(
+            serde_json::json!({ "bundleId": "jp.golia.smix.fixture" }),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({ "ok": true, "seen": "running-foreground" })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    let seen = client
+        .app_launched("jp.golia.smix.fixture")
+        .await
+        .expect("answered");
+    assert_eq!(seen, "running-foreground");
+}

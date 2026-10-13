@@ -407,6 +407,13 @@ public actor SmixRunnerServer {
   /// get the `.unknown` fallback.
   @TaskLocal public static var currentUnavailableReasonInferer: UnavailableReasonInferer? = nil
 
+  /// Waits up to the given seconds for XCUITest to see the named app
+  /// running in front, and answers the state it saw. The UITest target
+  /// implements it; `nil` opts out and `/app/launched` does not wait.
+  public typealias AppRunningWaiter = @Sendable (String, Double) async -> String
+
+  @TaskLocal public static var currentAppRunningWaiter: AppRunningWaiter? = nil
+
   public enum TapOutcome: Sendable {
     // `frame` / `appFrame` are populated by the UITest handler so
     // the SDK can host-HID-inject at coord when `mode == .resolve`. Both
@@ -1216,6 +1223,36 @@ public actor SmixRunnerServer {
     server: HTTPServer,
     handlers: SessionHandlers
   ) async {
+    // The host launched the app itself (simctl), and XCUITest learns of a
+    // new process on its own time: on a slow CI machine the app was in
+    // front for a second before XCUITest saw it, and the flow's next tree
+    // read was answered "not running" about an app on screen (a corpus
+    // run, 2026-10-11, both attempts; the simulator log has the new
+    // process running-active-Visible from 14:40:44.74 and XCUITest's daemon
+    // handling its first notification at 14:40:45.75). This waits until
+    // XCUITest sees it in front, and forgets anything recorded about it
+    // not running.
+    // OK MEANS: reading — says which state XCUITest sees the app in, after waiting for it to be in front; nothing on the device was touched.
+    // LONGEST WAIT /app/launched: 5000 ms — XCUIApplication.wait(for: .runningForeground)
+    await server.appendRoute("POST /app/launched") { request in
+      let body: Data
+      do { body = try await request.bodyData }
+      catch { return SessionRoute.badRequest(reason: "failed to read body: \(error)") }
+      guard
+        let root = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+        let bundleId = root["bundleId"] as? String, !bundleId.isEmpty
+      else {
+        return SessionRoute.badRequest(reason: "expected {\"bundleId\": \"<id>\"}")
+      }
+      if let cache = Self.currentAppAliveCache {
+        await cache.markAlive(bundleId: bundleId)
+      }
+      let seen = await Self.currentAppRunningWaiter?(bundleId, 5) ?? "not-asked"
+      return HTTPResponse(
+        statusCode: .ok, headers: [.contentType: "application/json"],
+        body: Data(#"{"ok":true,"seen":"\#(seen)"}"#.utf8))
+    }
+
     // OK MEANS: bookkeeping — a session record was opened; the app it names is activated by the steps that follow, not by this.
     // LONGEST WAIT /session/open: 30000 ms — XCUIApplication.activate() when asked to
     await server.appendRoute("POST /session/open") { request in
@@ -1479,6 +1516,8 @@ public actor SmixRunnerServer {
     /// implements via `XCUIApplication.state` + .ips scan. `nil` opts
     /// out and falls back to an `.aliveButTreeEmpty` best-guess.
     unavailableReasonInferer: UnavailableReasonInferer? = nil,
+    /// What `/app/launched` waits with; `nil`, it does not wait.
+    appRunningWaiter: AppRunningWaiter? = nil,
     /// App-rebind half of `POST /soft-cycle`. `nil` opts out (the route
     /// is not registered; `smix runner cycle` then always hard-cycles).
     softCycleHandler: SoftCycleHandler? = nil,
@@ -2386,11 +2425,12 @@ public actor SmixRunnerServer {
     try await Self.$currentAppAliveCache.withValue(appAliveCache) {
     try await Self.$currentPopupPacer.withValue(popupPacer) {
     try await Self.$currentUnavailableReasonInferer.withValue(unavailableReasonInferer) {
+    try await Self.$currentAppRunningWaiter.withValue(appRunningWaiter) {
       try await Self.runServerLoop(
         server,
         shutdownSignal: shutdownSignal,
         restartSignal: restartSignal
       )
-    }}}}
+    }}}}}
   }
 }
