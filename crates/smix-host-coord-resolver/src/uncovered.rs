@@ -108,15 +108,21 @@ fn covers_of<'a>(tree: &'a A11yNode, node: &A11yNode, shows: Rect) -> Vec<Cover<
     if let Some(own) = own {
         for w in &tree.children {
             // Where it takes touches, not its bounds: the keyboard's window
-            // spans the screen and takes touches only on the keys.
+            // spans the screen and takes touches only on the keys, and in
+            // handwriting mode on two pieces with the app's screen between.
             if let Some(info) = &w.window
                 && info.layer.is_some_and(|l| l > own)
-                && let Some(rect) = info.touchable.and_then(|t| intersect(t, shows))
             {
-                covers.push(Cover {
-                    rect,
-                    what: Covering::Window(info),
-                });
+                for rect in info
+                    .takes_touches()
+                    .into_iter()
+                    .filter_map(|t| intersect(t, shows))
+                {
+                    covers.push(Cover {
+                        rect,
+                        what: Covering::Window(info),
+                    });
+                }
             }
         }
     }

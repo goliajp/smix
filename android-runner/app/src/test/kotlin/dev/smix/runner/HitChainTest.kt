@@ -66,6 +66,53 @@ class HitChainTest {
         assertEquals("the dialog is on top: $chain", "button1", chain.firstOrNull()?.id)
     }
 
+    /// The keyboard in handwriting mode, measured on API 36 after a stylus
+    /// stroke: it takes touches on a toolbar by the field and a strip at the
+    /// bottom, and its bounds are the rectangle around both. A real touch at
+    /// (878, 1455), between the pieces, opened the app's code screen.
+    private val handwriting = HitChain.Window(
+        layer = 1,
+        bounds = HitChain.Box(0, 847, 1080, 2340),
+        root = HitChain.Node(
+            id = "", label = "", bounds = HitChain.Box(0, 847, 1080, 2340),
+            children = listOf(
+                HitChain.Node(
+                    id = "toolbar", label = "", bounds = HitChain.Box(22, 847, 176, 1579), children = emptyList(),
+                ),
+            ),
+        ),
+        touch = listOf(HitChain.Box(22, 847, 176, 1579), HitChain.Box(0, 2274, 1080, 2340)),
+    )
+
+    private val withCode = activity.copy(
+        root = activity.root.copy(
+            children = listOf(
+                HitChain.Node(
+                    id = "fixture_open_code", label = "",
+                    bounds = HitChain.Box(718, 1389, 1039, 1521), children = emptyList(),
+                ),
+            ),
+        ),
+    )
+
+    @Test
+    fun aPointBetweenTheKeyboardsPiecesIsTheApps() {
+        val chain = HitChain.at(listOf(withCode, handwriting), 878, 1455)
+        assertEquals("the touch goes to the app: $chain", "fixture_open_code", chain.firstOrNull()?.id)
+    }
+
+    @Test
+    fun aPointOnTheKeyboardsToolbarIsTheKeyboards() {
+        val chain = HitChain.at(listOf(withCode, handwriting), 100, 1000)
+        assertEquals("the touch goes to the toolbar: $chain", "toolbar", chain.firstOrNull()?.id)
+    }
+
+    @Test
+    fun aWindowWhoseTouchesWereNotReadTakesThemOverItsBounds() {
+        val chain = HitChain.at(listOf(withCode, handwriting.copy(touch = null)), 878, 1455)
+        assertTrue("the keyboard's bounds hold the point, so its window answers: $chain", chain.none { it.id == "fixture_open_code" })
+    }
+
     @Test
     fun unnamedElementsAreInTheChainWithTheirFrames() {
         // An element with neither an id nor a description is still an

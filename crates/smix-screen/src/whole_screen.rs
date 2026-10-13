@@ -52,6 +52,7 @@ pub fn beside_other_windows(
     let mut focused = false;
     let mut layer: Option<i32> = None;
     let mut touchable = None;
+    let mut touchable_rects = Vec::new();
     for w in windows {
         if is_the_apps(&w, app.as_deref()) {
             place.get_or_insert(root.children.len());
@@ -61,6 +62,7 @@ pub fn beside_other_windows(
             if info.and_then(|i| i.layer) >= layer {
                 layer = info.and_then(|i| i.layer);
                 touchable = info.and_then(|i| i.touchable);
+                touchable_rects = info.map(|i| i.touchable_rects.clone()).unwrap_or_default();
             }
         } else {
             root.children.push(w);
@@ -74,6 +76,7 @@ pub fn beside_other_windows(
         focused: focused || place.is_none(),
         layer,
         touchable,
+        touchable_rects,
     });
     let at = place.unwrap_or(root.children.len());
     root.children.insert(at, app_tree);

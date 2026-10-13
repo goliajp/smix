@@ -274,6 +274,7 @@ fn facts_like_a_consumers_android_failure() -> smix_screen::ScreenFacts {
                 focused: true,
                 layer: None,
                 touchable: None,
+                touchable_rects: Vec::new(),
             },
             WindowInfo {
                 package: Some("com.android.systemui".into()),
@@ -281,6 +282,7 @@ fn facts_like_a_consumers_android_failure() -> smix_screen::ScreenFacts {
                 focused: false,
                 layer: None,
                 touchable: None,
+                touchable_rects: Vec::new(),
             },
             WindowInfo {
                 package: Some("com.android.systemui".into()),
@@ -288,6 +290,7 @@ fn facts_like_a_consumers_android_failure() -> smix_screen::ScreenFacts {
                 focused: false,
                 layer: None,
                 touchable: None,
+                touchable_rects: Vec::new(),
             },
         ],
         unreadable: 1,

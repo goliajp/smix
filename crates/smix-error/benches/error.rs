@@ -87,6 +87,7 @@ fn bench_to_prompt(c: &mut Criterion) {
             focused: true,
             layer: None,
             touchable: None,
+            touchable_rects: Vec::new(),
         }],
         unreadable_windows: Some(1),
     });

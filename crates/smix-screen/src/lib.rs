@@ -632,12 +632,32 @@ pub struct WindowInfo {
     /// in is not the order on screen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer: Option<i32>,
-    /// The part of the screen where it takes touches, which is not its
-    /// bounds: the keyboard's window spans the screen below the status bar
-    /// and takes touches only where the keys are. `None` from a reader
+    /// The smallest rectangle around where it takes touches, which is not
+    /// its bounds: the keyboard's window spans the screen below the status
+    /// bar and takes touches only where the keys are. `None` from a reader
     /// that does not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub touchable: Option<Rect>,
+    /// Each rectangle where it takes touches. The area can be in pieces —
+    /// the keyboard in handwriting mode takes them on a toolbar by the
+    /// field and a strip at the bottom — and then the rectangle around it
+    /// holds screen where touches go to the window below. Empty from a
+    /// reader that does not say; see [`WindowInfo::takes_touches`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub touchable_rects: Vec<Rect>,
+}
+
+impl WindowInfo {
+    /// Where it takes touches: each piece when the reader listed them,
+    /// else the one rectangle around them, else nowhere known.
+    #[must_use]
+    pub fn takes_touches(&self) -> Vec<Rect> {
+        if self.touchable_rects.is_empty() {
+            self.touchable.into_iter().collect()
+        } else {
+            self.touchable_rects.clone()
+        }
+    }
 }
 
 /// What a failure says about the screen it happened on.
@@ -1485,6 +1505,7 @@ mod screen_facts_tests {
             focused,
             layer: None,
             touchable: None,
+            touchable_rects: Vec::new(),
         });
         w
     }
