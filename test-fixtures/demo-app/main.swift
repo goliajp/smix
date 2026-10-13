@@ -687,6 +687,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       root = UIHostingController(rootView: TallCardsView())
     } else if CommandLine.arguments.contains("-uikit-rows") {
       root = UIKitRowsController()
+    } else if CommandLine.arguments.contains("-uikit-signin") {
+      root = UIKitSignInController(tapsAway: false)
+    } else if CommandLine.arguments.contains("-uikit-signin-taps-away") {
+      root = UIKitSignInController(tapsAway: true)
     } else if CommandLine.arguments.contains("-blink") {
       root = BlinkController()
     } else if CommandLine.arguments.contains("-toast") {

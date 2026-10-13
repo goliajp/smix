@@ -2,6 +2,29 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **`hideKeyboard` on iOS no longer presses the keyboard's Passwords bar
+  or the form's own button, and no longer reports a keyboard that came
+  back as put away.** On a sign-in field the keyboard carries a bar above
+  its keys that XCUITest's keyboard frame leaves out. Where the form was
+  too short to drag, the touch "just above the keyboard" landed on
+  Passwords; the keyboard left the tree for about a second, the step
+  answered success, the keyboard came back, and the flow's next tap was
+  swallowed — every step green, the screen unmoved. The touch now goes to
+  the nearest empty spot above the whole keyboard, never on a button,
+  field, link or other control (a submit button pinned to the keyboard is
+  exactly where "just above" used to land), and the keyboard counts as put
+  away only once it is gone and no field holds focus. A form whose only
+  ways out are its return key or a button now answers
+  `keyboard_did_not_close`, naming the field that holds focus, where it
+  used to answer `ok: true`: submit it with `pressKey: enter` or tap the
+  button.
+- **A successful `hideKeyboard` on iOS says how.** The runner's answer
+  carries `saw: "dismissed by <strategy>"`.
+
 ## [16.0.0] — 2026-10-14
 
 ### Breaking

@@ -57,8 +57,9 @@ public enum HideKeyboardRoute {
     /// the answer says so, and which field still has focus, because the
     /// keys of that keyboard cannot be pressed and focus did not move.
     case offScreen(focus: String, seen: String)
-    /// There was one, and it is gone now.
-    case dismissed
+    /// There was one, and it is gone now; `by` names the strategy that
+    /// took it down, so a success can say how.
+    case dismissed(by: String)
     /// There was one, every strategy ran, and it is still there.
     case stillPresent(tried: String)
     /// Something went wrong while looking. NOT evidence the keyboard is up.
@@ -67,8 +68,11 @@ public enum HideKeyboardRoute {
 
   public static func outcome(_ o: Outcome) -> HTTPResponse {
     switch o {
-    case .alreadyGone, .dismissed:
+    case .alreadyGone:
       return success(ok: true)
+    case .dismissed(let by):
+      let b = jsonEscape(by)
+      return envelope(.ok, Data(#"{"ok":true,"saw":"dismissed by \#(b)"}"#.utf8))
     case .offScreen(let focus, let seen):
       let f = jsonEscape(focus)
       let w = jsonEscape(seen)

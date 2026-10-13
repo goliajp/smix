@@ -452,8 +452,13 @@ Before 9.0.0 this answered `ok: true`, because the handler returned a
 `Bool` that meant "I ran" rather than "it closed".
 
 **Fix**: tapping the next control often works when a field will not give
-focus up. Do not guard the call — `hideKeyboard` is already a no-op when
-no keyboard is present, which is a *different* answer from this one.
+focus up. On a form that offers no way to put the keyboard away but its
+return key or a submit button — nothing to drag, nothing that ends
+editing on a touch elsewhere — there is nothing `hideKeyboard` can do
+without acting on the form: submit with `pressKey: enter`, or tap the
+button directly. Do not guard the call — `hideKeyboard` is already a
+no-op when no keyboard is present, which is a *different* answer from
+this one.
 
 ### "runner … refused: keyboard_state_unknown"
 
