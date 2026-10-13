@@ -18,6 +18,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
+source "$ROOT/scripts/lib/judged-run.sh"
 source "$ROOT/scripts/lib/e2e-devices.sh"
 source "$ROOT/scripts/lib/deadline.sh"
 ALIAS="${SMIX_C14_ANDROID:-$E2E_ANDROID}"
@@ -140,7 +141,7 @@ log "the keyboard takes touches in pieces, the code button between them: $gap"
 
 printf 'appId: %s\n---\n- tapOn: { id: fixture_open_code }\n' "$APPID" >"$WORK/tap.yaml"
 rc=0
-SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/tap.yaml" >"$WORK/tap.log" 2>&1 || rc=$?
+SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$SERIAL" "$WORK/tap.yaml" >"$WORK/tap.log" 2>&1 || rc=$?
 [ "$rc" = 0 ] || { grep -v '^    - ' "$WORK/tap.log" | tail -8 >&2; fail "tapOn the button between the keyboard's pieces exited $rc"; }
 opened=""
 for _ in $(seq 1 25); do
