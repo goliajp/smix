@@ -2233,7 +2233,8 @@ mod wait_miss_hint_tests {
             text: Pattern::Text("Screenshot saved".into()),
             modifiers: Modifiers::default(),
         };
-        let hint = wait_miss_hint(&sel, false).expect("a text that was never found says why it may not be");
+        let hint = wait_miss_hint(&sel, false)
+            .expect("a text that was never found says why it may not be");
         assert!(hint.contains("alpha 0"), "{hint}");
         assert!(hint.contains("accessibilityElements"), "{hint}");
         assert!(hint.contains("ocrText"), "{hint}");
@@ -2241,13 +2242,23 @@ mod wait_miss_hint_tests {
 
     #[test]
     fn an_id_that_was_never_found_is_not_told_about_text() {
-        let sel = Selector::Id { id: "toast".into(), modifiers: Modifiers::default() };
+        let sel = Selector::Id {
+            id: "toast".into(),
+            modifiers: Modifiers::default(),
+        };
         assert!(wait_miss_hint(&sel, false).is_none());
     }
 
     #[test]
     fn a_match_the_live_check_refuted_keeps_its_own_hint() {
-        let sel = Selector::Id { id: "row".into(), modifiers: Modifiers::default() };
-        assert!(wait_miss_hint(&sel, true).expect("hint").contains("scrollUntilVisible"));
+        let sel = Selector::Id {
+            id: "row".into(),
+            modifiers: Modifiers::default(),
+        };
+        assert!(
+            wait_miss_hint(&sel, true)
+                .expect("hint")
+                .contains("scrollUntilVisible")
+        );
     }
 }
