@@ -388,6 +388,10 @@ mod tests {
         assert_eq!((a.supervisor_pid, b.supervisor_pid), (Some(99), None));
     }
 
+    // Went red twice in whole-workspace runs and never alone (200 runs of
+    // this binary clean). `legacy_evidence` now writes an open or read
+    // failure into its answer, so a red here quotes the error: read the
+    // assertion message before anything else.
     #[test]
     fn the_checkout_record_is_evidence_and_nothing_more() {
         let root = temp_root("evidence");
