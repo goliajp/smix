@@ -38,10 +38,12 @@ All notable changes to the `smix` workspace are documented here. The format foll
   naming what is there instead. The host aims again for up to 5 s and then
   fails with `ELEMENT_NOT_FOUND`, saying the element kept leaving and that
   nothing was touched. A player's "go live" pill that hid itself between
-  the aim and the touch used to send the touch to the picture under it. On
-  iOS the runner reads the point from a snapshot of the app, so a target
-  that leaves during that snapshot (about 360 ms on the fixture) is still
-  touched. New: `smix_runner_client::TapTarget`,
+  the aim and the touch used to send the touch to the picture under it. A
+  target that leaves after the point was read is still touched: on Android
+  that is the time the system takes to deliver the touch to the app (62 ms
+  median, 124 ms at most over 200 taps on an emulator); on iOS the runner
+  reads the point from a snapshot of the app, so it is that snapshot's
+  duration as well (about 360 ms on the fixture). New: `smix_runner_client::TapTarget`,
   `HttpRunnerClient::tap_at_norm_coord_aimed_at`,
   `smix_runner_client::target_gone_before_touch`.
 
