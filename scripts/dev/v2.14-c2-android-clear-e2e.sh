@@ -115,12 +115,24 @@ adb -s "$SERIAL" shell am force-stop dev.smix.fixture >/dev/null 2>&1 || true
 # than a flat 3 s under a release run's load, and the tap then found no
 # field on a screen that had not been drawn yet.
 adb -s "$SERIAL" shell am start -W -n dev.smix.fixture/.MainActivity >/dev/null 2>&1
-drawn=0
+drawn=0 seen=""
 for _ in $(seq 1 20); do
-  if curl -s --max-time 30 "$R/tree" | grep -q "\"$FIELD_ID"; then drawn=1; break; fi
+  seen="$(curl -s --max-time 30 "$R/tree" || true)"
+  if printf '%s' "$seen" | grep -q "\"$FIELD_ID"; then drawn=1; break; fi
   sleep 1
 done
-[ "$drawn" = 1 ] || fail "the fixture's main screen never showed $FIELD_ID in the tree"
+[ "$drawn" = 1 ] || fail "the fixture's main screen never showed $FIELD_ID in the tree; the last tree: $(printf '%s' "$seen" | python3 -c '
+import json, sys
+try:
+    root = json.load(sys.stdin)
+except ValueError:
+    print("not JSON"); raise SystemExit
+ids, n, stack = [], 0, [root]
+while stack:
+    x = stack.pop(); n += 1
+    if x.get("identifier"): ids.append(x["identifier"])
+    stack.extend(x.get("children") or [])
+print(f"{n} nodes, ids: {ids[:30]}")')"
 # A tap that found nothing fails here, naming the id.
 #
 # Both of these discarded their result with `|| true`. The second one
