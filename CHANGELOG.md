@@ -2,6 +2,39 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [16.0.0] — 2026-10-14
+
+### Breaking
+
+- **Rust API: `smix_screen::WindowInfo` has a new field,
+  `touchable_rects`.** It lists each rectangle where a window takes
+  touches; `touchable` stays the one rectangle around them. A struct
+  literal outside the crate needs `touchable_rects: Vec::new()`.
+
+### Fixed
+
+- **A keyboard that takes touches in pieces covers only the pieces.** After
+  a stylus stroke in a field, Gboard switches to handwriting: its window
+  takes touches on a toolbar beside the field and on a strip at the bottom,
+  and a touch between them goes to the app. smix took the rectangle around
+  both for where the keyboard takes touches. The host refused a tap on a
+  button between the pieces as under the keyboard (`NOT_VISIBLE`), and the
+  runner, picking the window a touch goes to by its bounds, judged a tap
+  that reached the app as delivered outside every window (`TAP_MISSED`).
+  The Android runner now reports each rectangle (`touchableRects` on each
+  window in the tree, beside `touchable`), and both judge by them. A host
+  talking to an older runner reads `touchable` as before.
+
+- **On a simulator, XCUITest's query log stays out of the app's log.**
+  XCUITest logs every query it answers from inside the app whose tree it
+  reads, under the subsystem `com.apple.dt.xctest`; on a consumer's app it
+  was half of the app's log, and on the fixture 400 of 656 lines over 20
+  tree reads. `smix runner up` on a simulator turns that subsystem off
+  (`log config --mode level:off`); reads answer the same. The setting stays
+  with the simulator; `xcrun simctl spawn <udid> log config --reset
+  --subsystem com.apple.dt.xctest` puts it back. When the simulator refuses,
+  `runner up` says so in a warning and goes on.
+
 ## [15.1.0] — 2026-10-13
 
 ### Fixed
