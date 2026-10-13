@@ -299,7 +299,9 @@ dismissal is not bounded. `ok:false` carries `error`:
 `keyboard_did_not_close` (the keyboard was there and is still there —
 `saw` lists the strategies tried, and says so when the budget ran out
 first) or `keyboard_state_unknown` (looking failed; not evidence the
-keyboard is up). The Android runner ignores `budgetMs`.
+keyboard is up). The Android runner ignores `budgetMs`. On iOS an
+`ok:true` that took a keyboard down carries `saw: "dismissed by
+<strategy>"` naming the strategy.
 
 ### `POST /back`
 

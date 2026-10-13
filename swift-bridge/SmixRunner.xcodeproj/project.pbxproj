@@ -14,6 +14,7 @@
 		7744A4808C0F9E0E2608C8A6 /* SmixQuiescenceSwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */; };
 		7D800097302AA44BD0C96BB9 /* SmixRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */; };
 		D0B65170676A011C0A27F1C4 /* EventRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */; };
+		D0B65170676A011C0A27F1C5 /* HideKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B18B39899D4D11DED0F5E1 /* HideKeyboard.swift */; };
 		FB2971E3FCA8356DD639970C /* SmixRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91F97A8EE7187D90CC587D0 /* SmixRunnerApp.swift */; };
 /* End PBXBuildFile section */
 
@@ -37,6 +38,7 @@
 		7F26B532CF67150468A83990 /* SmixRunnerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmixRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SmixQuiescenceSwizzle.m; sourceTree = "<group>"; };
 		95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventRecorder.swift; sourceTree = "<group>"; };
+		95B18B39899D4D11DED0F5E1 /* HideKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HideKeyboard.swift; sourceTree = "<group>"; };
 		A8073835BE52181B5208E49B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B75B6B5792291DC048C4BECC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BCD3DBB82831D19910E77B87 /* SmixExceptionTrampoline.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SmixExceptionTrampoline.m; sourceTree = "<group>"; };
@@ -80,6 +82,7 @@
 			isa = PBXGroup;
 			children = (
 				95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */,
+				95B18B39899D4D11DED0F5E1 /* HideKeyboard.swift */,
 				72197983C53848D29C050471 /* EventSynthesizer.swift */,
 				B75B6B5792291DC048C4BECC /* Info.plist */,
 				29E63C356CE3614778CA640B /* SmixA11ySwizzle.h */,
@@ -195,6 +198,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D0B65170676A011C0A27F1C4 /* EventRecorder.swift in Sources */,
+				D0B65170676A011C0A27F1C5 /* HideKeyboard.swift in Sources */,
 				1CB5D5E731634D61D9EE489A /* EventSynthesizer.swift in Sources */,
 				53169F0AFCECEB57F00B6D2F /* SmixA11ySwizzle.m in Sources */,
 				5C28A1EFB4FFACB2067D1EFB /* SmixExceptionTrampoline.m in Sources */,

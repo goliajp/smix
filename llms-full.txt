@@ -1603,9 +1603,13 @@ already have: `tapOn` it, then the scalar form.
 - hideKeyboard
 ```
 
-- iOS: several strategies in order — dismiss/return keys, a tap outside
-  any text field, and a tap just above the keyboard's own frame — until
-  the keyboard is gone.
+- iOS: several strategies in order — dismiss/return keys, a drag of the
+  field's scroll view into the keyboard, and a touch on an empty spot
+  above the keyboard — until the keyboard is gone and no field holds
+  focus. The touch lands above the bar drawn over the keys (suggestions,
+  Passwords) and never on a button, field, link or other control, so it
+  cannot submit a form. A form whose only ways out are its return key or
+  a button answers `keyboard_did_not_close` instead of pressing one.
 - Android: Kotlin runner `/hide-keyboard` → `IME.hide()`.
 
 **It answers about the keyboard, not about itself.** No keyboard present
@@ -3850,8 +3854,13 @@ Before 9.0.0 this answered `ok: true`, because the handler returned a
 `Bool` that meant "I ran" rather than "it closed".
 
 **Fix**: tapping the next control often works when a field will not give
-focus up. Do not guard the call — `hideKeyboard` is already a no-op when
-no keyboard is present, which is a *different* answer from this one.
+focus up. On a form that offers no way to put the keyboard away but its
+return key or a submit button — nothing to drag, nothing that ends
+editing on a touch elsewhere — there is nothing `hideKeyboard` can do
+without acting on the form: submit with `pressKey: enter`, or tap the
+button directly. Do not guard the call — `hideKeyboard` is already a
+no-op when no keyboard is present, which is a *different* answer from
+this one.
 
 ### "runner … refused: keyboard_state_unknown"
 
@@ -5405,7 +5414,9 @@ dismissal is not bounded. `ok:false` carries `error`:
 `keyboard_did_not_close` (the keyboard was there and is still there —
 `saw` lists the strategies tried, and says so when the budget ran out
 first) or `keyboard_state_unknown` (looking failed; not evidence the
-keyboard is up). The Android runner ignores `budgetMs`.
+keyboard is up). The Android runner ignores `budgetMs`. On iOS an
+`ok:true` that took a keyboard down carries `saw: "dismissed by
+<strategy>"` naming the strategy.
 
 ### `POST /back`
 

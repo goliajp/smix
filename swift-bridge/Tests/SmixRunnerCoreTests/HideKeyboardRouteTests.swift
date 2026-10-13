@@ -88,8 +88,10 @@ final class HideKeyboardOutcomeTests: XCTestCase {
   }
 
   func test_dismissed_is_success() async throws {
-    let json = try await parse(HideKeyboardRoute.outcome(.dismissed))
+    let json = try await parse(HideKeyboardRoute.outcome(.dismissed(by: "tap-above-keyboard")))
     XCTAssertEqual(json["ok"] as? Bool, true)
+    XCTAssertEqual(json["saw"] as? String, "dismissed by tap-above-keyboard",
+      "a success names the strategy that took the keyboard down")
   }
 
   func test_still_present_says_what_was_tried() async throws {

@@ -298,9 +298,13 @@ already have: `tapOn` it, then the scalar form.
 - hideKeyboard
 ```
 
-- iOS: several strategies in order — dismiss/return keys, a tap outside
-  any text field, and a tap just above the keyboard's own frame — until
-  the keyboard is gone.
+- iOS: several strategies in order — dismiss/return keys, a drag of the
+  field's scroll view into the keyboard, and a touch on an empty spot
+  above the keyboard — until the keyboard is gone and no field holds
+  focus. The touch lands above the bar drawn over the keys (suggestions,
+  Passwords) and never on a button, field, link or other control, so it
+  cannot submit a form. A form whose only ways out are its return key or
+  a button answers `keyboard_did_not_close` instead of pressing one.
 - Android: Kotlin runner `/hide-keyboard` → `IME.hide()`.
 
 **It answers about the keyboard, not about itself.** No keyboard present
