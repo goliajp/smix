@@ -537,7 +537,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smix-error"
-version = "16.0.0"
+version = "16.1.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "smix-lease"
-version = "16.0.0"
+version = "16.1.0"
 dependencies = [
  "chrono",
  "serde",
@@ -556,7 +556,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "16.0.0"
+version = "16.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "16.0.0"
+version = "16.1.0"
 dependencies = [
  "regex",
  "serde",
@@ -573,14 +573,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "16.0.0"
+version = "16.1.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "16.0.0"
+version = "16.1.0"
 dependencies = [
  "libc",
  "serde",
@@ -604,7 +604,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "16.0.0"
+version = "16.1.0"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -666,9 +666,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.53.2"
+version = "1.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e95f91fcc7a621e8b030f6aa23c71fe9838ae2fb4d8118b75602a328f5144044"
+checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 dependencies = [
  "bytes",
  "libc",
