@@ -52,6 +52,16 @@ fn stdout_file(lsof_fn: &str) -> Option<PathBuf> {
     (path.is_absolute() && !name.starts_with("/dev/")).then(|| path.to_path_buf())
 }
 
+/// The last `lines` lines of a runner log, or nothing when it cannot be read.
+pub(crate) fn tail(log: &Path, lines: usize) -> String {
+    let Ok(text) = std::fs::read_to_string(log) else {
+        return String::new();
+    };
+    let all: Vec<&str> = text.lines().collect();
+    let start = all.len().saturating_sub(lines);
+    all[start..].join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
