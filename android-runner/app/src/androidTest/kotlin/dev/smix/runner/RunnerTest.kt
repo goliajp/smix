@@ -2544,13 +2544,9 @@ object TreeBuilder {
         ).put("window", TreeWire.windowJson(window.type, pkg, window.isFocused, window.layer, touchableOf(window)))
     }
 
-    /// Where `window` takes touches, as `[left, top, width, height]`.
-    private fun touchableOf(window: android.view.accessibility.AccessibilityWindowInfo): IntArray {
-        val region = android.graphics.Region()
-        window.getRegionInScreen(region)
-        val b = region.bounds
-        return intArrayOf(b.left, b.top, b.width(), b.height())
-    }
+    /// Where `window` takes touches, each rectangle as `[left, top, width, height]`.
+    private fun touchableOf(window: android.view.accessibility.AccessibilityWindowInfo): List<IntArray> =
+        HitReader.touchRects(window).map { intArrayOf(it.left, it.top, it.right - it.left, it.bottom - it.top) }
 
     /// `null` when the node no longer exists: its subtree is left out.
     private fun nodeToJson(node: AccessibilityNodeInfo, walk: Boolean = true, refresh: Boolean = true): JSONObject? {

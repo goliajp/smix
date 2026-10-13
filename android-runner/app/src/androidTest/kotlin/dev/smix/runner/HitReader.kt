@@ -2,6 +2,8 @@ package dev.smix.runner
 
 import android.app.Instrumentation
 import android.graphics.Rect
+import android.graphics.Region
+import android.graphics.RegionIterator
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -27,6 +29,7 @@ class HitReader(private val instrumentation: Instrumentation) {
                     node(root, px, py),
                     pkg = root.packageName?.toString(),
                     application = w.type == AccessibilityWindowInfo.TYPE_APPLICATION,
+                    touch = touchRects(w),
                 )
             } finally {
                 root.recycle()
@@ -49,6 +52,19 @@ class HitReader(private val instrumentation: Instrumentation) {
         // reading says the probe did not answer, and the host is told so
         // rather than handed the projection's chain as if it were this.
         null
+    }
+
+    companion object {
+        /// Each rectangle where `window` takes touches.
+        fun touchRects(window: AccessibilityWindowInfo): List<HitChain.Box> {
+            val region = Region()
+            window.getRegionInScreen(region)
+            val rects = mutableListOf<HitChain.Box>()
+            val it = RegionIterator(region)
+            val r = Rect()
+            while (it.next(r)) rects.add(HitChain.Box(r.left, r.top, r.right, r.bottom))
+            return rects
+        }
     }
 
     private fun node(n: AccessibilityNodeInfo, px: Int, py: Int): HitChain.Node {

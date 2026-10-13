@@ -143,6 +143,7 @@ impl HttpRunnerClient {
                 focused: true,
                 layer: None,
                 touchable: None,
+                touchable_rects: Vec::new(),
             });
         }
     }

@@ -111,6 +111,7 @@ fn the_app_window_is_the_probes_and_keeps_its_place() {
             focused: true,
             layer: None,
             touchable: None,
+            touchable_rects: Vec::new(),
         }),
         "the probe's subtree must say whose window it is"
     );

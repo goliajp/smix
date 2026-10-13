@@ -45,6 +45,7 @@ fn window(
         focused: kind == WindowKind::Application,
         layer,
         touchable: Some(bounds),
+        touchable_rects: Vec::new(),
     });
     w
 }
@@ -288,6 +289,42 @@ fn the_keyboards_window_covers_only_where_it_takes_touches() {
     let field = &tree.children[2].children[0];
     let p = at(touch_point(&tree, field).expect("resolves"));
     assert!(close(p, (540.0 / 1080.0, 462.0 / 2400.0)), "{p:?}");
+}
+
+/// The keyboard in handwriting mode, as measured on API 36 after a stylus
+/// stroke: a toolbar by the field (22..176 x 847..1579) and a strip at the
+/// bottom (2274..2340), the rectangle around them 847..2340 across the
+/// screen. A real touch at (878, 1455), between the pieces, opened the
+/// app's code screen.
+fn under_a_handwriting_keyboard(element: A11yNode) -> A11yNode {
+    let mut tree = android(element, Some(20), Some(2));
+    let mut ime = window(
+        WindowKind::InputMethod,
+        "com.google.android.inputmethod.latin",
+        Some(10),
+        r(0.0, 847.0, 1080.0, 1493.0),
+        vec![],
+    );
+    ime.window.as_mut().expect("a window").touchable_rects =
+        vec![r(22.0, 847.0, 154.0, 732.0), r(0.0, 2274.0, 1080.0, 66.0)];
+    tree.children.insert(1, ime);
+    tree
+}
+
+#[test]
+fn an_element_between_the_keyboards_pieces_is_not_under_it() {
+    let tree = under_a_handwriting_keyboard(node("code", r(718.0, 1389.0, 321.0, 132.0), vec![]));
+    let p = at(touch_point(&tree, &tree.children[2].children[0]).expect("resolves"));
+    assert!(close(p, (878.5 / 1080.0, 1455.0 / 2400.0)), "{p:?}");
+}
+
+#[test]
+fn a_centre_under_the_keyboards_toolbar_moves_beside_it() {
+    // 0..200 wide, centre 100 under the toolbar (22..176): the parts left
+    // are 0..22 and 176..200, and the larger is aimed at.
+    let tree = under_a_handwriting_keyboard(node("camera", r(0.0, 1389.0, 200.0, 132.0), vec![]));
+    let p = at(touch_point(&tree, &tree.children[2].children[0]).expect("resolves"));
+    assert!(close(p, (188.0 / 1080.0, 1455.0 / 2400.0)), "{p:?}");
 }
 
 #[test]

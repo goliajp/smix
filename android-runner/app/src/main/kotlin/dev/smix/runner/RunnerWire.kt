@@ -915,11 +915,15 @@ object TreeWire {
     fun hollowById(windowType: Int, windowId: Int, appWindowIds: Set<Int>): Boolean =
         windowType == 1 && windowId in appWindowIds
 
-    /// `touchable` is where the window takes touches, `[left, top, width,
-    /// height]` in screen pixels — not its bounds: the keyboard's window
-    /// spans the screen below the status bar and takes touches only on the
-    /// keys. All zero for a window that takes none.
-    fun windowJson(windowType: Int, pkg: String?, focused: Boolean, layer: Int, touchable: IntArray): JSONObject {
+    /// `touchable` is where the window takes touches, each rectangle as
+    /// `[left, top, width, height]` in screen pixels — not its bounds: the
+    /// keyboard's window spans the screen below the status bar and takes
+    /// touches only on the keys. The area can be in pieces: in handwriting
+    /// mode the keyboard takes touches on a toolbar by the field and a
+    /// strip at the bottom, and a touch between them goes to the app. The
+    /// wire carries each piece, and the one rectangle around them for a
+    /// host that reads only that — all zero for a window that takes none.
+    fun windowJson(windowType: Int, pkg: String?, focused: Boolean, layer: Int, touchable: List<IntArray>): JSONObject {
         val kind = when (windowType) {
             1 -> "application"
             2 -> "inputMethod"
@@ -928,15 +932,22 @@ object TreeWire {
         }
         // The layer, because the list is not in screen order: the host
         // aims a touch at the part of an element no higher window covers.
+        val around = if (touchable.isEmpty()) {
+            intArrayOf(0, 0, 0, 0)
+        } else {
+            val left = touchable.minOf { it[0] }
+            val top = touchable.minOf { it[1] }
+            intArrayOf(left, top, touchable.maxOf { it[0] + it[2] } - left, touchable.maxOf { it[1] + it[3] } - top)
+        }
         val o = JSONObject().put("kind", kind).put("focused", focused).put("layer", layer)
-            .put(
-                "touchable",
-                JSONObject().put("x", touchable[0]).put("y", touchable[1])
-                    .put("w", touchable[2]).put("h", touchable[3]),
-            )
+            .put("touchable", rectJson(around))
+            .put("touchableRects", JSONArray(touchable.map(::rectJson)))
         if (pkg != null) o.put("package", pkg)
         return o
     }
+
+    private fun rectJson(r: IntArray): JSONObject =
+        JSONObject().put("x", r[0]).put("y", r[1]).put("w", r[2]).put("h", r[3])
 
     fun deriveRole(cls: String): String? {
         val tail = cls.substringAfterLast('.')

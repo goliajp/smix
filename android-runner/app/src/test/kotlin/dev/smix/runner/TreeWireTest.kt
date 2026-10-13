@@ -211,7 +211,7 @@ class TreeWireTest {
 
     @Test
     fun anApplicationWindowSaysWhoseItIsAndWhetherItHasTheFocus() {
-        val w = TreeWire.windowJson(windowType = 1, pkg = "dev.smix.fixture", focused = true, layer = 2, touchable = intArrayOf(0, 0, 1080, 2400))
+        val w = TreeWire.windowJson(windowType = 1, pkg = "dev.smix.fixture", focused = true, layer = 2, touchable = listOf(intArrayOf(0, 0, 1080, 2400)))
         assertTrue("an application window names its package: $w", w.has("package"))
         assertEquals("dev.smix.fixture", w.getString("package"))
         assertEquals("application", w.getString("kind"))
@@ -220,10 +220,10 @@ class TreeWireTest {
 
     @Test
     fun theKindFollowsTheWindowType() {
-        assertEquals("inputMethod", TreeWire.windowJson(2, "com.android.inputmethod", false, 0, intArrayOf(0, 0, 0, 0)).getString("kind"))
-        assertEquals("system", TreeWire.windowJson(3, "com.android.systemui", false, 0, intArrayOf(0, 0, 0, 0)).getString("kind"))
-        assertEquals("other", TreeWire.windowJson(4, null, false, 0, intArrayOf(0, 0, 0, 0)).getString("kind"))
-        assertEquals("other", TreeWire.windowJson(6, null, false, 0, intArrayOf(0, 0, 0, 0)).getString("kind"))
+        assertEquals("inputMethod", TreeWire.windowJson(2, "com.android.inputmethod", false, 0, emptyList()).getString("kind"))
+        assertEquals("system", TreeWire.windowJson(3, "com.android.systemui", false, 0, emptyList()).getString("kind"))
+        assertEquals("other", TreeWire.windowJson(4, null, false, 0, emptyList()).getString("kind"))
+        assertEquals("other", TreeWire.windowJson(6, null, false, 0, emptyList()).getString("kind"))
     }
 
     // Where the window stands in the stack. The order windows are listed
@@ -232,8 +232,8 @@ class TreeWireTest {
     // nothing covers (an app drawn edge to edge, under the status bar).
     @Test
     fun aWindowSaysWhereItStandsInTheStack() {
-        val bar = TreeWire.windowJson(windowType = 3, pkg = "com.android.systemui", focused = false, layer = 21, touchable = intArrayOf(0, 0, 1080, 136))
-        val app = TreeWire.windowJson(windowType = 1, pkg = "dev.smix.fixture", focused = true, layer = 2, touchable = intArrayOf(0, 0, 1080, 2400))
+        val bar = TreeWire.windowJson(windowType = 3, pkg = "com.android.systemui", focused = false, layer = 21, touchable = listOf(intArrayOf(0, 0, 1080, 136)))
+        val app = TreeWire.windowJson(windowType = 1, pkg = "dev.smix.fixture", focused = true, layer = 2, touchable = listOf(intArrayOf(0, 0, 1080, 2400)))
         assertTrue("the window's layer is on the wire: $bar", bar.has("layer"))
         assertEquals(21, bar.optInt("layer", -1))
         assertEquals(2, app.optInt("layer", -1))
@@ -247,16 +247,42 @@ class TreeWireTest {
     fun aWindowSaysWhereItTakesTouches() {
         val ime = TreeWire.windowJson(
             windowType = 2, pkg = "com.google.android.inputmethod.latin", focused = false,
-            layer = 1, touchable = intArrayOf(0, 1500, 1080, 840),
+            layer = 1, touchable = listOf(intArrayOf(0, 1500, 1080, 840)),
         )
         assertTrue("where the window takes touches is on the wire: $ime", ime.has("touchable"))
         val t = ime.getJSONObject("touchable")
         assertEquals(listOf(0, 1500, 1080, 840), listOf("x", "y", "w", "h").map { t.getInt(it) })
     }
 
+    // Measured on API 36 after a stylus stroke: the keyboard took touches on
+    // a toolbar by the field and a strip at the bottom, and a real touch
+    // between them, inside the rectangle around both, opened the app's code
+    // screen. A host that had only that rectangle refused the tap.
+    @Test
+    fun aWindowThatTakesTouchesInPiecesListsEachPiece() {
+        val ime = TreeWire.windowJson(
+            windowType = 2, pkg = "com.google.android.inputmethod.latin", focused = false,
+            layer = 1, touchable = listOf(intArrayOf(22, 847, 154, 732), intArrayOf(0, 2274, 1080, 66)),
+        )
+        val pieces = ime.getJSONArray("touchableRects")
+        assertEquals(
+            listOf(listOf(22, 847, 154, 732), listOf(0, 2274, 1080, 66)),
+            (0 until pieces.length()).map { i -> listOf("x", "y", "w", "h").map { pieces.getJSONObject(i).getInt(it) } },
+        )
+        val t = ime.getJSONObject("touchable")
+        assertEquals(listOf(0, 847, 1080, 1493), listOf("x", "y", "w", "h").map { t.getInt(it) })
+    }
+
+    @Test
+    fun aWindowThatTakesNoTouchesSaysNone() {
+        val w = TreeWire.windowJson(windowType = 3, pkg = null, focused = false, layer = 0, touchable = emptyList())
+        assertEquals(0, w.getJSONArray("touchableRects").length())
+        assertEquals(listOf(0, 0, 0, 0), listOf("x", "y", "w", "h").map { w.getJSONObject("touchable").getInt(it) })
+    }
+
     @Test
     fun aPackageNobodyReportedIsLeftOutRatherThanGuessed() {
-        val w = TreeWire.windowJson(windowType = 3, pkg = null, focused = false, layer = 0, touchable = intArrayOf(0, 0, 0, 0))
+        val w = TreeWire.windowJson(windowType = 3, pkg = null, focused = false, layer = 0, touchable = emptyList())
         assertFalse(w.has("package"))
         assertFalse(w.getBoolean("focused"))
     }

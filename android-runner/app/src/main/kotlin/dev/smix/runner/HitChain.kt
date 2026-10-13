@@ -51,14 +51,21 @@ object HitChain {
     )
 
     /// `pkg` and `application` say whose window it is, so the probe's tree
-    /// can take the place of the app's (see [withProbe]).
+    /// can take the place of the app's (see [withProbe]). `touch` is each
+    /// rectangle where it takes touches, null when not read: the area can
+    /// be in pieces inside the bounds — the keyboard in handwriting mode
+    /// takes touches on a toolbar by the field and a strip at the bottom,
+    /// and a touch between them goes to the window below.
     data class Window(
         val layer: Int,
         val bounds: Box,
         val root: Node,
         val pkg: String? = null,
         val application: Boolean = false,
-    )
+        val touch: List<Box>? = null,
+    ) {
+        fun takes(x: Int, y: Int): Boolean = touch?.any { it.contains(x, y) } ?: bounds.contains(x, y)
+    }
 
     data class Entry(val id: String, val label: String, val bounds: Box)
 
@@ -74,11 +81,12 @@ object HitChain {
     /// delivered to, innermost first. Empty when no window holds the point.
     fun at(windows: List<Window>, px: Int, py: Int): List<Entry> = find(windows, px, py).entries
 
-    /// The window is the topmost one containing the point — by layer, not
-    /// by its place in the list, which is not the order on screen.
+    /// The window is the topmost one taking touches at the point — by
+    /// layer, not by its place in the list, which is not the order on
+    /// screen.
     fun find(windows: List<Window>, px: Int, py: Int): Found {
         val top = windows
-            .filter { it.bounds.contains(px, py) }
+            .filter { it.takes(px, py) }
             .maxByOrNull { it.layer }
             ?: return Found(emptyList(), emptyList())
         val walk = Walk(px, py)
@@ -246,7 +254,7 @@ object HitChain {
         val layer = apps.maxOfOrNull { it.layer } ?: ((others.minOfOrNull { it.layer } ?: 0) - 1)
         val bounds = apps.firstOrNull()?.bounds ?: display
         val root = Node("", "", bounds, probeRoots)
-        return others + Window(layer, bounds, root, app, application = true)
+        return others + Window(layer, bounds, root, app, application = true, touch = apps.firstOrNull()?.touch)
     }
 
     /// The probe's roots as chain nodes: named by the test tag, or a hosted
