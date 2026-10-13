@@ -3,8 +3,8 @@ import UIKit
 /// A UIKit sign-in step in the shape of a consumer's: the field sits in a
 /// scroll view that dismisses the keyboard interactively, the Continue
 /// button is a plain view with a tap recognizer in a bar pinned to the
-/// keyboard layout guide, and the field's return key is Continue, which
-/// submits like the button does. The field is a sign-in name, so the
+/// keyboard layout guide, and the field's return key is Go, which submits
+/// like the button does. The field is a sign-in name, so the
 /// keyboard carries a Passwords bar above its keys.
 ///
 /// `uks_result` is the app's own count of submissions, and from which
@@ -44,7 +44,9 @@ final class UIKitSignInController: UIViewController, UITextFieldDelegate {
     field.keyboardType = .emailAddress
     // a sign-in name: the keyboard grows a Passwords bar above its keys
     field.textContentType = .username
-    field.returnKeyType = .continue
+    // a return key named for its action, which submits: hideKeyboard must
+    // not press it
+    field.returnKeyType = .go
     field.delegate = self
     field.accessibilityIdentifier = "uks_email"
 

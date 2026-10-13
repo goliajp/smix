@@ -22,6 +22,12 @@ All notable changes to the `smix` workspace are documented here. The format foll
   `keyboard_did_not_close`, naming the field that holds focus, where it
   used to answer `ok: true`: submit it with `pressKey: enter` or tap the
   button.
+- **`hideKeyboard` on iOS no longer presses a return key named for an
+  action, or touches blindly.** It pressed the first of Return, Done,
+  Continue, Search, Go, Next or Enter it found; Go, Search, Continue and
+  Next are the field's submit — on a password field Go signs in. It now
+  presses only Return or Done. Its last resort, a touch 15% down the
+  screen whatever was there, is gone as well.
 - **A successful `hideKeyboard` on iOS says how.** The runner's answer
   carries `saw: "dismissed by <strategy>"`.
 

@@ -3,9 +3,10 @@ import Foundation
 
 // POST /hide-keyboard {} → 200 {ok:<bool>}.
 // Mirrors BackRoute / ForegroundRoute envelope shape. The runner-side
-// handler tries the keyboard's own keys, a drag of the focused field's
-// scroll view into the keyboard (KeyboardDismissDrag), and touches outside
-// it, checking after each whether the keyboard is gone. The route owns
+// handler tries the keyboard's Return or Done key, a drag of the focused
+// field's scroll view into the keyboard (KeyboardDismissDrag) and a touch
+// on an empty spot above it (KeyboardOutsideTouch), checking after each
+// whether the keyboard is gone. The route owns
 // request decoding + response serialization only.
 //
 // Empty body or `{}` JSON object both decode to HideKeyboardRequest. Hide-

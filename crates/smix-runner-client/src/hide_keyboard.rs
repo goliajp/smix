@@ -1,6 +1,6 @@
 //! `POST /hide-keyboard` and how long it may take.
 //!
-//! Dismissing runs up to four strategies, each followed by up to a second
+//! Dismissing runs a chain of strategies, each followed by up to a second
 //! of looking. On a slow simulator one XCUITest query costs about a second,
 //! so the whole chain can pass 15 s — and it did on CI, where the host gave
 //! up at 15 s while the runner was still working, and reported a step that
