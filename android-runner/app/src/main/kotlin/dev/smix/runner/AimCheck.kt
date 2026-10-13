@@ -40,10 +40,14 @@ object AimCheck {
     /// What is under the point instead of `target`, or null when the touch
     /// should go in: the target is there, or the reading cannot say — a
     /// reader that could not be read, or a View whose own code decides.
+    ///
+    /// A target still at the point under something drawn over it has not
+    /// left: the touch goes in and the host judges it missed by what took
+    /// it, as it did before the runner was told the aim.
     fun gone(target: Target, reading: HitChain.Reading): String? {
         val read = reading as? HitChain.Reading.Read ?: return null
         if (read.uncertain != null) return null
-        if (read.chain.any { same(target, it) }) return null
+        if (read.chain.any { same(target, it) } || read.under.any { same(target, it) }) return null
         if (read.chain.isEmpty()) return "nothing"
         return read.chain.take(3).joinToString(" < ") { describe(it) }
     }

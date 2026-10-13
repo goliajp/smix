@@ -65,8 +65,10 @@ object HitChain {
     /// What a touch at a point finds: the elements under it, innermost
     /// first, and — when a View whose own code decides was chosen over
     /// something under it that would take the touch — why the answer is
-    /// not certain.
-    data class Found(val entries: List<Entry>, val uncertain: String? = null)
+    /// not certain. `under` is every element whose bounds hold the point
+    /// in any window, the touch's or not: an element covered by a sheet's
+    /// scrim is not on the touch's path and is still on the screen there.
+    data class Found(val entries: List<Entry>, val under: List<Entry>, val uncertain: String? = null)
 
     /// The elements under `(px, py)` in the window a touch there is
     /// delivered to, innermost first. Empty when no window holds the point.
@@ -78,10 +80,17 @@ object HitChain {
         val top = windows
             .filter { it.bounds.contains(px, py) }
             .maxByOrNull { it.layer }
-            ?: return Found(emptyList())
+            ?: return Found(emptyList(), emptyList())
         val walk = Walk(px, py)
         walk.collect(top.root)
-        return Found(walk.path.asReversed() + walk.passed, walk.uncertain)
+        val under = mutableListOf<Entry>()
+        windows.filter { it.bounds.contains(px, py) }.forEach { under(it.root, px, py, under) }
+        return Found(walk.path.asReversed() + walk.passed, under, walk.uncertain)
+    }
+
+    private fun under(n: Node, px: Int, py: Int, into: MutableList<Entry>) {
+        if (n.bounds.contains(px, py)) into.add(Entry(n.id, n.label, n.bounds))
+        n.children.forEach { under(it, px, py, into) }
     }
 
     /// One path down, into the child a touch there is dispatched to, and
@@ -187,7 +196,12 @@ object HitChain {
     /// host aimed from the one it named, and a chain from another is a
     /// verdict on some other aim.
     sealed class Reading {
-        data class Read(val reader: Reader, val chain: List<Entry>, val uncertain: String? = null) : Reading()
+        data class Read(
+            val reader: Reader,
+            val chain: List<Entry>,
+            val under: List<Entry>,
+            val uncertain: String? = null,
+        ) : Reading()
         data class Unreadable(val reader: Reader, val why: String) : Reading()
     }
 
@@ -211,7 +225,7 @@ object HitChain {
         }
     }
 
-    private fun found(reader: Reader, f: Found) = Reading.Read(reader, f.entries, f.uncertain)
+    private fun found(reader: Reader, f: Found) = Reading.Read(reader, f.entries, f.under, f.uncertain)
 
     /// The windows with the app's own read from its semantics probe.
     ///

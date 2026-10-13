@@ -10,7 +10,7 @@ class AimCheckTest {
     private val target = AimCheck.Target("btn_player_mode_go_live", "", HitChain.Box(41, 942, 212, 1068))
 
     private fun read(vararg chain: HitChain.Entry, uncertain: String? = null) =
-        HitChain.Reading.Read(HitChain.Reader.SEMANTICS, chain.toList(), uncertain)
+        HitChain.Reading.Read(HitChain.Reader.SEMANTICS, chain.toList(), chain.toList(), uncertain)
 
     @Test
     fun aTargetStillUnderThePointIsTouched() {
@@ -21,6 +21,16 @@ class AimCheckTest {
     @Test
     fun aTargetGoneFromThePointIsNotTouchedAndWhatIsThereIsNamed() {
         assertEquals("id=overlay_detections", AimCheck.gone(target, read(overlay)))
+    }
+
+    // A sheet's scrim over the target: the touch would go to the scrim, and
+    // the target is still at the point under it. That is a miss for the host
+    // to name, not a target that left.
+    @Test
+    fun aTargetCoveredAtThePointIsTouched() {
+        val scrim = HitChain.Entry("", "Close panel", HitChain.Box(0, 0, 1080, 2340))
+        val covered = HitChain.Reading.Read(HitChain.Reader.SEMANTICS, listOf(scrim), listOf(scrim, pill))
+        assertNull(AimCheck.gone(target, covered))
     }
 
     @Test

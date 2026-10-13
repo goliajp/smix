@@ -22,7 +22,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-private val NO_CHAIN = HitChain.Reading.Read(HitChain.Reader.ACCESSIBILITY, emptyList())
+private val NO_CHAIN = HitChain.Reading.Read(HitChain.Reader.ACCESSIBILITY, emptyList(), emptyList())
 
 class RunnerWireEncodeTest {
 
@@ -444,6 +444,7 @@ class KeyboardRoleTest {
                 HitChain.Entry("button1", "", HitChain.Box(773, 1192, 976, 1341)),
                 HitChain.Entry("", "", HitChain.Box(0, 0, 1080, 2340)),
             ),
+            emptyList(),
         )
         val obj = JSONObject(RunnerWire.tapAtNormCoordBody(true, 1080, 2340, 874, 1266, chain))
         val arr = obj.getJSONArray("chain")
@@ -460,9 +461,9 @@ class KeyboardRoleTest {
 
     @Test
     fun aGuessAboutWhereTheTouchWentIsSaidAndAbsentWhenThereWasNone() {
-        val sure = HitChain.Reading.Read(HitChain.Reader.SEMANTICS, emptyList())
+        val sure = HitChain.Reading.Read(HitChain.Reader.SEMANTICS, emptyList(), emptyList())
         assertEquals(false, JSONObject(RunnerWire.tapAtNormCoordBody(true, 1, 2, 3, 4, sure)).has("uncertain"))
-        val guessed = HitChain.Reading.Read(HitChain.Reader.SEMANTICS, emptyList(), "a View decides")
+        val guessed = HitChain.Reading.Read(HitChain.Reader.SEMANTICS, emptyList(), emptyList(), "a View decides")
         assertEquals("a View decides", JSONObject(RunnerWire.tapAtNormCoordBody(true, 1, 2, 3, 4, guessed)).getString("uncertain"))
     }
 }
