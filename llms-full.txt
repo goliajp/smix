@@ -1603,10 +1603,11 @@ already have: `tapOn` it, then the scalar form.
 - hideKeyboard
 ```
 
-- iOS: several strategies in order — dismiss/return keys, a drag of the
-  field's scroll view into the keyboard, and a touch on an empty spot
-  above the keyboard — until the keyboard is gone and no field holds
-  focus. The touch lands above the bar drawn over the keys (suggestions,
+- iOS: the keyboard's Return or Done key, a drag of the field's scroll
+  view into the keyboard, then a touch on an empty spot above the
+  keyboard — until the keyboard is gone and no field holds focus. A
+  return key named for an action (Go, Search, Continue, Next) is never
+  pressed: it is the field's submit. The touch lands above the bar drawn over the keys (suggestions,
   Passwords) and never on a button, field, link or other control, so it
   cannot submit a form. A form whose only ways out are its return key or
   a button answers `keyboard_did_not_close` instead of pressing one.

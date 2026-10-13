@@ -17,6 +17,9 @@
 #   -uikit-signin            nothing on the screen takes the keyboard down
 #   -uikit-signin-taps-away  a touch on an empty spot ends editing
 #
+# The field's return key is Go, the field's submit, which hideKeyboard
+# used to press before anything else (a sign-in that signs itself in).
+#
 # On the first, hideKeyboard refuses with keyboard_did_not_close, the app
 # was sent nothing, and the keyboard is still up. On the second, it says
 # a touch above the keyboard took it down, the app was sent nothing, the

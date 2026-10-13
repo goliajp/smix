@@ -104,8 +104,13 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
         if budget.spent(by: began) { return false }
       }
     }
-    // Strategy 1: tap Return/Done/Continue/Search/Go key on keyboard
-    for keyName in ["Return", "Done", "Continue", "Search", "Go", "Next", "Enter"] {
+    // First: the keyboard's own Return or Done key, the two that mean
+    // "finished typing". A return key named for an action — Go, Search,
+    // Continue, Next — is the field's submit: on a sign-in form Go signs in
+    // and Continue sends the address, so putting the keyboard away must not
+    // press it. Looked up by identifier, measured on iOS 27: a plain return
+    // key is "Return", Go is "Go", Next is "Next:".
+    for keyName in ["Return", "Done"] {
       if spent() { return stopped() }
       let key = app.keyboards.buttons[keyName]
       if key.exists {
@@ -114,7 +119,7 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
         if keyboardGone() { return .dismissed(by: "key:\(keyName)") }
       }
     }
-    // Strategy 2: drag the focused field's scroll view down into the
+    // Then: drag the focused field's scroll view down into the
     // keyboard. A form whose scroll view dismisses the keyboard by drag
     // (SwiftUI `.scrollDismissesKeyboard(.interactively)`) ignores a
     // touch outside the keyboard, and on a form a touch can land on the
@@ -142,7 +147,7 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
         if keyboardGone() { return .dismissed(by: "drag-into-keyboard") }
       }
     }
-    // Strategy 3: touch outside the keyboard, just above its own top
+    // Then: touch outside the keyboard, just above its own top
     // edge. RN's Keyboard.dismiss responds to an outside touch, and
     // this used to aim at a flat 15% of the app frame — which on a
     // login form is where the OTHER field is, so the touch moved
@@ -188,13 +193,6 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
     } catch {
       tried.append("tap-above-keyboard skipped: the screen could not be read (\(error))")
     }
-    // Strategy 4: the old fixed point, kept because a keyboard whose
-    // frame reads as empty leaves nothing else to aim at.
-    if spent() { return stopped() }
-    tried.append("tap-at-15-percent")
-    let above = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
-    above.tap()
-    if keyboardGone() { return .dismissed(by: "tap-at-15-percent") }
     // No swipe on the keyboard itself: a drag that starts on the keys
     // is slide typing. Measured 2026-09-28, one put "gu" into an empty
     // field and left the keyboard up.
