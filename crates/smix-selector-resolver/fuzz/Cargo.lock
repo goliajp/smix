@@ -194,7 +194,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "smix-screen"
-version = "15.0.1"
+version = "15.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -202,7 +202,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "15.0.1"
+version = "15.1.0"
 dependencies = [
  "regex",
  "serde",
@@ -211,7 +211,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "15.0.1"
+version = "15.1.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -230,9 +230,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.8"
+version = "3.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01016da373cd8f7ef12624f796309f5c31ba8d646dd08856c02cd741d823c622"
+checksum = "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b"
 dependencies = [
  "proc-macro2",
  "quote",
