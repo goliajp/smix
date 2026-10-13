@@ -17,13 +17,13 @@ categories = ["development-tools::testing"]
 workspace = true
 
 [dependencies]
-smix-adb = { path = "../smix-adb", version = "15.1.0" }
-smix-screen = { path = "../smix-screen", version = "15.1.0" }
-smix-selector = { path = "../smix-selector", version = "15.1.0" }
-smix-input = { path = "../smix-input", version = "15.1.0" }
-smix-error = { path = "../smix-error", version = "15.1.0" }
-smix-runner-wire = { path = "../smix-runner-wire", version = "15.1.0" }
-smix-sim-health = { path = "../smix-sim-health", version = "15.1.0" }
+smix-adb = { path = "../smix-adb", version = "16.0.0" }
+smix-screen = { path = "../smix-screen", version = "16.0.0" }
+smix-selector = { path = "../smix-selector", version = "16.0.0" }
+smix-input = { path = "../smix-input", version = "16.0.0" }
+smix-error = { path = "../smix-error", version = "16.0.0" }
+smix-runner-wire = { path = "../smix-runner-wire", version = "16.0.0" }
+smix-sim-health = { path = "../smix-sim-health", version = "16.0.0" }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
