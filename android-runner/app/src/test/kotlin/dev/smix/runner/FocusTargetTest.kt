@@ -34,9 +34,9 @@ class FocusTargetTest {
         )
         assertEquals("x", req.text)
         assertEquals(0.1, req.focusIn!!.nx, 1e-9)
-        assertEquals(0.2, req.focusIn!!.ny, 1e-9)
-        assertEquals(0.8, req.focusIn!!.nw, 1e-9)
-        assertEquals(0.1, req.focusIn!!.nh, 1e-9)
+        assertEquals(0.2, req.focusIn.ny, 1e-9)
+        assertEquals(0.8, req.focusIn.nw, 1e-9)
+        assertEquals(0.1, req.focusIn.nh, 1e-9)
     }
 
     @Test

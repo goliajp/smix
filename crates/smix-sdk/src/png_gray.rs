@@ -131,7 +131,7 @@ impl GrayView {
 /// color type outside `{Rgb, Rgba, Grayscale, GrayscaleAlpha}` — an explicit
 /// failure, never a silent no-op.
 pub(crate) fn decode_gray(png_bytes: &[u8]) -> Result<GrayView, ExpectationFailure> {
-    let decoder = png::Decoder::new(png_bytes);
+    let decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
     let mut reader = decoder.read_info().map_err(|e| {
         ExpectationFailure::new(FailureInit {
             code: Some(FailureCode::DriverError),
@@ -139,7 +139,14 @@ pub(crate) fn decode_gray(png_bytes: &[u8]) -> Result<GrayView, ExpectationFailu
             ..Default::default()
         })
     })?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let size = reader.output_buffer_size().ok_or_else(|| {
+        ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "PNG decode: the image is too large to hold in memory".to_string(),
+            ..Default::default()
+        })
+    })?;
+    let mut buf = vec![0u8; size];
     let info = reader.next_frame(&mut buf).map_err(|e| {
         ExpectationFailure::new(FailureInit {
             code: Some(FailureCode::DriverError),

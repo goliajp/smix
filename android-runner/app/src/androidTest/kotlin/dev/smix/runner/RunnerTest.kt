@@ -79,7 +79,7 @@ class RunnerTest {
                 CapturedAxEvent(
                     type = ev.eventType,
                     viewId = ev.source?.viewIdResourceName,
-                    text = ev.text?.joinToString(""),
+                    text = ev.text.joinToString(""),
                     beforeText = ev.beforeText?.toString(),
                     eventTimeMs = ev.eventTime,
                 ),
