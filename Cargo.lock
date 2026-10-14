@@ -2758,6 +2758,7 @@ dependencies = [
  "smix-runner-client",
  "smix-runner-sources",
  "smix-runner-wire",
+ "smix-simctl",
  "smix-store",
  "smix-usbmux",
  "tempfile",

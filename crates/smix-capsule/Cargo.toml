@@ -17,6 +17,7 @@ smix-runner-client = { path = "../smix-runner-client", version = "16.1.0" }
 smix-runner-sources = { path = "../smix-runner-sources", version = "16.1.0" }
 smix-store = { path = "../smix-store", version = "16.1.0" }
 smix-runner-wire = { path = "../smix-runner-wire", version = "16.1.0" }
+smix-simctl = { path = "../smix-simctl", version = "16.1.0" }
 serde.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true

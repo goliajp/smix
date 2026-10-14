@@ -2,6 +2,20 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Added
+
+- **`smix sim crashes` reads a simulator.** Every simulator's crash reports
+  land in this machine's `~/Library/Logs/DiagnosticReports` (and `Retired/`),
+  which is why it used to refuse; but each report names the simulator it ran
+  in, so only that one's are listed now — its system processes as well as the
+  app. A process that crashed three times or more inside ten minutes is named
+  on a line of its own with the count and the times: on a simulator, that is a
+  system process dying as it starts, being restarted and dying again, each
+  time with a crash report dialog on this Mac's desktop. Processes ended at
+  shutdown for not exiting in time are counted apart, not as crashes.
+
 ## [16.1.0] — 2026-10-14
 
 ### Changed

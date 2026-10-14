@@ -20,6 +20,9 @@ use defaults::did_not_start;
 pub use defaults::{
     DEFAULTS_PROGRAMS, defaults_key_is_absent, parse_defaults_bool, spawn_did_not_start,
 };
+/// Crash reports macOS wrote for a simulator's processes. See
+/// [`crash_report::for_simulator`].
+pub mod crash_report;
 pub mod registry;
 /// Adaptive `xcrun simctl io screenshot` pacer. See
 /// [`screenshot_pacer::ScreenshotPacer`].

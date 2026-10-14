@@ -342,8 +342,34 @@ impl DeviceControl for IosDeviceControl {
         Err(refused_on_a_simulator("frontmost_app"))
     }
 
-    async fn crash_reports(&self, _udid: &str) -> Result<Vec<CrashReport>, DeviceControlError> {
-        Err(refused_on_a_simulator("crash_reports"))
+    async fn crash_reports(&self, udid: &str) -> Result<Vec<CrashReport>, DeviceControlError> {
+        // the folder is the machine's; each report names the simulator
+        // it ran in, which is what scopes this to one device
+        let Some(dir) = smix_simctl::crash_report::reports_dir() else {
+            return Err(DeviceControlError::non_zero_exit(
+                "crash_reports",
+                -1,
+                "HOME is not set, so the crash report folder cannot be found",
+            ));
+        };
+        Ok(smix_simctl::crash_report::for_simulator(&dir, udid)
+            .into_iter()
+            .map(|r| {
+                let summary = match (r.exception.is_empty(), r.termination.is_empty()) {
+                    (false, false) => format!("{} — {}", r.exception, r.termination),
+                    (false, true) => r.exception.clone(),
+                    (true, _) => r.termination.clone(),
+                };
+                let mut lines = vec![format!("report: {}", r.path.display())];
+                lines.extend(r.frames.iter().take(3).map(|f| format!("at {f}")));
+                CrashReport {
+                    when: r.captured,
+                    process: r.process,
+                    summary,
+                    lines,
+                }
+            })
+            .collect())
     }
 
     async fn recording_pid(&self) -> Option<u32> {

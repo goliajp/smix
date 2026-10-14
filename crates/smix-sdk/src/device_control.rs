@@ -394,10 +394,6 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
     const NO_FRONTMOST_FROM_DEVICECTL: &str =
         "devicectl lists a device's processes but does not say which one is frontmost";
     const ASK_THE_RUNNER_WHAT_IT_SEES: &str = "ask the runner instead — `smix tree --device <udid>` names the app it read the screen from";
-    // The two Apple refusals here are about attribution, not access.
-    const SIM_CRASHES_ARE_NOT_DEVICE_SCOPED: &str = "a simulator's crash reports land in this machine's own folder, which is not divided by device, so no answer here could honestly be about one simulator";
-    const READ_THE_HOST_CRASH_FOLDER: &str =
-        "open ~/Library/Logs/DiagnosticReports and match on the app name and the time of the run";
     const DEVICE_CRASHES_STAY_ON_THE_DEVICE: &str = "crash reports stay on the device and devicectl has no verb that reads them (`sysdiagnose` gathers an archive, which is a different thing)";
     const USE_XCODE_DEVICES_WINDOW: &str =
         "download them with Xcode's Window > Devices and Simulators";
@@ -691,11 +687,12 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
         ),
         (
             "crash_reports",
+            // A simulator's reports share this machine's folder with every
+            // other's, but each names the coalition it ran in
+            // (`com.apple.CoreSimulator.SimDevice.<UDID>`), so one
+            // simulator's are its own to read.
             [
-                No {
-                    why: SIM_CRASHES_ARE_NOT_DEVICE_SCOPED,
-                    instead: READ_THE_HOST_CRASH_FOLDER,
-                },
+                Yes,
                 Yes,
                 No {
                     why: DEVICE_CRASHES_STAY_ON_THE_DEVICE,
@@ -1356,7 +1353,18 @@ mod action_level_tests {
                     "{action} is driven over adb on {kind:?}"
                 );
             }
-            for kind in [Simulator, PhysicalIos] {
+            // a simulator's crash reports are on this machine and name it
+            let apple: &[_] = if action == "crash_reports" {
+                assert_eq!(
+                    availability(action, Simulator),
+                    Some(Availability::Works),
+                    "a simulator's reports name the coalition it ran in"
+                );
+                &[PhysicalIos]
+            } else {
+                &[Simulator, PhysicalIos]
+            };
+            for &kind in apple {
                 match availability(action, kind) {
                     Some(Availability::RefusedByName { why, instead }) => {
                         assert!(

@@ -28,6 +28,7 @@ mod boot_cold;
 mod boot_record;
 mod capsule;
 mod platform;
+mod sim_crashes;
 mod tree_cmd;
 use platform::{DeviceDial, RunPlatform, dial_platform, resolve_run_platform};
 mod departures;
@@ -1835,11 +1836,12 @@ enum SimAction {
     /// is not a failure, and exiting non-zero would kill a healthy run
     /// under `set -e`.
     ///
-    /// Android only — a simulator's reports land in this machine's own
-    /// folder, which is not divided by device, and a phone's stay on the
+    /// An Android device's crash buffer, or the reports macOS wrote for a
+    /// simulator's processes — the system's as well as the app's, so a
+    /// system process crashing in a loop shows. A phone's stay on the
     /// phone.
     Crashes {
-        /// Which device, by serial or registry alias.
+        /// Which device, by serial, UDID or registry alias.
         device: String,
         /// Only reports naming this process.
         #[arg(long)]
@@ -3573,56 +3575,16 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     }
                 }
                 SimAction::Crashes { device, app, json } => {
-                    use smix_sdk::device_control::DeviceControl;
-                    let serial = resolve_android_serial(&device)?;
-                    let control = smix_sdk::android_device::AndroidDeviceControl::new();
-                    let all = control
+                    let kind = device_kind_of(&device);
+                    let serial = match kind {
+                        smix_simctl::registry::DeviceKind::Simulator => resolve_device(&device)?,
+                        _ => resolve_android_serial(&device)?,
+                    };
+                    let all = device_control_for(kind, &serial)
                         .crash_reports(&serial)
                         .await
                         .map_err(|e| CliError::Other(e.to_string()))?;
-                    let shown: Vec<_> = match &app {
-                        Some(pkg) => all.iter().filter(|r| r.process.contains(pkg)).collect(),
-                        None => all.iter().collect(),
-                    };
-                    if json {
-                        let rows: Vec<_> = shown
-                            .iter()
-                            .map(|r| {
-                                serde_json::json!({
-                                    "when": r.when,
-                                    "process": r.process,
-                                    "summary": r.summary,
-                                    "lines": r.lines,
-                                })
-                            })
-                            .collect();
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&rows)
-                                .map_err(|e| CliError::Other(e.to_string()))?
-                        );
-                    } else {
-                        for report in &shown {
-                            println!("{} {} — {}", report.when, report.process, report.summary);
-                            for line in &report.lines {
-                                println!("  {line}");
-                            }
-                        }
-                        // How many were filtered out is the evidence
-                        // that reads apart from an empty buffer: "none
-                        // of them was yours" and "the device recorded
-                        // none" are different answers.
-                        match &app {
-                            Some(pkg) => println!(
-                                "crashes: {} of {} report(s) on {serial} name {pkg}",
-                                shown.len(),
-                                all.len()
-                            ),
-                            None => {
-                                println!("crashes: {} report(s) on {serial}", all.len());
-                            }
-                        }
-                    }
+                    sim_crashes::print(&all, app.as_deref(), &serial, json)?;
                 }
                 SimAction::Openurl { device, url } => {
                     let udid = resolve_device(&device)?;
@@ -7433,14 +7395,6 @@ mod tests {
                     json: false,
                 }),
             ),
-            (
-                "crashes",
-                sim_verb_supports(&SimAction::Crashes {
-                    device: String::new(),
-                    app: None,
-                    json: false,
-                }),
-            ),
         ];
         for (name, kinds) in android_only {
             let kinds = kinds.unwrap_or_else(|| panic!("{name} takes a device"));
@@ -7458,6 +7412,22 @@ mod tests {
                 "{name} claims a physical iPhone: {kinds:?}"
             );
         }
+
+        // A simulator's crash reports are on this machine and name it; a
+        // phone's stay on the phone.
+        let crashes = sim_verb_supports(&SimAction::Crashes {
+            device: String::new(),
+            app: None,
+            json: false,
+        })
+        .expect("crashes takes a device");
+        for kind in [Emulator, PhysicalAndroid, Simulator] {
+            assert!(crashes.contains(&kind), "crashes on {kind:?}: {crashes:?}");
+        }
+        assert!(
+            !crashes.contains(&PhysicalIos),
+            "crashes on a phone: {crashes:?}"
+        );
 
         // The odd one out: a simulator answers this through
         // `simctl privacy`, and only a physical iPhone refuses.
