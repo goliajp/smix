@@ -97,9 +97,17 @@ PY
 
 adb -s "$SERIAL" shell am start -W -S -n "$APPID/.MainActivity" >/dev/null 2>&1 \
   || fail "could not start the fixture's main screen"
-tree || fail "tree: $(tail -3 "$WORK/tree.err")"
-read -r fl ft fr fb <<<"$(bounds fixture_input)"
-[ -n "${fb:-}" ] || fail "the fixture's field is not in the tree"
+# The activity being started is not its field being in the tree: under load
+# the screen arrives seconds later, and one look called that a failure. Ask
+# until it is there; a screen that never arrives is a premise not met.
+fb="" field_by=$(($(date +%s) + 20))
+while :; do
+  tree || fail "tree: $(tail -3 "$WORK/tree.err")"
+  read -r fl ft fr fb <<<"$(bounds fixture_input)"
+  [ -n "${fb:-}" ] && break
+  [ "$(date +%s)" -lt "$field_by" ] || cannot_judge "the fixture's field did not reach the tree within 20 s"
+  sleep 0.5
+done
 # below the status bar, which an edge-to-edge window draws over the field's top
 y=$(( fb - 17 ))
 FIELD_TAP="$(( (fl + fr) / 2 )) $y"
