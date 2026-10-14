@@ -4,6 +4,27 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [16.2.0] — 2026-10-14
 
+### Changed
+
+- **Every dependency is on its latest stable release.** Rust (UniFFI
+  0.32, rmcp 3, reqwest 0.13, png 0.18 among them), the Android runner and
+  SDK (Android Gradle Plugin 9.4, Gradle 9.8, Kotlin 2.4, compileSdk 37,
+  current AndroidX), the Swift runner (FlyingFox 0.27) and the JavaScript
+  packages (TypeScript 7, Vitest 5). What a reader may need to do:
+  - **`smix runner up --platform android` builds the runner with AGP 9.4,
+    so the machine needs the Android 37 SDK platform and JDK 17 or later.**
+    An app's own build is not affected.
+  - The published `smix-sdk` and `smix-probe` still ask an app for
+    compileSdk 33 or later and still carry Kotlin 2.0 metadata, as 16.1
+    did: AGP 9 would otherwise have written compileSdk 37 into them, and
+    Kotlin 2.4 its own metadata version, which older Kotlin compilers
+    cannot read.
+  - The Swift and Kotlin bindings were regenerated with UniFFI 0.32. The
+    types and methods an app calls are unchanged; UniFFI's own low-level
+    converters (`lift`, `lower`, `NoPointer`) now pass handles, not
+    pointers. The two error enums gained `Equatable`, `Hashable` and
+    `LocalizedError`.
+
 ### Added
 
 - **`smix sim crashes` reads a simulator.** Every simulator's crash reports

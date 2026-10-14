@@ -2,7 +2,7 @@
 
 Playwright-style Android emulator UI automation SDK for Kotlin, packaged
 as an Android library module. Brings smix's Rust-core selector resolver
-to Kotlin via UniFFI 0.29 bindings + a lazy lambda injection pattern.
+to Kotlin via UniFFI 0.32 bindings + a lazy lambda injection pattern.
 
 ## Installation
 

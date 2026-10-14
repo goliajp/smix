@@ -84,7 +84,7 @@ fn failure(code: FailureCode, message: String) -> ExpectationFailure {
 ///
 /// `DriverError` for a malformed PNG or a zero dimension.
 pub fn decode_rgb(png_bytes: &[u8]) -> Result<RgbImage, ExpectationFailure> {
-    let mut decoder = png::Decoder::new(png_bytes);
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder.read_info().map_err(|e| {
         failure(
@@ -92,7 +92,13 @@ pub fn decode_rgb(png_bytes: &[u8]) -> Result<RgbImage, ExpectationFailure> {
             format!("PNG decode (read_info) failed: {e}"),
         )
     })?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let size = reader.output_buffer_size().ok_or_else(|| {
+        failure(
+            FailureCode::DriverError,
+            "PNG decode: the image is too large to hold in memory".to_string(),
+        )
+    })?;
+    let mut buf = vec![0u8; size];
     let info = reader.next_frame(&mut buf).map_err(|e| {
         failure(
             FailureCode::DriverError,
@@ -334,12 +340,14 @@ pub fn crop_to(png_bytes: &[u8], crop: &CropTo) -> Result<Vec<u8>, ExpectationFa
 }
 
 fn png_size(png_bytes: &[u8]) -> Result<(u32, u32), ExpectationFailure> {
-    let reader = png::Decoder::new(png_bytes).read_info().map_err(|e| {
-        failure(
-            FailureCode::DriverError,
-            format!("PNG decode (read_info) failed: {e}"),
-        )
-    })?;
+    let reader = png::Decoder::new(std::io::Cursor::new(png_bytes))
+        .read_info()
+        .map_err(|e| {
+            failure(
+                FailureCode::DriverError,
+                format!("PNG decode (read_info) failed: {e}"),
+            )
+        })?;
     let info = reader.info();
     Ok((info.width, info.height))
 }

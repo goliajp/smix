@@ -1,7 +1,11 @@
 #![doc = include_str!("../README.md")]
 #![deny(missing_docs)]
+// The scaffolding UniFFI generates (included below) defines its metadata
+// as `const` byte arrays, which this lint flags; that code is not ours to
+// change.
+#![allow(clippy::large_const_arrays)]
 
-//! smix-ffi — UniFFI v0.29+ FFI scaffolding crate.
+//! smix-ffi — UniFFI v0.32+ FFI scaffolding crate.
 //!
 //! Wraps the Rust stone API (smix-selector + smix-selector-resolver +
 //! smix-screen) into cross-language bindings via UniFFI.

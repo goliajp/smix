@@ -28,9 +28,9 @@
     "@goliapkg/smix-node": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0",
-    "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
   },
   "engines": {
     "node": ">=20"

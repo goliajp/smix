@@ -4,7 +4,7 @@
 //   - crates/smix-core-conformance/fixtures/spike-001-empty-tree.json (Rust)
 //   - swift-bridge/Tests/SmixCoreFFITests/Spike001Tests.swift (iOS Swift)
 //
-// Proves Kotlin FFI binding (UniFFI 0.29.5-generated) calls into the
+// Proves Kotlin FFI binding (UniFFI 0.32.2-generated) calls into the
 // same Rust core (libsmix_ffi.so via JNA) and produces byte-identical
 // output to Rust + Swift backends. Conformance T1 third cell (Rust +
 // Swift + Kotlin three-way byte-identical).

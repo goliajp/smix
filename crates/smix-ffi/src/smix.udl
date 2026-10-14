@@ -9,7 +9,7 @@
 // `#[uniffi::export(async_runtime = "tokio")]` supplies one.
 //
 // Cancellation over there is an explicit token rather than the caller's own
-// Task.cancel(), because uniffi 0.29.5 does not carry a foreign cancel into
+// Task.cancel(), because uniffi 0.32.2 does not carry a foreign cancel into
 // Rust — it generates rust_future_cancel and no language backend calls it.
 
 namespace smix {

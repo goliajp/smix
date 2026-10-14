@@ -1,6 +1,6 @@
 // smix-android-sdk module.
 //
-// Android library wrapping libsmix_ffi.so (Rust core via UniFFI 0.29.5).
+// Android library wrapping libsmix_ffi.so (Rust core via UniFFI 0.32.2).
 // Mirrors swift-bridge/Sources/SmixCoreFFIBindings/ for iOS:
 //   - JNI libs (jniLibs/{arm64-v8a,x86_64}/libsmix_ffi.so) ← rebuilt
 //     by scripts/sdk/build-android-aar.sh (idempotent reproducer,
@@ -20,7 +20,6 @@
 
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
     // kotlinx.serialization for JSON wire encoding of Selector / A11yNode
     // (matches the Rust smix-selector wire shape via custom serializers).
     kotlin("plugin.serialization")
@@ -33,11 +32,15 @@ plugins {
 
 android {
     namespace = "dev.smix.sdk"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 33
-        targetSdk = 35
+        // What an app compiling against this needs: its minSdk already
+        // demands 33. Left unset, AGP 9 writes this library's own compileSdk
+        // here, and every app below it fails to build for no reason in the
+        // code.
+        aarMetadata { minCompileSdk = 33 }
 
         // Wire instrumentation test runner.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -49,10 +52,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -62,41 +61,28 @@ android {
     testOptions {
         targetSdk = 35
     }
-
-    sourceSets {
-        named("main") {
-            jniLibs.srcDirs("src/main/jniLibs")
-            kotlin.srcDirs("src/main/kotlin")
-        }
-        named("test") {
-            kotlin.srcDirs("src/test/kotlin")
-        }
-        named("androidTest") {
-            kotlin.srcDirs("src/androidTest/kotlin")
-        }
-    }
 }
 
 dependencies {
     // UniFFI Kotlin runtime depends on JNA for native fn loading.
-    implementation("net.java.dev.jna:jna:5.14.0@aar")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+    implementation("net.java.dev.jna:jna:5.19.1@aar")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     // Selector / A11yNode wire encoding. The untagged shapes it emits are
     // the contract with the Rust core.
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     // JVM unit test deps. MVP shape tests run on JVM (no emulator
     // needed) — Selector shape verifications and similar.
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 
     // Instrumentation test deps (mirror app module's spec).
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
 }
 
-// Maven Central publish config (vanniktech 0.30.0).
+// Maven Central publish config (vanniktech 0.37.0).
 //
 // Namespace: jp.golia.smix (reverse DNS of smix.golia.jp).
 //
@@ -119,7 +105,7 @@ val mavenCentralArtifactId = "smix-sdk"
 val mavenCentralVersion = "16.2.0"
 
 mavenPublishing {
-    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
+    publishToMavenCentral(automaticRelease = true)
     signAllPublications()
     coordinates(mavenCentralGroupId, mavenCentralArtifactId, mavenCentralVersion)
     pom {
@@ -144,5 +130,15 @@ mavenPublishing {
             connection.set("scm:git:git://github.com/goliajp/smix.git")
             developerConnection.set("scm:git:ssh://git@github.com/goliajp/smix.git")
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        // Published: the Kotlin metadata stays readable by the compilers
+        // that could read it before this library was built with 2.4.
+        languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+        apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
     }
 }

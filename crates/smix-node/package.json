@@ -27,7 +27,7 @@
     "@goliapkg/smix-node-linux-x64-gnu": "16.2.0"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3"
+    "@napi-rs/cli": "^3.10.8"
   },
   "scripts": {
     "build": "napi build --platform --release"

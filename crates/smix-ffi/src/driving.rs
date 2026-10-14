@@ -49,7 +49,7 @@ impl From<smix_runner_client::RunnerTransportError> for DriveError {
 /// Cancels a call that is still in flight.
 ///
 /// Explicit, because a foreign `Task.cancel()` does not reach Rust: uniffi
-/// 0.29.5 generates `rust_future_cancel` and neither the Swift nor the Kotlin
+/// 0.32.2 generates `rust_future_cancel` and neither the Swift nor the Kotlin
 /// backend ever calls it, and Swift's async bridge suspends on
 /// `withUnsafeContinuation` with no cancellation handler. Exporting a method
 /// that looks cancellable through the language's own idiom and is not would
