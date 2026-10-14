@@ -1,4 +1,4 @@
-//! smix-bindgen — multi-language bindings generator (UniFFI 0.29.5 built-in).
+//! smix-bindgen — multi-language bindings generator (UniFFI 0.32.2 built-in).
 //!
 //! Wraps `uniffi::uniffi_bindgen_main()` — supports `--language kotlin /
 //! python / ruby` etc. Used for the Kotlin bindings; Swift goes through

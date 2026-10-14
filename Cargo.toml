@@ -29,7 +29,7 @@ regex = "1"
 # crates. The core "stone" crates deliberately do not depend on these.
 async-trait = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "process"] }
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "query"] }
 thiserror = "2"
 tracing = "0.1"
 
@@ -38,9 +38,9 @@ clap = { version = "4", features = ["derive"] }
 
 # MCP server SDK. `schemars` generates JSON-Schema for MCP tool
 # parameter structs.
-rmcp = { version = "1.7", features = ["server", "macros", "transport-io", "schemars"] }
+rmcp = { version = "3.5", features = ["server", "macros", "transport-io", "schemars"] }
 schemars = "1"
-base64 = "0.22"
+base64 = "0.23"
 
 # `serde_norway` is a maintained fork of `serde_yml`; used by
 # `smix-recorder` for maestro YAML emit. Replaces `serde_yml` after
@@ -51,8 +51,8 @@ serde_norway = "0.9"
 # core crates do not pull these in.
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "chrono", "uuid"] }
+tower-http = { version = "0.7", features = ["cors", "fs", "trace"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "chrono", "uuid"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
@@ -64,7 +64,7 @@ dotenvy = "0.15"
 libc = "0.2"
 
 # dev-only: criterion for benchmarks and perf-gate tests.
-criterion = { version = "0.7", default-features = false, features = ["plotters", "cargo_bench_support"] }
+criterion = { version = "0.8", default-features = false, features = ["plotters", "cargo_bench_support"] }
 
 # dev-only: dhat for manually-runnable heap profiles.
 dhat = "0.3"
@@ -75,7 +75,7 @@ proptest = "1"
 # PNG decode/encode for the screenshot comparisons (dhash, frame-diff
 # quiescence) and for the fixtures that exercise them. The `image` crate
 # would do it too, at ~3MB for a job this narrow.
-png = "0.17"
+png = "0.18"
 
 # dev-only: `tempfile` for test isolation (report files, tmpdir
 # scratch). Preferred over `std::env::temp_dir` for RAII cleanup and

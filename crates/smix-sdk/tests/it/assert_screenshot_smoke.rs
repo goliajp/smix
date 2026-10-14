@@ -56,7 +56,9 @@ fn black_with_white(n: u32) -> Vec<u8> {
 }
 
 fn png_size(png: &[u8]) -> (u32, u32) {
-    let reader = png::Decoder::new(png).read_info().unwrap();
+    let reader = png::Decoder::new(std::io::Cursor::new(png))
+        .read_info()
+        .unwrap();
     let info = reader.info();
     (info.width, info.height)
 }

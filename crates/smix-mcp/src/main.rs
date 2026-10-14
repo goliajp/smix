@@ -30,7 +30,7 @@ use rmcp::handler::server::ServerHandler;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
-    CallToolResult, Content, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo,
+    CallToolResult, ContentBlock, Implementation, ProtocolVersion, ServerCapabilities, ServerConfig,
 };
 use rmcp::{tool, tool_handler, tool_router};
 use schemars::JsonSchema;
@@ -236,7 +236,7 @@ impl SmixMcpService {
             })
             .collect();
         let json = serde_json::to_string_pretty(&listed).unwrap_or_default();
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(json)]))
     }
 
     #[tool(
@@ -284,7 +284,7 @@ impl SmixMcpService {
                     None,
                 ));
             }
-            return Ok(CallToolResult::success(vec![Content::text(format!(
+            return Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                 "already driving {} on port {port}",
                 params.udid
             ))]));
@@ -401,7 +401,7 @@ impl SmixMcpService {
             udid: params.udid.clone(),
             port,
         });
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "driving {} on port {port}",
             params.udid
         ))]))
@@ -413,7 +413,7 @@ impl SmixMcpService {
     /// CLI: smix runner down
     async fn smix_release(&self) -> Result<CallToolResult, McpError> {
         let Some(bound) = self.session.release() else {
-            return Ok(CallToolResult::success(vec![Content::text(
+            return Ok(CallToolResult::success(vec![ContentBlock::text(
                 "nothing was bound".to_string(),
             )]));
         };
@@ -432,7 +432,7 @@ impl SmixMcpService {
         if let Err(e) = self.app.lock().await.release_device_lease() {
             eprintln!("warning: device lease not released: {e}");
         }
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "released {} on port {port}",
             bound.udid
         ))]))
@@ -449,7 +449,7 @@ impl SmixMcpService {
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
         let json = serde_json::to_string_pretty(&desc).unwrap_or_default();
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(json)]))
     }
 
     #[tool(
@@ -463,7 +463,7 @@ impl SmixMcpService {
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
         let json = serde_json::to_string_pretty(&tree).unwrap_or_default();
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(json)]))
     }
 
     #[tool(
@@ -498,13 +498,15 @@ impl SmixMcpService {
                 }
             }
             let hit = first_visible_layer(&app, &layers).await?;
-            return Ok(CallToolResult::success(vec![Content::text(match hit {
-                Some(i) => format!(
-                    "true — fallback[{i}] {}",
-                    smix_selector::describe_selector(&layers[i])
-                ),
-                None => format!("false — all {} fallback layers missed", layers.len()),
-            })]));
+            return Ok(CallToolResult::success(vec![ContentBlock::text(
+                match hit {
+                    Some(i) => format!(
+                        "true — fallback[{i}] {}",
+                        smix_selector::describe_selector(&layers[i])
+                    ),
+                    None => format!("false — all {} fallback layers missed", layers.len()),
+                },
+            )]));
         }
         // The tree resolver never matches OcrText (live-vision op, not a
         // tree predicate) — routed through `app.find` an ocrText selector
@@ -521,7 +523,7 @@ impl SmixMcpService {
                 .await
                 .map_err(|e| McpError::internal_error(e.to_prompt(), None))?,
         };
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             if exists { "true" } else { "false" }.to_string(),
         )]))
     }
@@ -562,7 +564,7 @@ impl SmixMcpService {
                 }
                 .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
                 if hit {
-                    return Ok(CallToolResult::success(vec![Content::text(format!(
+                    return Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                         "tapped: fallback[{i}] {} — not verified: a chain reports \
                          which layer answered, not what the touch landed on",
                         smix_selector::describe_selector(layer)
@@ -621,7 +623,7 @@ impl SmixMcpService {
         if let smix_sdk::ActVerdict::Unconfirmable(why) = &outcome.verdict {
             report.push_str(&format!("\nnot verified: {why}"));
         }
-        Ok(CallToolResult::success(vec![Content::text(report)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(report)]))
     }
 
     #[tool(
@@ -665,7 +667,7 @@ impl SmixMcpService {
         // for why the length is the whole confirmation. This surface is
         // the more exposed of the two: an MCP result is written into the
         // conversation by construction.
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "filled {} ({} chars)",
             smix_selector::describe_selector(&sel),
             params.text.chars().count()
@@ -690,7 +692,7 @@ impl SmixMcpService {
                 app.swipe_once(dir)
                     .await
                     .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(format!(
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                     "swiped: {direction}"
                 ))]))
             }
@@ -702,7 +704,7 @@ impl SmixMcpService {
                 app.swipe_at_coord(from_pt, to_pt)
                     .await
                     .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(format!(
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                     "swiped: ({:.3}, {:.3}) → ({:.3}, {:.3})",
                     from_pt.0, from_pt.1, to_pt.0, to_pt.1
                 ))]))
@@ -761,7 +763,7 @@ impl SmixMcpService {
         app.scroll(&sel, dir, &smix_sdk::ScrollUntil::default())
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "scrolled to: {}",
             smix_selector::describe_selector(&sel)
         ))]))
@@ -785,7 +787,7 @@ impl SmixMcpService {
         app.open_session_in_place(&params.bundle_id, true)
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "launched: {}",
             params.bundle_id
         ))]))
@@ -809,11 +811,11 @@ impl SmixMcpService {
         // (`launch_app_with_options`: "terminate failure is tolerated —
         // the app may already be dead").
         match app.terminate(&params.bundle_id).await {
-            Ok(()) => Ok(CallToolResult::success(vec![Content::text(format!(
+            Ok(()) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                 "stopped: {}",
                 params.bundle_id
             ))])),
-            Err(_) => Ok(CallToolResult::success(vec![Content::text(format!(
+            Err(_) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                 "stopped: {} (was not running — no-op)",
                 params.bundle_id
             ))])),
@@ -852,18 +854,20 @@ impl SmixMcpService {
                 }
             }
             let hit = first_visible_layer(&app, &layers).await?;
-            return Ok(CallToolResult::success(vec![Content::text(match hit {
-                Some(i) => format!(
-                    "visible: fallback[{i}] {}",
-                    smix_selector::describe_selector(&layers[i])
-                ),
-                None => {
-                    return Err(McpError::internal_error(
-                        format!("all {} fallback layers missed", layers.len()),
-                        None,
-                    ));
-                }
-            })]));
+            return Ok(CallToolResult::success(vec![ContentBlock::text(
+                match hit {
+                    Some(i) => format!(
+                        "visible: fallback[{i}] {}",
+                        smix_selector::describe_selector(&layers[i])
+                    ),
+                    None => {
+                        return Err(McpError::internal_error(
+                            format!("all {} fallback layers missed", layers.len()),
+                            None,
+                        ));
+                    }
+                },
+            )]));
         }
         match ocr_text_of(&sel) {
             // Same budget and cadence as the tree path: `App::assert_visible`
@@ -902,7 +906,7 @@ impl SmixMcpService {
                     .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
             }
         }
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "visible: {}",
             smix_selector::describe_selector(&sel)
         ))]))
@@ -940,18 +944,20 @@ impl SmixMcpService {
                 }
             }
             let hit = first_visible_layer(&app, &layers).await?;
-            return Ok(CallToolResult::success(vec![Content::text(match hit {
-                Some(i) => {
-                    return Err(McpError::internal_error(
-                        format!(
-                            "fallback[{i}] {} is visible",
-                            smix_selector::describe_selector(&layers[i])
-                        ),
-                        None,
-                    ));
-                }
-                None => format!("not visible: all {} fallback layers", layers.len()),
-            })]));
+            return Ok(CallToolResult::success(vec![ContentBlock::text(
+                match hit {
+                    Some(i) => {
+                        return Err(McpError::internal_error(
+                            format!(
+                                "fallback[{i}] {} is visible",
+                                smix_selector::describe_selector(&layers[i])
+                            ),
+                            None,
+                        ));
+                    }
+                    None => format!("not visible: all {} fallback layers", layers.len()),
+                },
+            )]));
         }
         match ocr_text_of(&sel) {
             // A tree-routed OcrText never matches, so this assert used to
@@ -978,7 +984,7 @@ impl SmixMcpService {
                     .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
             }
         }
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "not visible: {}",
             smix_selector::describe_selector(&sel)
         ))]))
@@ -998,7 +1004,7 @@ impl SmixMcpService {
         app.press_key(k)
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "pressed: {}",
             params.key
         ))]))
@@ -1063,8 +1069,8 @@ impl SmixMcpService {
         }
         let b64 = base64::engine::general_purpose::STANDARD.encode(&captured.png);
         Ok(CallToolResult::success(vec![
-            Content::text(said),
-            Content::text(b64),
+            ContentBlock::text(said),
+            ContentBlock::text(b64),
         ]))
     }
 
@@ -1082,7 +1088,7 @@ impl SmixMcpService {
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
         let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
-        Ok(CallToolResult::success(vec![Content::text(b64)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(b64)]))
     }
 
     #[tool(description = "Snapshot the runner's runtime state: recent simctl \
@@ -1103,7 +1109,7 @@ impl SmixMcpService {
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         let json = serde_json::to_string_pretty(&dump).unwrap_or_default();
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(json)]))
     }
 
     #[tool(
@@ -1115,7 +1121,7 @@ impl SmixMcpService {
     /// CLI: smix session state
     async fn smix_session_state(&self) -> Result<CallToolResult, McpError> {
         let json = smix_mcp::session_state_report(self.session.current().as_ref());
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(json)]))
     }
 }
 
@@ -1138,13 +1144,13 @@ fn parse_direction(s: &str) -> Result<SwipeDirection, McpError> {
 
 #[tool_handler]
 impl ServerHandler for SmixMcpService {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let mut impl_info = Implementation::from_build_env();
         impl_info.name = "smix-mcp".into();
         impl_info.title = Some("smix (Rust)".into());
         impl_info.version = env!("CARGO_PKG_VERSION").into();
 
-        let mut info = ServerInfo::default();
+        let mut info = ServerConfig::default();
         info.protocol_version = ProtocolVersion::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
         info.server_info = impl_info;

@@ -39,6 +39,52 @@ fileprivate extension ForeignBytes {
     init(bufferPointer: UnsafeBufferPointer<UInt8>) {
         self.init(len: Int32(bufferPointer.count), data: bufferPointer.baseAddress)
     }
+
+    init(rawBufferPointer: UnsafeRawBufferPointer) {
+        self.init(
+            len: Int32(rawBufferPointer.count),
+            data: rawBufferPointer.baseAddress?.assumingMemoryBound(to: UInt8.self)
+        )
+    }
+}
+
+// Converter for `&[u8]` / `[ByRef] bytes` arguments.
+//
+// Conforms to `FfiConverter` so the compiler enforces the full converter
+// method set. Only the scope-bound `lower(_:_body:)` overload is sound —
+// zero-copy byte buffers only flow foreign -> Rust, and only in argument
+// position. The four protocol-witness methods (`lift`, `lower`, `read`,
+// `write`) `fatalError` at runtime if anyone reaches them.
+//
+// The scope-bound `lower` takes a closure because the `ForeignBytes`
+// pointer is only guaranteed valid for the duration of
+// `Data.withUnsafeBytes`. Callers must run the full FFI call inside
+// the closure body.
+fileprivate enum FfiConverterByRefBytes: FfiConverter {
+    typealias SwiftType = Data
+    typealias FfiType = ForeignBytes
+
+    static func lower<R>(_ value: Data, _ body: (ForeignBytes) throws -> R) rethrows -> R {
+        return try value.withUnsafeBytes { rawBuf in
+            try body(ForeignBytes(rawBufferPointer: rawBuf))
+        }
+    }
+
+    static func lower(_ value: Data) -> ForeignBytes {
+        fatalError("ByRef bytes cannot use the plain lower: returning ForeignBytes escapes the Data.withUnsafeBytes scope. Use the scope-bound lower(_:_body:) overload instead.")
+    }
+
+    static func lift(_ value: ForeignBytes) throws -> Data {
+        fatalError("ByRef bytes cannot be lifted: zero-copy &[u8] only flows foreign->Rust")
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
+        fatalError("ByRef bytes cannot be read from a buffer: zero-copy &[u8] is only supported in argument position, not nested in records/options/etc.")
+    }
+
+    static func write(_ value: Data, into buf: inout [UInt8]) {
+        fatalError("ByRef bytes cannot be written to a buffer: zero-copy &[u8] is only supported in argument position, not nested in records/options/etc.")
+    }
 }
 
 // For every type used in the interface, we provide helper methods for conveniently
@@ -352,19 +398,29 @@ private func uniffiTraitInterfaceCallWithError<T, E>(
         callStatus.pointee.errorBuf = FfiConverterString.lower(String(describing: error))
     }
 }
+// Initial value and increment amount for handles. 
+// These ensure that SWIFT handles always have the lowest bit set
+fileprivate let UNIFFI_HANDLEMAP_INITIAL: UInt64 = 1
+fileprivate let UNIFFI_HANDLEMAP_DELTA: UInt64 = 2
+
 fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
     // All mutation happens with this lock held, which is why we implement @unchecked Sendable.
     private let lock = NSLock()
     private var map: [UInt64: T] = [:]
-    private var currentHandle: UInt64 = 1
+    private var currentHandle: UInt64 = UNIFFI_HANDLEMAP_INITIAL
 
     func insert(obj: T) -> UInt64 {
         lock.withLock {
-            let handle = currentHandle
-            currentHandle += 1
-            map[handle] = obj
-            return handle
+            return doInsert(obj)
         }
+    }
+
+    // Low-level insert function, this assumes `lock` is held.
+    private func doInsert(_ obj: T) -> UInt64 {
+        let handle = currentHandle
+        currentHandle += UNIFFI_HANDLEMAP_DELTA
+        map[handle] = obj
+        return handle
     }
 
      func get(handle: UInt64) throws -> T {
@@ -373,6 +429,15 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
                 throw UniffiInternalError.unexpectedStaleHandle
             }
             return obj
+        }
+    }
+
+     func clone(handle: UInt64) throws -> UInt64 {
+        try lock.withLock {
+            guard let obj = map[handle] else {
+                throw UniffiInternalError.unexpectedStaleHandle
+            }
+            return doInsert(obj)
         }
     }
 
@@ -484,7 +549,11 @@ fileprivate struct FfiConverterString: FfiConverter {
             return String()
         }
         let bytes = UnsafeBufferPointer<UInt8>(start: value.data!, count: Int(value.len))
-        return String(bytes: bytes, encoding: String.Encoding.utf8)!
+        // Use Swift's native UTF-8 decoder; `String(bytes:encoding:.utf8)` goes
+        // through Foundation's NSString and silently strips a leading U+FEFF BOM.
+        // Invalid UTF-8 substitutes U+FFFD instead of trapping (unreachable
+        // given Rust's `String` invariant).
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     public static func lower(_ value: String) -> RustBuffer {
@@ -500,7 +569,8 @@ fileprivate struct FfiConverterString: FfiConverter {
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> String {
         let len: Int32 = try readInt(&buf)
-        return String(bytes: try readBytes(&buf, count: Int(len)), encoding: String.Encoding.utf8)!
+        // See `lift` above for why we avoid Foundation's NSString-backed decoder here.
+        return String(decoding: try readBytes(&buf, count: Int(len)), as: UTF8.self)
     }
 
     public static func write(_ value: String, into buf: inout [UInt8]) {
@@ -517,7 +587,7 @@ fileprivate struct FfiConverterString: FfiConverter {
  * Cancels a call that is still in flight.
  *
  * Explicit, because a foreign `Task.cancel()` does not reach Rust: uniffi
- * 0.29.5 generates `rust_future_cancel` and neither the Swift nor the Kotlin
+ * 0.32.2 generates `rust_future_cancel` and neither the Swift nor the Kotlin
  * backend ever calls it, and Swift's async bridge suspends on
  * `withUnsafeContinuation` with no cancellation handler. Exporting a method
  * that looks cancellable through the language's own idiom and is not would
@@ -541,7 +611,7 @@ public protocol CancelTokenProtocol: AnyObject, Sendable {
  * Cancels a call that is still in flight.
  *
  * Explicit, because a foreign `Task.cancel()` does not reach Rust: uniffi
- * 0.29.5 generates `rust_future_cancel` and neither the Swift nor the Kotlin
+ * 0.32.2 generates `rust_future_cancel` and neither the Swift nor the Kotlin
  * backend ever calls it, and Swift's async bridge suspends on
  * `withUnsafeContinuation` with no cancellation handler. Exporting a method
  * that looks cancellable through the language's own idiom and is not would
@@ -549,13 +619,13 @@ public protocol CancelTokenProtocol: AnyObject, Sendable {
  * crate's neighbours are here to undo.
  */
 open class CancelToken: CancelTokenProtocol, @unchecked Sendable {
-    fileprivate let pointer: UnsafeMutableRawPointer!
+    fileprivate let handle: UInt64
 
-    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public struct NoPointer {
+    public struct NoHandle {
         public init() {}
     }
 
@@ -565,36 +635,37 @@ open class CancelToken: CancelTokenProtocol, @unchecked Sendable {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
-        self.pointer = pointer
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
     }
 
     // This constructor can be used to instantiate a fake object.
-    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
     //
     // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public init(noPointer: NoPointer) {
-        self.pointer = nil
+    public init(noHandle: NoHandle) {
+        self.handle = 0
     }
 
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
-        return try! rustCall { uniffi_smix_ffi_fn_clone_canceltoken(self.pointer, $0) }
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_smix_ffi_fn_clone_canceltoken(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
     deinit {
-        guard let pointer = pointer else {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
             return
         }
 
-        try! rustCall { uniffi_smix_ffi_fn_free_canceltoken(pointer, $0) }
+        try! rustCall { uniffi_smix_ffi_fn_free_canceltoken(handle, $0) }
     }
 
     
@@ -604,7 +675,9 @@ open class CancelToken: CancelTokenProtocol, @unchecked Sendable {
      * Cancel whatever call was given this token. Idempotent.
      */
 open func cancel()  {try! rustCall() {
-    uniffi_smix_ffi_fn_method_canceltoken_cancel(self.uniffiClonePointer(),$0
+        uniffiCallStatus in
+    uniffi_smix_ffi_fn_method_canceltoken_cancel(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
 }
@@ -614,12 +687,15 @@ open func cancel()  {try! rustCall() {
      */
 open func isCancelled() -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
-    uniffi_smix_ffi_fn_method_canceltoken_is_cancelled(self.uniffiClonePointer(),$0
+        uniffiCallStatus in
+    uniffi_smix_ffi_fn_method_canceltoken_is_cancelled(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
     
 
+    
 }
 
 
@@ -627,33 +703,24 @@ open func isCancelled() -> Bool  {
 @_documentation(visibility: private)
 #endif
 public struct FfiConverterTypeCancelToken: FfiConverter {
-
-    typealias FfiType = UnsafeMutableRawPointer
+    typealias FfiType = UInt64
     typealias SwiftType = CancelToken
 
-    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> CancelToken {
-        return CancelToken(unsafeFromRawPointer: pointer)
+    public static func lift(_ handle: UInt64) throws -> CancelToken {
+        return CancelToken(unsafeFromHandle: handle)
     }
 
-    public static func lower(_ value: CancelToken) -> UnsafeMutableRawPointer {
-        return value.uniffiClonePointer()
+    public static func lower(_ value: CancelToken) -> UInt64 {
+        return value.uniffiCloneHandle()
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CancelToken {
-        let v: UInt64 = try readInt(&buf)
-        // The Rust code won't compile if a pointer won't fit in a UInt64.
-        // We have to go via `UInt` because that's the thing that's the size of a pointer.
-        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
-        if (ptr == nil) {
-            throw UniffiInternalError.unexpectedNullPointer
-        }
-        return try lift(ptr!)
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
     }
 
     public static func write(_ value: CancelToken, into buf: inout [UInt8]) {
-        // This fiddling is because `Int` is the thing that's the same size as a pointer.
-        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
-        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+        writeInt(&buf, lower(value))
     }
 }
 
@@ -661,14 +728,14 @@ public struct FfiConverterTypeCancelToken: FfiConverter {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCancelToken_lift(_ pointer: UnsafeMutableRawPointer) throws -> CancelToken {
-    return try FfiConverterTypeCancelToken.lift(pointer)
+public func FfiConverterTypeCancelToken_lift(_ handle: UInt64) throws -> CancelToken {
+    return try FfiConverterTypeCancelToken.lift(handle)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCancelToken_lower(_ value: CancelToken) -> UnsafeMutableRawPointer {
+public func FfiConverterTypeCancelToken_lower(_ value: CancelToken) -> UInt64 {
     return FfiConverterTypeCancelToken.lower(value)
 }
 
@@ -715,13 +782,13 @@ public protocol SmixDriverProtocol: AnyObject, Sendable {
  * A runner, over HTTP on localhost.
  */
 open class SmixDriver: SmixDriverProtocol, @unchecked Sendable {
-    fileprivate let pointer: UnsafeMutableRawPointer!
+    fileprivate let handle: UInt64
 
-    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public struct NoPointer {
+    public struct NoHandle {
         public init() {}
     }
 
@@ -731,47 +798,49 @@ open class SmixDriver: SmixDriverProtocol, @unchecked Sendable {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
-        self.pointer = pointer
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
     }
 
     // This constructor can be used to instantiate a fake object.
-    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
     //
     // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public init(noPointer: NoPointer) {
-        self.pointer = nil
+    public init(noHandle: NoHandle) {
+        self.handle = 0
     }
 
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
-        return try! rustCall { uniffi_smix_ffi_fn_clone_smixdriver(self.pointer, $0) }
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_smix_ffi_fn_clone_smixdriver(self.handle, $0) }
     }
     /**
      * Point at a runner on `port` of this machine.
      */
 public convenience init(port: UInt16) {
-    let pointer =
+    let handle =
         try! rustCall() {
+        uniffiCallStatus in
     uniffi_smix_ffi_fn_constructor_smixdriver_new(
-        FfiConverterUInt16.lower(port),$0
+        FfiConverterUInt16.lower(port),uniffiCallStatus
     )
 }
-    self.init(unsafeFromRawPointer: pointer)
+    self.init(unsafeFromHandle: handle)
 }
 
     deinit {
-        guard let pointer = pointer else {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
             return
         }
 
-        try! rustCall { uniffi_smix_ffi_fn_free_smixdriver(pointer, $0) }
+        try! rustCall { uniffi_smix_ffi_fn_free_smixdriver(handle, $0) }
     }
 
     
@@ -782,7 +851,9 @@ public convenience init(port: UInt16) {
      */
 open func cancelToken() -> CancelToken  {
     return try!  FfiConverterTypeCancelToken_lift(try! rustCall() {
-    uniffi_smix_ffi_fn_method_smixdriver_cancel_token(self.uniffiClonePointer(),$0
+        uniffiCallStatus in
+    uniffi_smix_ffi_fn_method_smixdriver_cancel_token(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -796,8 +867,7 @@ open func listSessions(cancel: CancelToken?)async throws  -> String  {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixdriver_list_sessions(
-                    self.uniffiClonePointer(),
-                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_rust_buffer,
@@ -820,13 +890,12 @@ open func openSession(bundleId: String, cancel: CancelToken?)async throws  -> Sm
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixdriver_open_session(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(bundleId),FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterString.lower(bundleId),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
-            pollFunc: ffi_smix_ffi_rust_future_poll_pointer,
-            completeFunc: ffi_smix_ffi_rust_future_complete_pointer,
-            freeFunc: ffi_smix_ffi_rust_future_free_pointer,
+            pollFunc: ffi_smix_ffi_rust_future_poll_u64,
+            completeFunc: ffi_smix_ffi_rust_future_complete_u64,
+            freeFunc: ffi_smix_ffi_rust_future_free_u64,
             liftFunc: FfiConverterTypeSmixSession_lift,
             errorHandler: FfiConverterTypeDriveError_lift
         )
@@ -843,8 +912,7 @@ open func tree(cancel: CancelToken?)async throws  -> String  {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixdriver_tree(
-                    self.uniffiClonePointer(),
-                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_rust_buffer,
@@ -856,6 +924,7 @@ open func tree(cancel: CancelToken?)async throws  -> String  {
 }
     
 
+    
 }
 
 
@@ -863,33 +932,24 @@ open func tree(cancel: CancelToken?)async throws  -> String  {
 @_documentation(visibility: private)
 #endif
 public struct FfiConverterTypeSmixDriver: FfiConverter {
-
-    typealias FfiType = UnsafeMutableRawPointer
+    typealias FfiType = UInt64
     typealias SwiftType = SmixDriver
 
-    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> SmixDriver {
-        return SmixDriver(unsafeFromRawPointer: pointer)
+    public static func lift(_ handle: UInt64) throws -> SmixDriver {
+        return SmixDriver(unsafeFromHandle: handle)
     }
 
-    public static func lower(_ value: SmixDriver) -> UnsafeMutableRawPointer {
-        return value.uniffiClonePointer()
+    public static func lower(_ value: SmixDriver) -> UInt64 {
+        return value.uniffiCloneHandle()
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SmixDriver {
-        let v: UInt64 = try readInt(&buf)
-        // The Rust code won't compile if a pointer won't fit in a UInt64.
-        // We have to go via `UInt` because that's the thing that's the size of a pointer.
-        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
-        if (ptr == nil) {
-            throw UniffiInternalError.unexpectedNullPointer
-        }
-        return try lift(ptr!)
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
     }
 
     public static func write(_ value: SmixDriver, into buf: inout [UInt8]) {
-        // This fiddling is because `Int` is the thing that's the same size as a pointer.
-        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
-        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+        writeInt(&buf, lower(value))
     }
 }
 
@@ -897,14 +957,14 @@ public struct FfiConverterTypeSmixDriver: FfiConverter {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSmixDriver_lift(_ pointer: UnsafeMutableRawPointer) throws -> SmixDriver {
-    return try FfiConverterTypeSmixDriver.lift(pointer)
+public func FfiConverterTypeSmixDriver_lift(_ handle: UInt64) throws -> SmixDriver {
+    return try FfiConverterTypeSmixDriver.lift(handle)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSmixDriver_lower(_ value: SmixDriver) -> UnsafeMutableRawPointer {
+public func FfiConverterTypeSmixDriver_lower(_ value: SmixDriver) -> UInt64 {
     return FfiConverterTypeSmixDriver.lower(value)
 }
 
@@ -1000,13 +1060,13 @@ public protocol SmixSessionProtocol: AnyObject, Sendable {
  * is no way to ask for one of them without it.
  */
 open class SmixSession: SmixSessionProtocol, @unchecked Sendable {
-    fileprivate let pointer: UnsafeMutableRawPointer!
+    fileprivate let handle: UInt64
 
-    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public struct NoPointer {
+    public struct NoHandle {
         public init() {}
     }
 
@@ -1016,36 +1076,37 @@ open class SmixSession: SmixSessionProtocol, @unchecked Sendable {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
-        self.pointer = pointer
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
     }
 
     // This constructor can be used to instantiate a fake object.
-    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
     //
     // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public init(noPointer: NoPointer) {
-        self.pointer = nil
+    public init(noHandle: NoHandle) {
+        self.handle = 0
     }
 
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
-    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
-        return try! rustCall { uniffi_smix_ffi_fn_clone_smixsession(self.pointer, $0) }
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_smix_ffi_fn_clone_smixsession(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
     deinit {
-        guard let pointer = pointer else {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
             return
         }
 
-        try! rustCall { uniffi_smix_ffi_fn_free_smixsession(pointer, $0) }
+        try! rustCall { uniffi_smix_ffi_fn_free_smixsession(handle, $0) }
     }
 
     
@@ -1060,8 +1121,7 @@ open func close(cancel: CancelToken?)async throws   {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixsession_close(
-                    self.uniffiClonePointer(),
-                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_void,
@@ -1077,7 +1137,9 @@ open func close(cancel: CancelToken?)async throws   {
      */
 open func id() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
-    uniffi_smix_ffi_fn_method_smixsession_id(self.uniffiClonePointer(),$0
+        uniffiCallStatus in
+    uniffi_smix_ffi_fn_method_smixsession_id(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -1090,8 +1152,7 @@ open func inputText(text: String, cancel: CancelToken?)async throws   {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixsession_input_text(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(text),FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterString.lower(text),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_void,
@@ -1110,8 +1171,7 @@ open func launchApp(cancel: CancelToken?)async throws   {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixsession_launch_app(
-                    self.uniffiClonePointer(),
-                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_void,
@@ -1132,8 +1192,7 @@ open func pressKey(key: String, cancel: CancelToken?)async throws   {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixsession_press_key(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(key),FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterString.lower(key),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_void,
@@ -1156,8 +1215,7 @@ open func relaunchApp(cancel: CancelToken?)async throws   {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixsession_relaunch_app(
-                    self.uniffiClonePointer(),
-                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_void,
@@ -1177,8 +1235,7 @@ open func renewActivation(cancel: CancelToken?)async throws   {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixsession_renew_activation(
-                    self.uniffiClonePointer(),
-                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_void,
@@ -1198,8 +1255,7 @@ open func swipeOnce(direction: String, cancel: CancelToken?)async throws   {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixsession_swipe_once(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(direction),FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterString.lower(direction),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_void,
@@ -1218,8 +1274,7 @@ open func systemPopups(cancel: CancelToken?)async throws  -> String  {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixsession_system_popups(
-                    self.uniffiClonePointer(),
-                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_rust_buffer,
@@ -1239,8 +1294,7 @@ open func tapAtNormCoord(nx: Double, ny: Double, cancel: CancelToken?)async thro
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixsession_tap_at_norm_coord(
-                    self.uniffiClonePointer(),
-                    FfiConverterDouble.lower(nx),FfiConverterDouble.lower(ny),FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterDouble.lower(nx),FfiConverterDouble.lower(ny),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_void,
@@ -1264,8 +1318,7 @@ open func tapById(id: String, cancel: CancelToken?)async throws  -> Bool  {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixsession_tap_by_id(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(id),FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterString.lower(id),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_i8,
@@ -1284,8 +1337,7 @@ open func terminateApp(cancel: CancelToken?)async throws   {
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_smix_ffi_fn_method_smixsession_terminate_app(
-                    self.uniffiClonePointer(),
-                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                        self.uniffiCloneHandle(),FfiConverterOptionTypeCancelToken.lower(cancel)
                 )
             },
             pollFunc: ffi_smix_ffi_rust_future_poll_void,
@@ -1297,6 +1349,7 @@ open func terminateApp(cancel: CancelToken?)async throws   {
 }
     
 
+    
 }
 
 
@@ -1304,33 +1357,24 @@ open func terminateApp(cancel: CancelToken?)async throws   {
 @_documentation(visibility: private)
 #endif
 public struct FfiConverterTypeSmixSession: FfiConverter {
-
-    typealias FfiType = UnsafeMutableRawPointer
+    typealias FfiType = UInt64
     typealias SwiftType = SmixSession
 
-    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> SmixSession {
-        return SmixSession(unsafeFromRawPointer: pointer)
+    public static func lift(_ handle: UInt64) throws -> SmixSession {
+        return SmixSession(unsafeFromHandle: handle)
     }
 
-    public static func lower(_ value: SmixSession) -> UnsafeMutableRawPointer {
-        return value.uniffiClonePointer()
+    public static func lower(_ value: SmixSession) -> UInt64 {
+        return value.uniffiCloneHandle()
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SmixSession {
-        let v: UInt64 = try readInt(&buf)
-        // The Rust code won't compile if a pointer won't fit in a UInt64.
-        // We have to go via `UInt` because that's the thing that's the size of a pointer.
-        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
-        if (ptr == nil) {
-            throw UniffiInternalError.unexpectedNullPointer
-        }
-        return try lift(ptr!)
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
     }
 
     public static func write(_ value: SmixSession, into buf: inout [UInt8]) {
-        // This fiddling is because `Int` is the thing that's the same size as a pointer.
-        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
-        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+        writeInt(&buf, lower(value))
     }
 }
 
@@ -1338,14 +1382,14 @@ public struct FfiConverterTypeSmixSession: FfiConverter {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSmixSession_lift(_ pointer: UnsafeMutableRawPointer) throws -> SmixSession {
-    return try FfiConverterTypeSmixSession.lift(pointer)
+public func FfiConverterTypeSmixSession_lift(_ handle: UInt64) throws -> SmixSession {
+    return try FfiConverterTypeSmixSession.lift(handle)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSmixSession_lower(_ value: SmixSession) -> UnsafeMutableRawPointer {
+public func FfiConverterTypeSmixSession_lower(_ value: SmixSession) -> UInt64 {
     return FfiConverterTypeSmixSession.lower(value)
 }
 
@@ -1355,7 +1399,8 @@ public func FfiConverterTypeSmixSession_lower(_ value: SmixSession) -> UnsafeMut
 /**
  * What can go wrong driving the runner.
  */
-public enum DriveError: Swift.Error {
+public 
+enum DriveError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -1376,8 +1421,21 @@ public enum DriveError: Swift.Error {
      * The caller cancelled the call before the runner answered.
      */
     case Cancelled
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
 }
 
+#if compiler(>=6)
+extension DriveError: Sendable {}
+#endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -1436,22 +1494,8 @@ public func FfiConverterTypeDriveError_lower(_ value: DriveError) -> RustBuffer 
 }
 
 
-extension DriveError: Equatable, Hashable {}
-
-
-
-
-extension DriveError: Foundation.LocalizedError {
-    public var errorDescription: String? {
-        String(reflecting: self)
-    }
-}
-
-
-
-
-
-public enum FfiError: Swift.Error {
+public 
+enum FfiError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -1459,8 +1503,21 @@ public enum FfiError: Swift.Error {
     
     case InvalidSelectorJson(message: String)
     
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
 }
 
+#if compiler(>=6)
+extension FfiError: Sendable {}
+#endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -1519,21 +1576,6 @@ public func FfiConverterTypeFfiError_lower(_ value: FfiError) -> RustBuffer {
     return FfiConverterTypeFfiError.lower(value)
 }
 
-
-extension FfiError: Equatable, Hashable {}
-
-
-
-
-extension FfiError: Foundation.LocalizedError {
-    public var errorDescription: String? {
-        String(reflecting: self)
-    }
-}
-
-
-
-
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -1583,7 +1625,7 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     }
 }
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
-private let UNIFFI_RUST_FUTURE_POLL_MAYBE_READY: Int8 = 1
+private let UNIFFI_RUST_FUTURE_POLL_WAKE: Int8 = 1
 
 fileprivate let uniffiContinuationHandleMap = UniffiHandleMap<UnsafeContinuation<Int8, Never>>()
 
@@ -1607,7 +1649,9 @@ fileprivate func uniffiRustCallAsync<F, T>(
         pollResult = await withUnsafeContinuation {
             pollFunc(
                 rustFuture,
-                uniffiFutureContinuationCallback,
+                { handle, pollResult in
+                    uniffiFutureContinuationCallback(handle: handle, pollResult: pollResult)
+                },
                 uniffiContinuationHandleMap.insert(obj: $0)
             )
         }
@@ -1630,25 +1674,28 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
 }
 public func resolveSelector(treeJson: String, selectorJson: String)throws  -> [String]  {
     return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeFfiError_lift) {
+        uniffiCallStatus in
     uniffi_smix_ffi_fn_func_resolve_selector(
         FfiConverterString.lower(treeJson),
-        FfiConverterString.lower(selectorJson),$0
+        FfiConverterString.lower(selectorJson),uniffiCallStatus
     )
 })
 }
 public func resolveSelectorCount(treeJson: String, selectorJson: String)throws  -> UInt32  {
     return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeFfiError_lift) {
+        uniffiCallStatus in
     uniffi_smix_ffi_fn_func_resolve_selector_count(
         FfiConverterString.lower(treeJson),
-        FfiConverterString.lower(selectorJson),$0
+        FfiConverterString.lower(selectorJson),uniffiCallStatus
     )
 })
 }
 public func resolveSelectorLabels(treeJson: String, selectorJson: String)throws  -> [String]  {
     return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeFfiError_lift) {
+        uniffiCallStatus in
     uniffi_smix_ffi_fn_func_resolve_selector_labels(
         FfiConverterString.lower(treeJson),
-        FfiConverterString.lower(selectorJson),$0
+        FfiConverterString.lower(selectorJson),uniffiCallStatus
     )
 })
 }
@@ -1662,76 +1709,76 @@ private enum InitializationResult {
 // the code inside is only computed once.
 private let initializationResult: InitializationResult = {
     // Get the bindings contract version from our ComponentInterface
-    let bindings_contract_version = 29
+    let bindings_contract_version = 30
     // Get the scaffolding contract version by calling the into the dylib
     let scaffolding_contract_version = ffi_smix_ffi_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_smix_ffi_checksum_func_resolve_selector() != 53504) {
+    if (uniffi_smix_ffi_checksum_func_resolve_selector() != 56165) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_smix_ffi_checksum_func_resolve_selector_count() != 45596) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_func_resolve_selector_labels() != 5930) {
+    if (uniffi_smix_ffi_checksum_func_resolve_selector_labels() != 22287) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_canceltoken_cancel() != 54449) {
+    if (uniffi_smix_ffi_checksum_method_canceltoken_cancel() != 2759) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_canceltoken_is_cancelled() != 45609) {
+    if (uniffi_smix_ffi_checksum_method_canceltoken_is_cancelled() != 30309) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixdriver_cancel_token() != 61093) {
+    if (uniffi_smix_ffi_checksum_method_smixdriver_cancel_token() != 16304) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixdriver_list_sessions() != 26254) {
+    if (uniffi_smix_ffi_checksum_method_smixdriver_list_sessions() != 63941) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixdriver_open_session() != 43029) {
+    if (uniffi_smix_ffi_checksum_method_smixdriver_open_session() != 23424) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixdriver_tree() != 61785) {
+    if (uniffi_smix_ffi_checksum_method_smixdriver_tree() != 61335) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_close() != 29830) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_close() != 53742) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_id() != 57114) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_id() != 21990) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_input_text() != 22972) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_input_text() != 36663) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_launch_app() != 47408) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_launch_app() != 48091) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_press_key() != 9337) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_press_key() != 51944) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_relaunch_app() != 5743) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_relaunch_app() != 12169) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_renew_activation() != 42618) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_renew_activation() != 14563) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_swipe_once() != 4207) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_swipe_once() != 42648) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_system_popups() != 819) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_system_popups() != 28542) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_tap_at_norm_coord() != 55480) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_tap_at_norm_coord() != 39489) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_tap_by_id() != 45712) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_tap_by_id() != 37546) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_method_smixsession_terminate_app() != 29585) {
+    if (uniffi_smix_ffi_checksum_method_smixsession_terminate_app() != 13641) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_smix_ffi_checksum_constructor_smixdriver_new() != 9721) {
+    if (uniffi_smix_ffi_checksum_constructor_smixdriver_new() != 12059) {
         return InitializationResult.apiChecksumMismatch
     }
 
