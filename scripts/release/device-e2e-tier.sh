@@ -196,6 +196,8 @@ fi
 # Samsung and iPhone because being attached and registered was all the
 # scripts asked. Guarded by `an-e2e-leaves-the-phones-alone`.
 unset SMIX_E2E_PHYSICAL_ANDROID SMIX_E2E_PHYSICAL_IOS SMIX_E2E_PHYSICAL_IOS_PORT
+# a crash on purpose leaves a dialog on the desktop; only a person names it
+unset SMIX_E2E_CRASH_DIALOG
 
 # shellcheck source=../lib/e2e-binary.sh
 . "$ROOT/scripts/lib/e2e-binary.sh"

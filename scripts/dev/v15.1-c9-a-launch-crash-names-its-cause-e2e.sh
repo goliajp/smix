@@ -8,7 +8,12 @@
 # the run on a device: a minimal app with no scene manifest, built here,
 # installed, and `runner up` for it.
 #
-# The crash leaves a macOS crash report dialog on the desktop.
+# The crash leaves a macOS crash report dialog on the desktop of whoever
+# is at the machine, and nothing short of a machine-wide setting keeps it
+# away. So it runs only when a person names it, SMIX_E2E_CRASH_DIALOG=1,
+# and is there to close the dialog; a batch (the release tier) never does.
+# Reading the cause out of a report is covered without a device by the
+# saved-report tests.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -26,6 +31,9 @@ WORK="$(mktemp -d)"
 log()  { printf '[v15.1-c9] %s\n' "$*" >&2; }
 fail() { printf '[v15.1-c9] FAIL: %s\n' "$*" >&2; exit 1; }
 cannot_judge() { printf '[v15.1-c9] cannot judge: %s\n' "$*" >&2; exit 2; }
+
+[ "${SMIX_E2E_CRASH_DIALOG:-}" = 1 ] \
+  || cannot_judge "it crashes an app on purpose, which puts a crash report dialog on this Mac's desktop; set SMIX_E2E_CRASH_DIALOG=1 to run it while someone is there to close it"
 
 UDID="" WE_BOOTED=0 WE_INSTALLED=0
 cleanup() {
