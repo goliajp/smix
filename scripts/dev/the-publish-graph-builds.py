@@ -2,7 +2,7 @@
 """Every Maven task the ship really runs must build its task graph.
 
 The dry run publishes to the local Maven repo. `publishToMavenLocal` does
-not create a Sonatype staging repository, so it never touches the build
+not prepare a Central Portal deployment, so it never touches the build
 service that the real `publish` shares across projects — and 36 dry runs
 went green on a release whose real Maven leg failed in the first second,
 before it had signed or uploaded anything:
@@ -16,7 +16,9 @@ version got two copies of the plugin's classes, and a build service cannot
 cross that boundary. Either project alone published fine. The fix is to
 declare the plugin once in the root build script with `apply false`; this
 gate is what would have caught it, because `--dry-run` builds the complete
-task graph — including createStagingRepository — while uploading nothing.
+task graph — including the task that prepares the deployment (then
+createStagingRepository, now prepareMavenCentralPublishing) — while
+uploading nothing.
 
 The task names are read out of ship.sh rather than written here again. A
 third published artifact should extend this gate by being added to the
@@ -78,17 +80,20 @@ if missing:
     print("    this gate has checked.")
     sys.exit(1)
 
-# The staging repository is the thing that broke, and it is created only on
-# the Central Portal path. Its absence would mean this gate had quietly
-# gone back to checking publishToMavenLocal's easier route.
-staging = [ln for ln in out.splitlines() if ":createStagingRepository" in ln]
-if not staging:
+# The task that takes the plugin's shared Central Portal build service is
+# the kind that broke, and it runs only on the Central Portal path: under
+# plugin 0.30 it was :createStagingRepository, under 0.37 it is
+# :prepareMavenCentralPublishing. Its absence would mean this gate had
+# quietly gone back to checking publishToMavenLocal's easier route.
+CENTRAL = ":prepareMavenCentralPublishing"
+prepared = [ln for ln in out.splitlines() if CENTRAL in ln]
+if not prepared:
     print("the-publish-graph-builds: FAIL")
-    print("  - the plan contains no :createStagingRepository task, so it is")
+    print(f"  - the plan contains no {CENTRAL} task, so it is")
     print("    not the Central Portal path this gate exists for. Check that")
     print(f"    {', '.join(tasks)} still publish to Maven Central.")
     sys.exit(1)
 
 print(f"the-publish-graph-builds: clean — {len(tasks)} publish tasks "
       f"({', '.join(tasks)}) build their graph, "
-      f"{len(staging)} staging repositories among them")
+      f"{len(prepared)} Central Portal deployments prepared among them")

@@ -7,7 +7,7 @@ moves them must stop the gate rather than leave it checking a list nobody
 publishes any more.
 
 The third is the one this gate exists for. `publishToMavenLocal` builds its
-task graph happily and creates no staging repository, which is exactly why
+task graph happily and prepares no Central Portal deployment, which is why
 36 dry runs of 10.0.0 went green over a Maven leg that died in its first
 second. A gate that would accept those task names has quietly gone back to
 checking the easier path.
@@ -68,19 +68,19 @@ def main():
     )
 
     # The dry run's own task names. They build a graph and exit 0, so only
-    # the staging-repository check separates them from the real thing.
+    # the Central Portal check separates them from the real thing.
     ok &= case(
         "the dry run's easier path is not the path being checked",
         'GRADLE_PUB_TASKS=(":sdk:publishToMavenLocal" ":probe:publishToMavenLocal")',
         1,
-        ":createStagingRepository",
+        ":prepareMavenCentralPublishing",
     )
 
     ok &= case(
         "the real task names build their graph",
         'GRADLE_PUB_TASKS=(":sdk:publish" ":probe:publish")',
         0,
-        "staging repositories",
+        "Central Portal deployments prepared",
     )
 
     print(f"=== the-publish-graph-builds.test: {'PASS' if ok else 'FAIL'} ===")
