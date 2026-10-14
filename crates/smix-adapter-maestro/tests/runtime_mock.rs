@@ -4217,7 +4217,9 @@ async fn take_screenshot_with_crop_on_writes_only_the_element() {
         .await
         .expect("takeScreenshot with cropOn");
     let bytes = std::fs::read(&out).expect("nothing written");
-    let reader = png::Decoder::new(bytes.as_slice()).read_info().unwrap();
+    let reader = png::Decoder::new(std::io::Cursor::new(bytes.as_slice()))
+        .read_info()
+        .unwrap();
     assert_eq!((reader.info().width, reader.info().height), (52, 27));
     let _ = std::fs::remove_dir_all(&dir);
 }

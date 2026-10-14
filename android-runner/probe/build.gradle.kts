@@ -14,7 +14,6 @@
 // rather than quietly answering worse.
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
     // Published: the guides tell a consumer to write
     // `debugImplementation("jp.golia.smix:smix-probe:…")`, and a line that
     // resolves to nothing is worse than no line at all.
@@ -26,15 +25,19 @@ version = providers.gradleProperty("smixVersion").get()
 
 android {
     namespace = "dev.smix.probe"
-    compileSdk = 35
+    compileSdk = 37
     defaultConfig {
         minSdk = 33
+        // What an app compiling against this needs: its minSdk already
+        // demands 33. Left unset, AGP 9 writes this library's own compileSdk
+        // here, and every app below it fails to build for no reason in the
+        // code.
+        aarMetadata { minCompileSdk = 33 }
         // What the host compares with its own version: an app keeps the
         // probe it was built with until someone raises the dependency.
         buildConfigField("String", "SMIX_VERSION", "\"${providers.gradleProperty("smixVersion").get()}\"")
     }
     buildFeatures { buildConfig = true }
-    kotlinOptions { jvmTarget = "17" }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -42,7 +45,7 @@ android {
 }
 
 mavenPublishing {
-    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
+    publishToMavenCentral(automaticRelease = true)
     signAllPublications()
     coordinates("jp.golia.smix", "smix-probe", providers.gradleProperty("smixVersion").get())
     pom {
@@ -79,6 +82,16 @@ dependencies {
     // classpath and the probe must not drag a second copy in — nor pull
     // the BOM's constraints into a module that links against nothing.
     // The floor is the version that first published the API this reads.
-    compileOnly("androidx.compose.ui:ui:1.9.3")
+    compileOnly("androidx.compose.ui:ui:1.12.1")
     testImplementation("junit:junit:4.13.2")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        // Published: the Kotlin metadata stays readable by the compilers
+        // that could read it before this library was built with 2.4.
+        languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+        apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+    }
 }

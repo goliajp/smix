@@ -41,7 +41,7 @@ let package = Package(
       path: "swift-bridge/Sources/SmixIndigoHID"
     ),
 
-    // SmixCoreFFI binary target (Rust core via UniFFI 0.29.5)
+    // SmixCoreFFI binary target (Rust core via UniFFI 0.32.2)
     // built by `scripts/sdk/build-xcframework.sh` from `crates/smix-ffi`.
     .binaryTarget(name: "SmixCoreFFI", path: "swift-bridge/SmixCoreFFI.xcframework"),
 

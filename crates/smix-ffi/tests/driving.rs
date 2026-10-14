@@ -51,7 +51,7 @@ async fn a_call_reaches_the_runner_and_comes_back() {
 
 /// The one that catches a cancel that does not cancel.
 ///
-/// uniffi 0.29.5 generates rust_future_cancel and neither the Swift nor the
+/// uniffi 0.32.2 generates rust_future_cancel and neither the Swift nor the
 /// Kotlin backend ever calls it, so Task.cancel() does nothing to a call in
 /// flight. Cancellation is therefore explicit, and this holds it to meaning
 /// what it says: the call ends because it was cancelled, while the server is

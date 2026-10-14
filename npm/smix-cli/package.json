@@ -23,8 +23,8 @@
     "@goliapkg/smix-cli-linux-x64-gnu": "16.2.0"
   },
   "devDependencies": {
-    "typescript": "^5",
-    "vitest": "^3"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
   },
   "scripts": {
     "build": "tsc",

@@ -113,7 +113,7 @@ class Locator internal constructor(
             code = FailureCode.ASSERTION_FAILED,
             message = "expected $n matches, last poll saw $lastCount",
             selectorJson = encodeSelectorJson(selector),
-            visibleElements = (lastTree?.flatten()?.take(20)) ?: emptyList(),
+            visibleElements = lastTree.flatten().take(20),
             suggestions = listOf(
                 "verify the selector matches the expected count in the current tree",
                 "consider extending the timeout if render is slow",
@@ -178,7 +178,7 @@ class Locator internal constructor(
             code = FailureCode.TIMEOUT,
             message = timeoutMessage,
             selectorJson = encodeSelectorJson(selector),
-            visibleElements = (lastTree?.flatten()?.take(20)) ?: emptyList(),
+            visibleElements = lastTree.flatten().take(20),
             suggestions = listOf(
                 "consider extending the timeout if the UI takes longer to settle",
                 "verify the selector matches when manually inspected (use Smix.tree())",

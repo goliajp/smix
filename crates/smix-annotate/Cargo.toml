@@ -18,7 +18,7 @@ workspace = true
 
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
-imageproc = { version = "0.25", default-features = false }
+imageproc = { version = "0.27", default-features = false }
 ab_glyph = "0.2"
-oxipng = { version = "9", default-features = false, features = ["zopfli"] }
+oxipng = { version = "10", default-features = false, features = ["zopfli"] }
 thiserror.workspace = true

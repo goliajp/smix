@@ -1,5 +1,5 @@
 //! smix-bindgen-swift — thin wrapper around `uniffi::uniffi_bindgen_swift()`
-//! (UniFFI 0.29.5+ built-in CLI).
+//! (UniFFI 0.32.2+ built-in CLI).
 //!
 //! Avoids needing a separate `cargo install uniffi-bindgen-swift` since
 //! `uniffi` v0.29+ ships the Swift generator inside the main crate, gated

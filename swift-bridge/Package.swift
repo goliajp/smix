@@ -15,7 +15,7 @@ let package = Package(
     .executable(name: "SwiftFixtureRunner", targets: ["SwiftFixtureRunner"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/swhitty/FlyingFox.git", .upToNextMajor(from: "0.26.0")),
+    .package(url: "https://github.com/swhitty/FlyingFox.git", .upToNextMajor(from: "0.27.1")),
   ],
   targets: [
     .target(
@@ -39,7 +39,7 @@ let package = Package(
     .executableTarget(name: "SmixHostHID", dependencies: ["SmixIndigoHID"]),
     .executableTarget(name: "SmixCaptureHost", dependencies: ["SmixDeveloperDir"]),
 
-    // SmixCoreFFI binary target (Rust core via UniFFI 0.29.5)
+    // SmixCoreFFI binary target (Rust core via UniFFI 0.32.2)
     // built by `scripts/sdk/build-xcframework.sh` from `crates/smix-ffi`.
     // Slices: ios-arm64-simulator + macos-arm64 (simulator, plus the
     // macOS host test). The real-device slice (ios-arm64) is deliberately
