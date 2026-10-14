@@ -38,63 +38,6 @@ pub(crate) fn adb(serial: &str) -> Command {
     c
 }
 
-/// Locate the instrumentation APK. Built by
-/// `./gradlew :app:assembleDebugAndroidTest` in `android-runner/`.
-/// The working tree's APK, when this is a clone of smix and the APK is
-/// no older than the Kotlin it was built from.
-///
-/// The repo tree takes precedence deliberately — a smix developer wants
-/// the runner from their working copy, not the one that shipped. But
-/// precedence without freshness is worse than no precedence at all: a
-/// two-day-old APK sat here and won every time, so a Kotlin route added,
-/// packed into the tarball, and installed came back `not_implemented`
-/// from an artifact predating it. `None` here means "rebuild", and the
-/// installed path is where rebuilding lives.
-///
-/// The `bool` is whether the APK was built just now. A failed build is an
-/// error, not a reason to use another runner: it used to fall through to
-/// the installed one, so `runner up` said "building it", started the
-/// runner that shipped, and a developer measured a change that was not
-/// running (2026-10-13, a Kotlin edit that did not compile).
-fn find_test_apk(root: &Path) -> Result<Option<(PathBuf, bool)>, String> {
-    let tree = root.join("android-runner");
-    let candidate = tree.join("app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk");
-    let Some(built) = candidate.metadata().ok().and_then(|m| m.modified().ok()) else {
-        return Ok(None);
-    };
-    if let Some(newest) = newest_source_mtime(&tree.join("app/src"))
-        && newest > built
-    {
-        println!(
-            "[runner] {} is older than the Kotlin in this tree — building it",
-            candidate.display()
-        );
-        return build_apk_in(&tree).map(|apk| Some((apk, true)));
-    }
-    Ok(Some((candidate, false)))
-}
-
-/// The most recent modification time under `dir`, or `None` if it has
-/// no files.
-fn newest_source_mtime(dir: &Path) -> Option<std::time::SystemTime> {
-    let mut newest: Option<std::time::SystemTime> = None;
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&d) else {
-            continue;
-        };
-        for e in entries.flatten() {
-            let path = e.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if let Ok(m) = path.metadata().and_then(|m| m.modified()) {
-                newest = Some(newest.map_or(m, |n| if m > n { m } else { n }));
-            }
-        }
-    }
-    newest
-}
-
 /// Application-window type, as `AccessibilityWindowInfo.TYPE_APPLICATION`
 /// reports it. The launcher owns one on the home screen, so there is
 /// always at least one on a working device.
@@ -411,7 +354,7 @@ fn ensure_installed_apk() -> Result<(PathBuf, bool), String> {
 ///
 /// Shared by both trees, because both have the same obligation: the
 /// artifact must be no older than the sources beside it.
-fn build_apk_in(tree: &Path) -> Result<PathBuf, String> {
+pub(crate) fn build_apk_in(tree: &Path) -> Result<PathBuf, String> {
     // Gradle finds the SDK through ANDROID_HOME or a local.properties, and
     // a shell started over ssh has neither: the build then failed with
     // "SDK location not found", and a caller saw only that `runner up` had.
@@ -560,7 +503,7 @@ pub fn up_with_options(
     // up" served it — on any port, indefinitely, including right after
     // a rebuild. The symptom was a runner reporting `not_implemented`
     // for a route whose Kotlin had already shipped and built.
-    let (apk, rebuilt) = match find_test_apk(root)? {
+    let (apk, rebuilt) = match crate::test_apk::find_test_apk(root)? {
         Some(found) => found,
         None => ensure_installed_apk()?,
     };
@@ -1243,53 +1186,12 @@ mod tests {
         assert_eq!(instrumentation_ended_because(""), None);
     }
     use super::*;
-    use std::io::Write;
 
     #[test]
     fn forward_maps_the_host_port_onto_the_device_side_28080() {
         assert_eq!(
             forward_argv(22093),
             vec!["forward", "tcp:22093", "tcp:28080"]
-        );
-    }
-
-    #[test]
-    fn the_newest_source_is_the_one_reported() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let src = dir.path().join("app/src/androidTest/kotlin");
-        std::fs::create_dir_all(&src).expect("mkdir");
-        assert!(
-            newest_source_mtime(&dir.path().join("app/src")).is_some() || true,
-            "an empty tree has no newest file, which is not an error"
-        );
-        std::fs::write(src.join("Old.kt"), "// old").expect("write");
-        let first = newest_source_mtime(&dir.path().join("app/src")).expect("a file exists");
-
-        // A second file written later must move the answer forward, or
-        // an APK built between them reads as current. Set the mtime
-        // rather than sleeping: the test should not be slower than the
-        // filesystem's clock resolution to be right.
-        let newer = src.join("New.kt");
-        let mut f = std::fs::File::create(&newer).expect("create");
-        f.write_all(b"// new").expect("write");
-        let ahead = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
-        f.set_modified(ahead).expect("set mtime");
-        drop(f);
-
-        let second = newest_source_mtime(&dir.path().join("app/src")).expect("files exist");
-        assert!(
-            second > first,
-            "the newest source did not move when a newer file appeared"
-        );
-    }
-
-    #[test]
-    fn a_tree_with_no_sources_reports_nothing_rather_than_now() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        assert!(
-            newest_source_mtime(&dir.path().join("app/src")).is_none(),
-            "an absent source tree must not answer with a time, which would \
-             make every APK look stale forever"
         );
     }
 
@@ -1312,38 +1214,5 @@ mod tests {
             kt.contains(&format!("const val PORT = {DEFAULT_ANDROID_PORT}")),
             "the runner listens on a port this crate no longer forwards to"
         );
-    }
-
-    // A checkout whose APK is older than its Kotlin, and whose build fails:
-    // the failure is the answer. Falling through to the installed runner
-    // started the one that shipped while saying "building it".
-    #[cfg(unix)]
-    #[test]
-    fn a_working_tree_that_does_not_build_is_an_error_not_another_runner() {
-        use std::os::unix::fs::PermissionsExt;
-        let root = tempfile::tempdir().expect("tempdir");
-        let tree = root.path().join("android-runner");
-        let apk = tree.join("app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk");
-        std::fs::create_dir_all(apk.parent().expect("parent")).expect("apk dir");
-        std::fs::write(&apk, b"old").expect("apk");
-        let src = tree.join("app/src/androidTest/kotlin/Runner.kt");
-        std::fs::create_dir_all(src.parent().expect("parent")).expect("src dir");
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        std::fs::write(&src, b"newer than the apk").expect("src");
-        let gradlew = tree.join("gradlew");
-        std::fs::write(
-            &gradlew,
-            "#!/bin/sh\necho 'e: Unresolved reference' \nexit 1\n",
-        )
-        .expect("gradlew");
-        std::fs::set_permissions(&gradlew, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-        let found = find_test_apk(root.path());
-        assert!(found.is_err(), "a failed build was answered with {found:?}");
-    }
-
-    #[test]
-    fn a_working_tree_with_no_apk_leaves_the_choice_to_the_installed_runner() {
-        let root = tempfile::tempdir().expect("tempdir");
-        assert!(matches!(find_test_apk(root.path()), Ok(None)));
     }
 }
