@@ -266,17 +266,27 @@ Four things worth knowing before you rely on them:
   run. With `--app` the last line says how many of the reports named that
   process, so "none of them was yours" reads differently from "the device
   recorded none".
+- **`crashes` names a process that keeps crashing.** When one process crashed
+  three times or more inside ten minutes, a line says so with the count and the
+  times — a system process that dies as it starts is restarted and dies again,
+  and on a simulator that also puts a crash report dialog on this Mac's desktop
+  each time. Processes the system ended at shutdown for not exiting in time
+  (`SIGTERM_TIMEOUT`) are counted apart; every simulator shutdown leaves a few,
+  and they are not crashes.
 - **`frontmost` reads the resumed activity**, not whichever window holds focus —
   a dialog on top does not change the answer. Nothing resumed (a lock screen, a
   device still booting) prints that and exits 0.
 
-These are Android verbs. `wake`, `stay-awake`, `frontmost` and `crashes` refuse
-on an iPhone or a simulator and say what to do instead: neither `simctl` nor
-`devicectl` has a verb for any of them, a simulator's screen never sleeps, and a
-simulator's crash reports land in this machine's own `~/Library/Logs/
-DiagnosticReports`, which is not divided by device. `permission` is the
-exception — a simulator answers it through `simctl privacy`, and only a physical
-iPhone refuses, because those grants are the owner's.
+`wake`, `stay-awake` and `frontmost` are Android verbs: they refuse on an
+iPhone or a simulator and say what to do instead — neither `simctl` nor
+`devicectl` has a verb for any of them, and a simulator's screen never sleeps.
+`crashes` also reads a simulator: its reports land in this machine's
+`~/Library/Logs/DiagnosticReports` (and `Retired/` beneath it) beside every
+other simulator's, and each names the simulator it ran in, so only that one's
+are listed — the system's processes as well as your app. A physical iPhone
+refuses it: its reports stay on the phone. `permission` answers on a simulator
+through `simctl privacy`, and only a physical iPhone refuses, because those
+grants are the owner's.
 
 ### Letting a device reach a server on this machine
 

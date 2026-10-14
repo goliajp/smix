@@ -10,12 +10,14 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use smix_simctl::crash_report::{self, IpsReport};
+
 const NO_SCENE: &str = "UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption";
 
 /// Where macOS writes the reports for simulator apps too.
 #[must_use]
 pub fn reports_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Logs/DiagnosticReports"))
+    crash_report::reports_dir()
 }
 
 /// A sentence about the newest report for `bundle` written at or after
@@ -29,46 +31,15 @@ pub fn explain(dir: &Path, bundle: &str, since: SystemTime) -> Option<String> {
         .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
         .filter(|(at, _)| *at >= since)
         .filter_map(|(at, path)| {
-            let report = read(&path)?;
-            (report.bundle == bundle).then_some((at, path, report))
+            let report = crash_report::read(&path)?;
+            (report.bundle == bundle).then_some((at, report))
         })
-        .max_by_key(|(at, _, _)| *at)?;
-    let (_, path, report) = newest;
-    Some(describe(bundle, &report, &path))
+        .max_by_key(|(at, _)| *at)?;
+    let (_, report) = newest;
+    Some(describe(bundle, &report))
 }
 
-struct Report {
-    bundle: String,
-    exception: String,
-    frames: Vec<String>,
-}
-
-/// A report is one line of JSON naming the app, then the body as JSON.
-fn read(path: &Path) -> Option<Report> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let (head, body) = text.split_once('\n')?;
-    let head: serde_json::Value = serde_json::from_str(head).ok()?;
-    let body: serde_json::Value = serde_json::from_str(body).ok()?;
-    let thread = body["faultingThread"].as_u64().unwrap_or(0) as usize;
-    let frames = body["threads"][thread]["frames"]
-        .as_array()
-        .map(|fs| {
-            fs.iter()
-                .filter_map(|f| f["symbol"].as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    Some(Report {
-        bundle: head["bundleID"].as_str()?.to_string(),
-        exception: body["exception"]["type"]
-            .as_str()
-            .unwrap_or("an exception")
-            .to_string(),
-        frames,
-    })
-}
-
-fn describe(bundle: &str, report: &Report, path: &Path) -> String {
+fn describe(bundle: &str, report: &IpsReport) -> String {
     if report.frames.iter().any(|f| f.contains(NO_SCENE)) {
         return format!(
             "{bundle} was stopped at launch by iOS: it makes its window in the app \
@@ -76,17 +47,21 @@ fn describe(bundle: &str, report: &Report, path: &Path) -> String {
              Give it a UIWindowSceneDelegate that makes the window in \
              `scene(_:willConnectTo:options:)`, and a `UIApplicationSceneManifest` in \
              its Info.plist. Crash report: {}",
-            path.display()
+            report.path.display()
         );
     }
     let top = report
         .frames
         .first()
         .map_or("an unnamed frame", String::as_str);
+    let exception = if report.exception.is_empty() {
+        "an exception"
+    } else {
+        report.exception.as_str()
+    };
     format!(
-        "{bundle} crashed at launch ({}, in {top}). Crash report: {}",
-        report.exception,
-        path.display()
+        "{bundle} crashed at launch ({exception}, in {top}). Crash report: {}",
+        report.path.display()
     )
 }
 
