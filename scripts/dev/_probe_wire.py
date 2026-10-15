@@ -17,6 +17,24 @@ import subprocess
 import time
 
 
+# Every content call this process made: (method, seconds, exit code,
+# stderr). A gate that saw no answer once could not tell one call that
+# hung for half a minute from thirty that each failed at once, because
+# only stdout was kept (2026-10-14, a release stopped on it).
+CALLS = []
+
+
+def calls_said():
+    """What the calls so far came to, for a message about no answer."""
+    if not CALLS:
+        return "no content call was made"
+    longest = max(CALLS, key=lambda c: c[1])
+    method, secs, code, err = CALLS[-1]
+    return (f"{len(CALLS)} content call(s); the longest took {longest[1]:.1f} s "
+            f"({longest[0]}); the last ({method}) exited {code} after {secs:.1f} s"
+            + (f" saying: {err}" if err else " with nothing on stderr"))
+
+
 def probe_call(device, app, method, arg=None, extra=None):
     cmd = ["adb", "-s", device, "shell", "content", "call",
            "--uri", f"content://{app}.smixprobe", "--method", method]
@@ -26,7 +44,10 @@ def probe_call(device, app, method, arg=None, extra=None):
         # `content call` wants a typed binding. Untyped, adb prints its own
         # usage, which a caller reading for a result sees as "no answer".
         cmd += ["--extra", f"{k}:s:{v}"]
+    started = time.monotonic()
     r = subprocess.run(cmd, capture_output=True, text=True)
+    CALLS.append((method, time.monotonic() - started, r.returncode,
+                  r.stderr.strip()[-300:]))
     return r.stdout
 
 
