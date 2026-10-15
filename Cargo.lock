@@ -2761,6 +2761,7 @@ dependencies = [
 name = "smix-adb"
 version = "16.2.0"
 dependencies = [
+ "chrono",
  "serde",
  "serde_json",
  "smix-error",
@@ -2820,6 +2821,7 @@ dependencies = [
 name = "smix-capsule"
 version = "16.2.0"
 dependencies = [
+ "chrono",
  "serde",
  "serde_json",
  "serde_norway",

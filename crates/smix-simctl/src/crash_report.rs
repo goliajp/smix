@@ -33,6 +33,19 @@ pub struct IpsReport {
     pub frames: Vec<String>,
 }
 
+impl IpsReport {
+    /// What happened, in one line: the exception, then the termination
+    /// indicator, whichever of them the report carries.
+    #[must_use]
+    pub fn summary(&self) -> String {
+        match (self.exception.is_empty(), self.termination.is_empty()) {
+            (false, false) => format!("{} — {}", self.exception, self.termination),
+            (false, true) => self.exception.clone(),
+            (true, _) => self.termination.clone(),
+        }
+    }
+}
+
 /// Where macOS writes the reports, simulator processes included.
 #[must_use]
 pub fn reports_dir() -> Option<PathBuf> {
