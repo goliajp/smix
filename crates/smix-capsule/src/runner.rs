@@ -1382,9 +1382,7 @@ pub fn up_on(
         opts,
         target,
     )?;
-    if matches!(target, RunnerTarget::Simulator) {
-        crate::xctest_log::quiet(udid);
-    }
+    crate::sim_after_up::settle(target, udid);
     Ok(())
 }
 
