@@ -181,6 +181,7 @@ def main():
         print("the-three-that-went-red: CANNOT RUN — the probe did not answer. "
               "Is `debugImplementation(\"jp.golia.smix:smix-probe\")` in the "
               "fixture's build?")
+        print(f"  {_probe_wire.calls_said()}")
         return 2
     if not want and present:
         print("the-three-that-went-red: CANNOT RUN — --without-probe was asked "

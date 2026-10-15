@@ -355,11 +355,7 @@ impl DeviceControl for IosDeviceControl {
         Ok(smix_simctl::crash_report::for_simulator(&dir, udid)
             .into_iter()
             .map(|r| {
-                let summary = match (r.exception.is_empty(), r.termination.is_empty()) {
-                    (false, false) => format!("{} — {}", r.exception, r.termination),
-                    (false, true) => r.exception.clone(),
-                    (true, _) => r.termination.clone(),
-                };
+                let summary = r.summary();
                 let mut lines = vec![format!("report: {}", r.path.display())];
                 lines.extend(r.frames.iter().take(3).map(|f| format!("at {f}")));
                 CrashReport {
