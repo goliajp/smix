@@ -18,11 +18,15 @@
 use serde::{Deserialize, Serialize};
 use std::io;
 mod binary;
+mod crash;
 pub mod wait;
 
 pub use binary::{
     AdbSource, adb_path, adb_usable, did_not_start, resolve_adb, sdk_candidates, sdk_root,
     std_command,
+};
+pub use crash::{
+    CrashLoop, CrashReport, ENDED_AT_SHUTDOWN, crash_loops, crash_loops_at, crash_time,
 };
 
 use std::path::Path;
@@ -421,21 +425,6 @@ pub fn parse_resumed_activity(dump: &str) -> Option<(String, String)> {
         return None;
     }
     Some((package.to_string(), activity.to_string()))
-}
-
-/// One crash the device recorded, as its own buffer words it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CrashReport {
-    /// The timestamp logcat put on the first line, verbatim.
-    pub when: String,
-    /// The process the report names, or empty when it names none. A
-    /// report whose process cannot be read is still a crash, so it is
-    /// kept rather than dropped.
-    pub process: String,
-    /// The first line's message — what happened, in the device's words.
-    pub summary: String,
-    /// Every line of the report in order, verbatim.
-    pub lines: Vec<String>,
 }
 
 /// One `-v threadtime` line split into its fixed prefix and its message.

@@ -679,7 +679,8 @@ def main():
             problems.append(
                 f"the probe did not answer on {args.device} — is "
                 f"`debugImplementation(\"jp.golia.smix:smix-probe\")` in "
-                f"{args.app}'s build, and is the app in the foreground?"
+                f"{args.app}'s build, and is the app in the foreground? "
+                f"({_probe_wire.calls_said()})"
             )
         if problems:
             report()

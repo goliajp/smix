@@ -26,6 +26,7 @@ pub mod runner_state;
 mod runner_stop;
 pub mod runner_view;
 pub mod signing;
+mod sim_after_up;
 mod test_apk;
 mod xctest_log;
 

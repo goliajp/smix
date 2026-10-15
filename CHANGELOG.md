@@ -2,6 +2,23 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Added
+
+- **`smix runner up` on a simulator says when a process there keeps
+  crashing.** A process that has crashed three times or more inside ten
+  minutes, and crashed again within the last ten, is named on stderr with
+  the count and the times — on a simulator that is a system process dying
+  as it starts and being restarted, each time with a crash report dialog
+  on this Mac's desktop, which nothing in the runner's answers shows. The
+  runner comes up as before; `smix sim crashes <udid>` lists the reports.
+  A loop that ended earlier is not repeated here.
+- `smix_adb::crash_loops` and `crash_loops_at`: the judgement `smix sim
+  crashes` and `runner up` share, over any device's `CrashReport`s.
+  `smix_simctl::crash_report::IpsReport::summary` gives a simulator
+  report's one-line summary.
+
 ## [16.2.0] — 2026-10-14
 
 ### Changed
