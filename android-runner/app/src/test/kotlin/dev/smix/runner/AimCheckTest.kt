@@ -63,4 +63,26 @@ class AimCheckTest {
         assertEquals(AimCheck.Target("a", "A", HitChain.Box(41, 942, 212, 1068)), t)
         assertNull(AimCheck.decode("""{"nx":0.1,"ny":0.9}"""))
     }
+
+    // A consumer's Wi-Fi row: the name is the row's label, and it is not ASCII.
+    @Test
+    fun aNameThatIsNotAsciiIsTheSameName() {
+        val name = "カフェ☕ Wi-Fi"
+        val row = HitChain.Entry("", name, HitChain.Box(45, 1075, 1035, 1181))
+        val t = AimCheck.decode(
+            """{"nx":0.5,"ny":0.47,"aimedAt":{"identifier":"","label":"$name","frame":{"x":45.0,"y":1075.0,"w":990.0,"h":106.0}}}""",
+        )!!
+        assertNull(AimCheck.gone(t, read(row)))
+    }
+
+    // What the runner was told to look for, beside what it found: when the
+    // two read the same, the difference is in what reached the runner.
+    @Test
+    fun aRefusalSaysWhatItLookedFor() {
+        val other = HitChain.Entry("", "Lobby Guest", HitChain.Box(45, 1313, 1035, 1419))
+        val t = AimCheck.Target("", "カフェ☕ Wi-Fi", HitChain.Box(45, 1075, 1035, 1181))
+        val body = org.json.JSONObject(AimCheck.goneBody(AimCheck.gone(t, read(other))!!, t))
+        assertEquals("target_gone_before_touch", body.getString("error"))
+        assertEquals("\"Lobby Guest\"; it looked for \"カフェ☕ Wi-Fi\"", body.getString("saw"))
+    }
 }

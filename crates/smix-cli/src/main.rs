@@ -45,6 +45,7 @@ mod lease_cmd;
 mod parallel;
 mod readiness;
 mod record_cmd;
+mod runner_down;
 mod runner_list;
 mod sim_list;
 use device_for::device_control_for;
@@ -1401,12 +1402,15 @@ enum RunnerAction {
     },
     /// Stop the runner (SIGINT-first to avoid the crash-report dialog).
     Down {
-        /// Which runner to stop. `android` needs `--device` too: adb
-        /// commands must name their device, or they act on whichever
-        /// one happens to be attached.
-        #[arg(long, value_enum, default_value_t = RunPlatform::Ios)]
-        platform: RunPlatform,
-        /// Android only: the adb serial (e.g. `emulator-5554`).
+        /// Which runner to stop. Read from `--device` when that is given;
+        /// iOS when neither is. `android` needs `--device` too: adb
+        /// commands must name their device, or they act on whichever one
+        /// happens to be attached.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
+        /// The device whose runner to stop: an adb serial, a simulator, or
+        /// an alias. On iOS the port is the one this device's runner is
+        /// recorded on.
         #[arg(long)]
         device: Option<String>,
         /// Also stop a runner on this port that this workspace has no
@@ -3810,38 +3814,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     device,
                     include_unrecorded,
                     take_over,
-                    runner_port: port_flag,
-                } => {
-                    if platform == RunPlatform::Android {
-                        let serial = device.ok_or_else(|| {
-                            CliError::Other(
-                                "runner down --platform android needs --device \
-                                 <adb-serial>: an adb command without one acts on \
-                                 whichever device is attached"
-                                    .to_string(),
-                            )
-                        })?;
-                        let port = port_flag.unwrap_or_else(|| {
-                            std::env::var("SMIX_RUNNER_PORT")
-                                .ok()
-                                .and_then(|p| p.parse().ok())
-                                .unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT)
-                        });
-                        let serial = resolve_android_serial(&serial)?;
-                        smix_capsule::runner_android::down_with(&serial, port, take_over)
-                            .map_err(CliError::Other)?;
-                        return Ok(std::process::ExitCode::SUCCESS);
-                    }
-                    let port = port_flag.unwrap_or_else(runner_port);
-                    if take_over {
-                        smix_capsule::runner::down_taking_over(port, include_unrecorded)
-                    } else if include_unrecorded {
-                        smix_capsule::runner::down_including_unrecorded(port)
-                    } else {
-                        smix_capsule::runner::down(port)
-                    }
-                    .map_err(CliError::Other)?;
-                }
+                    runner_port,
+                } => runner_down::run(platform, device, include_unrecorded, take_over, runner_port)?,
                 RunnerAction::Cycle {
                     platform,
                     runner_project,

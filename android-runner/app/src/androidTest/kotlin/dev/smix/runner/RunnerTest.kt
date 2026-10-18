@@ -284,16 +284,7 @@ class SmixHttpServer(
         // a new POST route cannot forget.
         drainedBody.remove()
         if (session.method == Method.POST || session.method == Method.PUT) {
-            val files = HashMap<String, String>()
-            try {
-                session.parseBody(files)
-                drainedBody.set(files["postData"] ?: "")
-            } catch (_: Throwable) {
-                // A malformed body is the route's problem to report, not
-                // a reason to fail before dispatch. It is consumed either
-                // way, which is all this block is for.
-                drainedBody.set("")
-            }
+            drainedBody.set(RequestBody.read(session.inputStream, session.headers["content-length"]?.toLongOrNull()))
         }
         // Each route leaves one line in the device log — when it came in,
         // what it answered, how long it took and, for a route that keeps a
@@ -674,8 +665,8 @@ class SmixHttpServer(
         val py = RunnerWire.normToPixel(req.ny, h)
         // Before the touch: a confirm that lands takes its dialog away.
         val chain = hitChainAt(session, RunnerWire.decodeAimedBy(payload), px, py)
-        AimCheck.decode(payload)?.let { AimCheck.gone(it, chain) }?.let { saw ->
-            return newFixedLengthResponse(Response.Status.CONFLICT, "application/json", AimCheck.goneBody(saw))
+        AimCheck.decode(payload)?.let { t -> AimCheck.gone(t, chain)?.let { t to it } }?.let { (t, saw) ->
+            return newFixedLengthResponse(Response.Status.CONFLICT, "application/json", AimCheck.goneBody(saw, t))
         }
         val ok = TapBurst.decode(payload).touch(
             { device.click(px, py) }, { device.swipe(px, py, px, py, RunnerWire.longPressSteps(it)) }, Thread::sleep,
@@ -1440,6 +1431,14 @@ class SmixHttpServer(
             ?: focused.className?.toString()
             ?: "an unnamed node"
         val fieldPackage = focused.packageName?.toString()
+        if (!TextEntry.typable(text)) {
+            val value = TextEntry.target(before, text, masked)
+                ?: return errorJson(Response.Status.INTERNAL_ERROR, "text_not_typable", TextEntry.maskedRefusal(whichField))
+            val took = TextEntry.set(focused, value)
+            val held = awaitChunk(focused, before, text, masked, TEXT_LAND_MS).text.also { focused.recycle() }
+            val landed = took && RunnerWire.textLanded(before, held, text, masked)
+            return newFixedLengthResponse(Response.Status.OK, "application/json", RunnerWire.inputTextBody(landed, text, before, held, masked))
+        }
         // In chunks, each read back before the next. One `input text` of
         // 120 characters came back short under load (2 of 10 whole at load
         // 11–15) while 64 held every time; a chunk read back on its own can

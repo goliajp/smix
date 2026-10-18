@@ -71,6 +71,11 @@ object AimCheck {
         else -> "an unnamed element at (${e.bounds.left},${e.bounds.top})"
     }
 
-    fun goneBody(saw: String): String =
-        JSONObject().put("error", "target_gone_before_touch").put("saw", saw).toString()
+    /// The refusal, with what the runner was told to look for after what it
+    /// found: when the two read the same, what differs is what reached it.
+    fun goneBody(saw: String, target: Target): String =
+        JSONObject()
+            .put("error", "target_gone_before_touch")
+            .put("saw", "$saw; it looked for ${describe(HitChain.Entry(target.identifier, target.label, target.frame))}")
+            .toString()
 }
