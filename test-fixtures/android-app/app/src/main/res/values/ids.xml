@@ -26,4 +26,8 @@
     <item name="fixture_filter_input" type="id" />
     <item name="fixture_filter_row" type="id" />
     <item name="fixture_filter_list" type="id" />
+    <item name="fixture_text_cafe_taps" type="id" />
+    <item name="fixture_text_lobby_taps" type="id" />
+    <item name="fixture_text_input" type="id" />
+    <item name="fixture_text_echo" type="id" />
 </resources>

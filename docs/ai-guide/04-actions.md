@@ -279,7 +279,14 @@ already have: `tapOn` it, then the scalar form.
   could clear and type into whichever field had focus a moment earlier.
   A scalar `inputText` names no field and still means "wherever focus
   is".
-- Special chars: spaces, unicode are handled; backslash-escaping is internal.
+- Special chars: spaces and backslashes are escaped internally. On
+  Android, `input text` cannot type anything past ASCII (it throws), so
+  text with such characters — Japanese, emoji, accented letters — is set
+  on the focused field as a whole (`ACTION_SET_TEXT`: what it held, then
+  the new text) and read back the same way. No key goes through the
+  keyboard, and the app's text listeners still hear the change. A masked
+  field that already holds text cannot be read back to keep, so such text
+  is refused there; clear the field first.
 - Important Android quirk: UiAutomation.executeShellCommand does NOT use `sh -c`, so quote-wrapping the text causes literal quotes. The runner handles this; do not pre-quote yourself.
 
 ### Clear
@@ -305,7 +312,10 @@ already have: `tapOn` it, then the scalar form.
   pressed: it is the field's submit. The touch lands above the bar drawn over the keys (suggestions,
   Passwords) and never on a button, field, link or other control, so it
   cannot submit a form. A form whose only ways out are its return key or
-  a button answers `keyboard_did_not_close` instead of pressing one.
+  a button answers `keyboard_did_not_close` instead of pressing one, and
+  names the field's return key when it is one of those (`return key:
+  Search, the field's own submit, not pressed`). If submitting is what
+  the flow wants, `pressKey: enter` presses it.
 - Android: Kotlin runner `/hide-keyboard` → `IME.hide()`.
 
 **It answers about the keyboard, not about itself.** No keyboard present

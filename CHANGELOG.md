@@ -4,16 +4,48 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Fixed
+
+- **Android: text past ASCII reaches the runner as it was sent.** The
+  runner decoded every request body as US-ASCII — what its HTTP library
+  does when the Content-Type names no charset — so a selector's name or
+  the text to type with characters past ASCII arrived as replacement
+  characters. A row named `カフェ☕ Wi-Fi` was found and its tap refused
+  ("had left the point"), and `inputText` of Japanese typed nothing.
+  Bodies are now read as UTF-8.
+- **Android: `inputText` types text past ASCII.** `input text` throws on
+  such characters, so that text is set on the focused field
+  (`ACTION_SET_TEXT`: what it held, then the new text) and read back as
+  before. A masked field that already holds text refuses it, since what
+  it holds cannot be read back to keep.
+- **`smix runner down --device <device>` stops that device's runner.**
+  Without `--platform android` the device was not read and the iOS runner
+  on 22087 was stopped. The platform now comes from the device; on iOS the
+  port is the one its runner is recorded on, and a device with no recorded
+  runner stops nothing.
+- A refused touch ("had left the point") on Android says what the runner
+  was told to look for after what it found.
+
+### Changed
+
+- **`anchored:` refuses a point off the screen** (`NOT_VISIBLE`) instead of
+  touching the nearest edge and reporting success. `dx` and `dy` are
+  fractions of the screen's width and height; the guide had shown them as
+  pixels.
+- iOS `hideKeyboard` that answers `keyboard_did_not_close` names the
+  field's return key when it is one it does not press (Go, Search, …), and
+  the hint says `pressKey: enter` presses it.
+
 ### Added
 
 - **`smix runner up` on a simulator says when a process there keeps
   crashing.** A process that has crashed three times or more inside ten
-  minutes, and crashed again within the last ten, is named on stderr with
-  the count and the times — on a simulator that is a system process dying
-  as it starts and being restarted, each time with a crash report dialog
-  on this Mac's desktop, which nothing in the runner's answers shows. The
-  runner comes up as before; `smix sim crashes <udid>` lists the reports.
-  A loop that ended earlier is not repeated here.
+  minutes within the last hour, and crashed again within the last ten, is
+  named on stderr with the count and the times — on a simulator that is a
+  system process dying as it starts and being restarted, each time with a
+  crash report dialog on this Mac's desktop, which nothing in the runner's
+  answers shows. The runner comes up as before; `smix sim crashes <udid>`
+  lists the reports. A loop that ended earlier is not repeated here.
 - `smix_adb::crash_loops` and `crash_loops_at`: the judgement `smix sim
   crashes` and `runner up` share, over any device's `CrashReport`s.
   `smix_simctl::crash_report::IpsReport::summary` gives a simulator

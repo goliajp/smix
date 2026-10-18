@@ -21,6 +21,9 @@ pub struct CrashReport {
 /// count spread over days is separate runs that each crashed once.
 const A_LOOP: usize = 3;
 const WINDOW: chrono::TimeDelta = chrono::TimeDelta::minutes(10);
+/// How far back a loop still going can have begun: a process that looped
+/// and then kept crashing more slowly is still the same trouble.
+const LOOKBACK: chrono::TimeDelta = chrono::TimeDelta::hours(1);
 
 /// What launchd writes when it ends a process that did not exit in time
 /// after being asked to — every simulator shutdown leaves a few. Those
@@ -107,12 +110,19 @@ pub fn crash_loops(reports: &[&CrashReport]) -> Vec<CrashLoop> {
 }
 
 /// The loops still going at `now` (UTC): a loop of `A_LOOP` or more
-/// whose process crashed again inside the last `WINDOW`. One that ended
-/// days ago is history, which `smix sim crashes` lists and a warning
-/// should not repeat.
+/// inside the last `LOOKBACK`, whose process crashed again inside the last
+/// `WINDOW`. One that ended days ago is history, which `smix sim crashes`
+/// lists and a warning should not repeat — nor count as the loop now: a
+/// process looping again after a boot was reported with the count and
+/// times of its loop four days before.
 #[must_use]
 pub fn crash_loops_at(reports: &[&CrashReport], now: chrono::NaiveDateTime) -> Vec<CrashLoop> {
-    crash_loops(reports)
+    let recent: Vec<&CrashReport> = reports
+        .iter()
+        .copied()
+        .filter(|r| crash_time(&r.when).is_some_and(|t| now - t <= LOOKBACK))
+        .collect();
+    crash_loops(&recent)
         .into_iter()
         .filter(|l| now - l.latest <= WINDOW)
         .collect()
@@ -211,5 +221,29 @@ mod tests {
         let found = crash_loops_at(&refs, utc("2026-10-14 06:58:00.0000 +0900"));
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].count, 3);
+    }
+
+    // sim-smix-02, 2026-10-18: intelligencetasksd looped again after a boot,
+    // and the warning gave the 10-14 loop's count and times as if current.
+    #[test]
+    fn a_loop_days_ago_is_not_the_one_going_now() {
+        let mut reports: Vec<_> = (0..11)
+            .map(|i| crash("intelligencetasksd", &format!("2026-10-14 14:30:{:02}.0000 +0900", i * 5)))
+            .collect();
+        reports.push(crash("intelligencetasksd", "2026-10-18 14:05:31.0000 +0900"));
+        let refs: Vec<_> = reports.iter().collect();
+        let now = utc("2026-10-18 14:06:00.0000 +0900");
+        assert!(
+            crash_loops_at(&refs, now).is_empty(),
+            "one crash now and a loop four days ago is not a loop now"
+        );
+        for s in ["14:06:10", "14:06:40", "14:07:20"] {
+            reports.push(crash("intelligencetasksd", &format!("2026-10-18 {s}.0000 +0900")));
+        }
+        let refs: Vec<_> = reports.iter().collect();
+        let found = crash_loops_at(&refs, utc("2026-10-18 14:08:00.0000 +0900"));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].count, 4);
+        assert_eq!(found[0].first, "2026-10-18 14:05:31.0000 +0900");
     }
 }
