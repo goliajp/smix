@@ -4,6 +4,8 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+## [16.3.0] — 2026-10-18
+
 ### Fixed
 
 - **Android: text past ASCII reaches the runner as it was sent.** The
