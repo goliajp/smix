@@ -196,13 +196,17 @@ looking for a pause instead:
     text: "Edit"
     below: { text: "Settings" }   # the Edit below the Settings row
 
-# Pixel-offset form — anchor plus a dx/dy nudge, all three required:
+# Offset form — anchor plus a dx/dy nudge, all three required. dx and dy
+# are fractions of the screen's width and height, not pixels:
 - tapOn:
     anchored:
       anchor: { text: "Settings" }
       dx: 0.0
-      dy: 40.0
+      dy: 0.05      # 5% of the screen's height below the anchor's centre
 ```
+
+A point that lands off the screen fails the step (`NOT_VISIBLE`) instead of
+being moved to the edge.
 
 - `anchor` finds a stable reference element by text or id.
 - Then a spatial key selects what to tap relative to it.

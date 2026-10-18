@@ -3949,11 +3949,12 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     .await?
                     .map(|frame| (frame.mid_x(), frame.mid_y())))
             }
-            Selector::AnchorRelative { anchor, dx, dy } => Ok(self
+            Selector::AnchorRelative { anchor, dx, dy } => self
                 .app
                 .find_norm_coord(anchor)
                 .await?
-                .map(|(nx, ny)| ((nx + dx).clamp(0.0, 1.0), (ny + dy).clamp(0.0, 1.0)))),
+                .map(|at| crate::anchored::point(at, *dx, *dy, sel))
+                .transpose(),
             _ => Ok(None),
         }
     }
@@ -4118,15 +4119,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             self.app.tap_at_coord(*nx, *ny).await?;
             return Ok(RunStepReport::Ok);
         }
-        // AnchorRelative is an escape hatch: find the anchor's norm
-        // coord → add the (dx, dy) shift → tap_at_norm_coord (IOHID
-        // synthesize). It bypasses the resolver because the target
-        // has no a11y form of its own — only the anchor does.
+        // AnchorRelative bypasses the resolver: the target has no a11y
+        // form of its own, only the anchor does, so the touch goes to the
+        // anchor's centre plus (dx, dy) — refused when that is off screen.
         if let Selector::AnchorRelative { anchor, dx, dy } = selector {
             return match self.app.find_norm_coord(anchor).await? {
-                Some((anchor_nx, anchor_ny)) => {
-                    let nx = (anchor_nx + dx).clamp(0.0, 1.0);
-                    let ny = (anchor_ny + dy).clamp(0.0, 1.0);
+                Some(at) => {
+                    let (nx, ny) = crate::anchored::point(at, *dx, *dy, selector)?;
                     self.app.tap_at_coord(nx, ny).await?;
                     Ok(RunStepReport::Ok)
                 }
