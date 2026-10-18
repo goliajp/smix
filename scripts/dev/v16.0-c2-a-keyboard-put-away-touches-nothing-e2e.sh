@@ -130,7 +130,12 @@ case "$answer" in
   *'focus: uks_email'*) : ;;
   *) fail "the refusal does not name the field still holding focus: $answer" ;;
 esac
-log "refused, named the field, sent the app nothing, and the keyboard is still up"
+# the field's return key is Go: the one way it lets go, and not pressed
+case "$answer" in
+  *'return key: Go'*) : ;;
+  *) fail "the refusal does not name the return key it did not press: $answer" ;;
+esac
+log "refused, named the field and its return key, sent the app nothing, and the keyboard is still up"
 
 log "--- a step where a touch on an empty spot takes the keyboard down"
 open_step -uikit-signin-taps-away

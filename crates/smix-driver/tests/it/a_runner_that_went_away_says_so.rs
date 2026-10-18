@@ -114,6 +114,34 @@ fn the_two_keyboard_refusals_point_opposite_ways() {
 }
 
 #[test]
+fn a_field_that_only_its_return_key_releases_is_named_with_the_way_to_press_it() {
+    // A consumer's device search: a text field whose return key is Search,
+    // on a screen where nothing else ends editing. "Tap the next control"
+    // was the advice, and the next control was what they meant to tap once
+    // the keyboard was down.
+    let f = transport_to_failure(RunnerTransportError::RefusedNaming {
+        endpoint: "/hide-keyboard".into(),
+        kind: "keyboard_did_not_close".into(),
+        saw: "tried tap-above-keyboard; focus: input-device-search; return key: Search, \
+              the field's own submit, not pressed"
+            .into(),
+    });
+    let p = f.to_prompt();
+    assert!(
+        p.contains("return key: Search"),
+        "the key has to survive — {p}"
+    );
+    assert!(
+        p.contains("pressKey: enter"),
+        "the way to press it is not given — {p}"
+    );
+    assert!(
+        !p.contains("Tapping the next control"),
+        "advice for a field that gives focus up by a touch — {p}"
+    );
+}
+
+#[test]
 fn a_missing_button_reads_as_the_device_saying_so() {
     // The iOS simulator refuses lock and both volume keys by name. What
     // reaches the reader is the device's reason and that the step was
