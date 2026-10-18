@@ -228,9 +228,17 @@ mod tests {
     #[test]
     fn a_loop_days_ago_is_not_the_one_going_now() {
         let mut reports: Vec<_> = (0..11)
-            .map(|i| crash("intelligencetasksd", &format!("2026-10-14 14:30:{:02}.0000 +0900", i * 5)))
+            .map(|i| {
+                crash(
+                    "intelligencetasksd",
+                    &format!("2026-10-14 14:30:{:02}.0000 +0900", i * 5),
+                )
+            })
             .collect();
-        reports.push(crash("intelligencetasksd", "2026-10-18 14:05:31.0000 +0900"));
+        reports.push(crash(
+            "intelligencetasksd",
+            "2026-10-18 14:05:31.0000 +0900",
+        ));
         let refs: Vec<_> = reports.iter().collect();
         let now = utc("2026-10-18 14:06:00.0000 +0900");
         assert!(
@@ -238,7 +246,10 @@ mod tests {
             "one crash now and a loop four days ago is not a loop now"
         );
         for s in ["14:06:10", "14:06:40", "14:07:20"] {
-            reports.push(crash("intelligencetasksd", &format!("2026-10-18 {s}.0000 +0900")));
+            reports.push(crash(
+                "intelligencetasksd",
+                &format!("2026-10-18 {s}.0000 +0900"),
+            ));
         }
         let refs: Vec<_> = reports.iter().collect();
         let found = crash_loops_at(&refs, utc("2026-10-18 14:08:00.0000 +0900"));
