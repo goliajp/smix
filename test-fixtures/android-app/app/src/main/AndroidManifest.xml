@@ -85,5 +85,8 @@
         <activity
             android:name=".ComposeStackActivity"
             android:exported="true" />
+        <activity
+            android:name=".TextActivity"
+            android:exported="true" />
     </application>
 </manifest>

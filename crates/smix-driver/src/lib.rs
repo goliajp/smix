@@ -1840,30 +1840,9 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
                 ),
             )
         }
-        RunnerTransportError::RefusedNaming { kind, .. } => (
+        RunnerTransportError::RefusedNaming { kind, saw, .. } => (
             FailureCode::DriverError,
-            Some(match kind.as_str() {
-                "keyboard_did_not_close" => "the keyboard was there and every dismiss \
-                     strategy ran without closing it — the `saw` above names what was \
-                     tried and what still holds focus. Tapping the next control often \
-                     works when the field will not give focus up; `hideKeyboard` is \
-                     already a no-op when no keyboard is present, so a guard around it \
-                     is not what this needs."
-                    .to_string(),
-                "keyboard_state_unknown" => "the runner raised while looking, so nothing \
-                     was established about the keyboard — this is not evidence it is \
-                     still up. Retry the step; if it repeats, the runner is the thing \
-                     to look at, not the screen."
-                    .to_string(),
-                "no_such_button" => "this device has no such button — the `saw` above \
-                     says why and what to do instead. It is refused rather than skipped so \
-                     a flow that needs the press cannot pass without it."
-                    .to_string(),
-                other => format!(
-                    "the runner refused with `{other}` — the `saw` above is what it \
-                     observed"
-                ),
-            }),
+            Some(refusal_hint::hint(kind, saw)),
         ),
         _ => (FailureCode::DriverError, None),
     };
@@ -1983,6 +1962,7 @@ pub mod poll;
 pub(crate) use aim::{aim_in, settle_reading};
 pub use landing::{Aimed, ChainCoverage, landing_outcome, tap_landed_within, verdict_reader};
 mod ios;
+mod refusal_hint;
 mod scroll_until;
 pub mod settle;
 mod touch_aimed;

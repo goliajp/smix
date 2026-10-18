@@ -198,9 +198,15 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
     // field and left the keyboard up.
     // Name what still holds the keyboard up, because "it did not
     // close" and "this field is still first responder" send the
-    // caller to different places.
+    // caller to different places; and the return key when it is one
+    // not pressed here, which may be the only way this field lets go.
+    let keys = app.keyboards.buttons.allElementsBoundByIndex.map {
+      (identifier: $0.identifier, frame: $0.frame)
+    }
+    let returnKey = KeyboardReturnKey.untried(buttons: keys, tried: ["Return", "Done"])
+      .map { "; return key: \($0), the field's own submit, not pressed" } ?? ""
     return .stillPresent(
-      tried: "tried \(tried.joined(separator: ", ")); focus: \(focusName())")
+      tried: "tried \(tried.joined(separator: ", ")); focus: \(focusName())\(returnKey)")
   }
   // A caught exception is not evidence the keyboard is up.
   return outcome ?? .couldNotTell(
