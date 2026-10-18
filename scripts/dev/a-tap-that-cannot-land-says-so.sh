@@ -46,6 +46,11 @@ def w(n):
 w(root)'
 }
 
+# The fixture is what is tapped. Without it the runner cannot be bound to
+# it, and this used to read as "the runner would not come up" — on a
+# simulator that had just been erased.
+xcrun simctl get_app_container "$UDID" "$APP" >/dev/null 2>&1 \
+  || fail "$APP is not installed on $UDID, so there is nothing to tap — install it: smix sim install $UDID test-fixtures/demo-app/build/SmixFixture.app"
 "$SMIX" sim terminate "$UDID" "$APP" >/dev/null 2>&1
 # One retry, because back-to-back runs of this gate stop and start the same
 # simulator faster than XCUITest reattaches, and the first `runner up` then
