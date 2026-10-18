@@ -4,6 +4,16 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Fixed
+
+- **iOS: `hideKeyboard` right after a tap on a field waits for the keyboard
+  that is on its way.** On a simulator just booted, the first keyboard comes
+  up slowly; a `tapOn` on a field followed at once by `hideKeyboard` found no
+  keyboard yet, answered that there was nothing to hide, and the keyboard
+  then arrived and stayed. When a field holds focus and no keyboard is in the
+  tree, `hideKeyboard` now waits up to 2 s for it. With nothing holding focus
+  it still answers at once.
+
 ## [16.3.0] — 2026-10-18
 
 ### Fixed

@@ -68,13 +68,17 @@ REMOTE_REPO="$(rssh "cd $REPO && pwd")" || fail "remote repo $REPO missing on $H
 gate_free_port_on NODE_PORT rssh || fail "could not ask $HOST for a free port"
 
 
-log "guard: no user build in flight ($HOST: cargo/xcodebuild; studio: cargo only — resident runner capsule is legitimate)"
-rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && cannot_judge "user build in flight on $HOST — yielding; re-run when it is idle"
+. "$ROOT/scripts/lib/remote-heavy-lock.sh"
+log "taking bench-lock heavy on $HOST for this run (a benchmark there is waited for, up to 20 min)"
+remote_heavy_lock "$HOST" 1200 || case $? in
+  75) cannot_judge "a benchmark held $HOST for 20 min — re-run when it is done" ;;
+  *) fail "could not take bench-lock heavy on $HOST: $REMOTE_LOCK_SAID" ;;
+esac
+log "guard: no cargo build in flight on studio (the resident runner capsule is legitimate)"
 # `skip`, not `fail` — the word "yielding" is right there. A script
 # that detects a condition it will not disturb and reports failure makes
 # a gate red for something the product did not do, and a gate that goes
-# red for reasons unrelated to the code is one people stop reading. The
-# line above this one already treats a busy batch owner as a skip.
+# red for reasons unrelated to the code is one people stop reading.
 # The process itself must be cargo: `pgrep -f` also matched a shell or an
 # ssh whose command line merely mentions a cargo build running elsewhere.
 ps -axo args= | awk '$1 ~ /(^|\/)cargo$/ && $2 == "build" { found = 1 } END { exit !found }' \
@@ -154,7 +158,7 @@ cleanup() {
   rm -f "$ROOT/launch-capture.png" "$ROOT/shot-1.png" "$ROOT/shot-2.png"
   rm -rf "$WORK"
 }
-trap cleanup EXIT
+trap 'cleanup; remote_heavy_unlock' EXIT
 
 # --- 2. source sync, mini only (house rsync shape; exclusion set not shrunk).
 #     The studio node's repo IS this checkout — the authority copies to no one. ---

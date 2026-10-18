@@ -13,7 +13,6 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
   // attempted rather than only that something was.
   var tried: [String] = []
   let outcome: HideKeyboardRoute.Outcome? = smixGuarded("hide-keyboard") {
-    guard app.keyboards.firstMatch.exists else { return .alreadyGone }
     func onScreen() -> Bool {
       let kb = app.keyboards.firstMatch
       return kb.exists
@@ -30,6 +29,22 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
       return focused.exists
         ? (focused.identifier.isEmpty ? focused.label : focused.identifier)
         : "nothing reports keyboard focus"
+    }
+    // A field that holds focus with no keyboard in the tree yet is a
+    // keyboard on its way in. On a simulator just booted the first keyboard
+    // comes up slowly: a tap on a field and an immediate hideKeyboard found
+    // no keyboard, answered that there was nothing to hide, and the keyboard
+    // arrived after and stayed (three fresh boots of three, iOS 27). With
+    // nothing holding focus no keyboard is coming, and that answer is
+    // given at once, as before.
+    if !app.keyboards.firstMatch.exists {
+      guard focusHeld() else { return .alreadyGone }
+      var until = Date().addingTimeInterval(2.0)
+      if let deadline, deadline < until { until = deadline }
+      while !app.keyboards.firstMatch.exists && Date() < until {
+        Thread.sleep(forTimeInterval: 0.1)
+      }
+      guard app.keyboards.firstMatch.exists else { return .alreadyGone }
     }
     // Below the screen is either minimized or still on its way in, and
     // one look cannot tell which: watch it until it settles somewhere.

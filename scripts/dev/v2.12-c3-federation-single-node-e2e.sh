@@ -49,8 +49,12 @@ REMOTE_REPO="$(rssh "cd $REPO && pwd")" || fail "remote repo $REPO missing on $H
 # The node's runner port, asked of the node. Its default is whoever else
 # runs smix there — the node is somebody's machine too.
 gate_free_port_on NODE_PORT rssh || fail "could not ask $HOST for a free port"
-log "guard: no user build in flight on $HOST"
-rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && cannot_judge "user build in flight on $HOST — yielding; re-run when it is idle"
+. "$ROOT/scripts/lib/remote-heavy-lock.sh"
+log "taking bench-lock heavy on $HOST for this run (a benchmark there is waited for, up to 20 min)"
+remote_heavy_lock "$HOST" 1200 || case $? in
+  75) cannot_judge "a benchmark held $HOST for 20 min — re-run when it is done" ;;
+  *) fail "could not take bench-lock heavy on $HOST: $REMOTE_LOCK_SAID" ;;
+esac
 [ -f "$ROOT/$FLOW_A" ] || fail "corpus flow missing: $FLOW_A"
 [ -f "$ROOT/$FLOW_B" ] || fail "corpus flow missing: $FLOW_B"
 
@@ -67,7 +71,7 @@ cleanup() {
   rssh "cd '$REMOTE_REPO' && rm -f launch-capture.png shot-1.png shot-2.png" || true
   rm -rf "$WORK"
 }
-trap cleanup EXIT
+trap 'cleanup; remote_heavy_unlock' EXIT
 
 # --- 2. source sync (house rsync shape; exclusion set not shrunk) ---
 log "rsync sources -> $HOST:$REPO/"

@@ -226,6 +226,20 @@ else
   exit 3
 fi
 
+# The Settings flows name what Settings shows in English, and on a
+# simulator in another language they fail as "not visible", which reads as
+# a product defect: sim-smix-02 came back from `simctl erase` in the host's
+# language (zh-Hans) and two flows went red for that alone.
+SIM_LANG="$(xcrun simctl spawn "$SMIX_CORPUS_SIM" defaults read -g AppleLanguages 2>/dev/null \
+  | tr -d ' \n()"' | cut -d, -f1)"
+case "$SIM_LANG" in
+  en | en-* | en_*) : ;;
+  *)
+    echo "error: $SMIX_CORPUS_SIM's first language is '${SIM_LANG:-unreadable}', and the Settings flows read English names — set it: smix sim locale $SMIX_CORPUS_SIM en_US --reboot" >&2
+    exit 3
+    ;;
+esac
+
 # The fixture app, which is what makes this corpus more than one subject.
 #
 # Twenty flows against Settings is one subject walked twenty ways, and a
