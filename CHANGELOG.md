@@ -41,12 +41,11 @@ All notable changes to the `smix` workspace are documented here. The format foll
 - **`smix runner up` on a simulator says when a process there keeps
   crashing.** A process that has crashed three times or more inside ten
   minutes within the last hour, and crashed again within the last ten, is
-  named on stderr with
-  the count and the times — on a simulator that is a system process dying
-  as it starts and being restarted, each time with a crash report dialog
-  on this Mac's desktop, which nothing in the runner's answers shows. The
-  runner comes up as before; `smix sim crashes <udid>` lists the reports.
-  A loop that ended earlier is not repeated here.
+  named on stderr with the count and the times — on a simulator that is a
+  system process dying as it starts and being restarted, each time with a
+  crash report dialog on this Mac's desktop, which nothing in the runner's
+  answers shows. The runner comes up as before; `smix sim crashes <udid>`
+  lists the reports. A loop that ended earlier is not repeated here.
 - `smix_adb::crash_loops` and `crash_loops_at`: the judgement `smix sim
   crashes` and `runner up` share, over any device's `CrashReport`s.
   `smix_simctl::crash_report::IpsReport::summary` gives a simulator
