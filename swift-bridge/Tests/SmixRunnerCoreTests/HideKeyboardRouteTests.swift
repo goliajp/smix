@@ -173,4 +173,24 @@ final class HideKeyboardOutcomeTests: XCTestCase {
       HideKeyboardRoute.offScreenVerdict([(0.0, .offScreen(below)), (0.1, .gone)], hold: 0.5),
       .gone)
   }
+
+  // Measured on iOS 27: a Go field's keyboard has two buttons.
+  func test_the_return_key_is_the_bottom_right_button() {
+    let buttons: [(identifier: String, frame: CGRect)] = [
+      ("shift", CGRect(x: 4.7, y: 705, width: 51.3, height: 54)),
+      ("Go", CGRect(x: 300.7, y: 759, width: 99, height: 54)),
+    ]
+    XCTAssertEqual(KeyboardReturnKey.untried(buttons: buttons, tried: []), "Go")
+    XCTAssertEqual(
+      KeyboardReturnKey.untried(buttons: Array(buttons.reversed()), tried: []), "Go")
+  }
+
+  func test_a_return_key_already_pressed_is_not_named_again() {
+    let buttons: [(identifier: String, frame: CGRect)] = [
+      ("shift", CGRect(x: 4.7, y: 705, width: 51.3, height: 54)),
+      ("Return", CGRect(x: 300.7, y: 759, width: 99, height: 54)),
+    ]
+    XCTAssertNil(KeyboardReturnKey.untried(buttons: buttons, tried: ["Return", "Done"]))
+    XCTAssertNil(KeyboardReturnKey.untried(buttons: [], tried: []))
+  }
 }
