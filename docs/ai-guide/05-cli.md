@@ -394,6 +394,16 @@ If it should go, say so:
 agree deliberately: ending somebody else's runner used to be one keystroke
 away, and silent.
 
+`--device` names the runner instead of a port: the platform is read from the
+device, and on iOS the port is the one that device's runner is recorded on.
+A device with no recorded runner stops nothing, rather than falling back to
+22087, and a `--runner-port` that is not that device's runner is refused:
+
+```
+$ smix runner down --device sim-smix-02
+error: no runner is recorded for sim-smix-02, so nothing was stopped.
+```
+
 On Android the unit is the **device**, not the port. The instrumentation is
 one package and the device-side port is fixed, so every host port forwards
 onto the same server: a device has exactly one runner, and `runner down`
