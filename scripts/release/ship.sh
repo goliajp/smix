@@ -73,6 +73,7 @@ ship_profile_close() {
 }
 trap ship_profile_close EXIT
 fail() { printf '[ship] FAIL: %s\n' "$*" >&2; exit 1; }
+. "$ROOT/scripts/lib/gate-said.sh"
 # shellcheck source=../lib/android-runner-log.sh
 . "$ROOT/scripts/lib/android-runner-log.sh"
 
@@ -538,9 +539,8 @@ s.close()')"
   }
 
   log "v10: two perception paths agree"
-  python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
-    --port "$V10_PORT" --min-both 16 --min-bounds-compared 16 --focus compose_input \
-    || v10_fail "two-paths-agree FAILED — the semantics and accessibility readers disagree"
+  run_gate two-paths-agree python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
+    --port "$V10_PORT" --min-both 16 --min-bounds-compared 16 --focus compose_input || v10_fail "$GATE_SAID"
 
   # The same reader, on the screen that has a View hosted inside Compose.
   #
@@ -554,9 +554,8 @@ s.close()')"
     || v10_fail "two-paths-agree FAILED on the interop screen"
 
   log "v10: the three that went red"
-  python3 "$ROOT/scripts/dev/the-three-that-went-red.py" --device "$V10_DEVICE" \
-    --port "$V10_PORT" \
-    || v10_fail "the-three-that-went-red FAILED — a 6.4.0 root cause is unguarded again"
+  run_gate the-three-that-went-red python3 "$ROOT/scripts/dev/the-three-that-went-red.py" \
+    --device "$V10_DEVICE" --port "$V10_PORT" || v10_fail "$GATE_SAID"
 
   log "v10: a wait that does not end early"
   # Exit 2 is "could not judge": three scrolls and this side never read
@@ -572,9 +571,8 @@ s.close()')"
   esac
 
   log "v10: a semantics action is not a touch"
-  python3 "$ROOT/scripts/dev/a-semantics-action-is-not-a-touch.py" --device "$V10_DEVICE" \
-    --port "$V10_PORT" \
-    || v10_fail "a-semantics-action-is-not-a-touch FAILED — the probe's action surface grew a touch substitute"
+  run_gate a-semantics-action-is-not-a-touch python3 "$ROOT/scripts/dev/a-semantics-action-is-not-a-touch.py" \
+    --device "$V10_DEVICE" --port "$V10_PORT" || v10_fail "$GATE_SAID"
 
   v10_runner_down
   trap - EXIT
@@ -588,17 +586,16 @@ ios_chain() {
   # modal is still in the tree and a touch aimed at it is swallowed, and smix
   # used to report that as a success.
   log "v10: a tap that cannot land says so"
-  bash "$ROOT/scripts/dev/a-tap-that-cannot-land-says-so.sh" "$SMIX_CORPUS_SIM" \
-    "${SMIX_V10_IOS_PORT:-}" \
-    || fail "a-tap-that-cannot-land-says-so FAILED — a tap nothing could receive was reported as one that landed"
+  run_gate a-tap-that-cannot-land-says-so bash "$ROOT/scripts/dev/a-tap-that-cannot-land-says-so.sh" \
+    "$SMIX_CORPUS_SIM" "${SMIX_V10_IOS_PORT:-}" || fail "$GATE_SAID"
 
   # The same shape one layer up. A request naming an app that is not on the
   # device used to hang XCUITest's `.activate()` on the main actor until the
   # watchdog killed the runner; the corpus then reported `runner unreachable`
   # about twenty-three flows that never got to run.
   log "v10: a foreground that cannot happen says so"
-  bash "$ROOT/scripts/dev/a-foreground-that-cannot-happen-says-so.sh" "$SMIX_CORPUS_SIM" \
-    || fail "a-foreground-that-cannot-happen-says-so FAILED — either the refusal did not name the missing app, or the runner did not survive it"
+  run_gate a-foreground-that-cannot-happen-says-so \
+    bash "$ROOT/scripts/dev/a-foreground-that-cannot-happen-says-so.sh" "$SMIX_CORPUS_SIM" || fail "$GATE_SAID"
 
   log "corpus gate on $SMIX_CORPUS_SIM"
   SMIX_CORPUS_SIM="$SMIX_CORPUS_SIM" \
