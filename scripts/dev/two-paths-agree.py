@@ -660,6 +660,26 @@ def main():
             if node.get("hasFocus"):
                 break
             time.sleep(0.5)
+        # Focus is not the end of what it does to the screen: on the Compose
+        # screen a row appears above `compose_result` after the field takes
+        # focus, and everything below moves 47 px (measured 2026-10-18, 4.4 s
+        # after the tap). Read in the middle of that, one reader saw the rows
+        # before and the other after, and the gate named nine tags in two
+        # places. The screen and the focus are already established here, so
+        # what is waited for is the layout settling: both readers giving the
+        # same places twice running.
+        last = None
+        for _ in range(20):
+            settled_a11y = fetch_a11y(args.binary, args.device, args.port)
+            settled_sem = fetch_semantics(args.device, args.app)
+            places = (
+                {t: n.get("bounds") for t, n in a11y_tags(settled_a11y or {}).items()},
+                {t: n.get("bounds") for t, (n, _) in semantics_tags(settled_sem or []).items()},
+            )
+            if places == last:
+                break
+            last = places
+            time.sleep(0.5)
 
     if args.a11y and args.semantics:
         a11y_tree = unwrap(json.load(open(args.a11y)))
