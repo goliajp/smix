@@ -109,12 +109,18 @@ mod tests {
 
     #[test]
     fn a_device_says_which_platform_s_runner_goes() {
-        assert_eq!(down_platform(None, Some(DeviceKind::Emulator)), Ok(RunPlatform::Android));
+        assert_eq!(
+            down_platform(None, Some(DeviceKind::Emulator)),
+            Ok(RunPlatform::Android)
+        );
         assert_eq!(
             down_platform(None, Some(DeviceKind::PhysicalAndroid)),
             Ok(RunPlatform::Android)
         );
-        assert_eq!(down_platform(None, Some(DeviceKind::Simulator)), Ok(RunPlatform::Ios));
+        assert_eq!(
+            down_platform(None, Some(DeviceKind::Simulator)),
+            Ok(RunPlatform::Ios)
+        );
     }
 
     #[test]
@@ -129,7 +135,10 @@ mod tests {
     #[test]
     fn an_ios_device_s_runner_is_the_one_its_record_names() {
         assert_eq!(ios_down_port("sim-a", Some(22091), None, false), Ok(22091));
-        assert_eq!(ios_down_port("sim-a", Some(22091), Some(22091), false), Ok(22091));
+        assert_eq!(
+            ios_down_port("sim-a", Some(22091), Some(22091), false),
+            Ok(22091)
+        );
     }
 
     #[test]

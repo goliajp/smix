@@ -3815,7 +3815,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     include_unrecorded,
                     take_over,
                     runner_port,
-                } => runner_down::run(platform, device, include_unrecorded, take_over, runner_port)?,
+                } => {
+                    runner_down::run(platform, device, include_unrecorded, take_over, runner_port)?
+                }
                 RunnerAction::Cycle {
                     platform,
                     runner_project,
