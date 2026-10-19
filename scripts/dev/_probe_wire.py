@@ -18,9 +18,11 @@ import time
 
 
 # Every content call this process made: (method, seconds, exit code,
-# stderr). A gate that saw no answer once could not tell one call that
-# hung for half a minute from thirty that each failed at once, because
-# only stdout was kept (2026-10-14, a release stopped on it).
+# stderr, the probe's own error field). A gate that saw no answer once
+# could not tell one call that hung for half a minute from thirty that
+# each failed at once, because only stdout was kept (2026-10-14, a
+# release stopped on it). The probe reports a busy main thread on stdout
+# with exit 0, so stderr alone reads as silence.
 CALLS = []
 
 
@@ -29,10 +31,11 @@ def calls_said():
     if not CALLS:
         return "no content call was made"
     longest = max(CALLS, key=lambda c: c[1])
-    method, secs, code, err = CALLS[-1]
+    method, secs, code, err, said = CALLS[-1]
     return (f"{len(CALLS)} content call(s); the longest took {longest[1]:.1f} s "
             f"({longest[0]}); the last ({method}) exited {code} after {secs:.1f} s"
-            + (f" saying: {err}" if err else " with nothing on stderr"))
+            + (f" saying: {err}" if err else " with nothing on stderr")
+            + (f"; the probe answered: {said}" if said else ""))
 
 
 def probe_call(device, app, method, arg=None, extra=None):
@@ -47,7 +50,7 @@ def probe_call(device, app, method, arg=None, extra=None):
     started = time.monotonic()
     r = subprocess.run(cmd, capture_output=True, text=True)
     CALLS.append((method, time.monotonic() - started, r.returncode,
-                  r.stderr.strip()[-300:]))
+                  r.stderr.strip()[-300:], bundle_field(r.stdout, "error")))
     return r.stdout
 
 
@@ -147,7 +150,8 @@ def bring_to_front(device, app, timeout_s=30):
 
 
 def wait_for_probe(device, app, timeout_s=30):
-    """Wait until the probe answers with a tree. True, or False on timeout.
+    """Wait until the probe answers with a non-empty tree. True, or False
+    on timeout.
 
     Three gates force-stopped the app, started it, and slept two
     seconds. Measured 2026-08-29 on this emulator: after a force-stop the
@@ -158,10 +162,15 @@ def wait_for_probe(device, app, timeout_s=30):
     feature rather than about a screen that had not arrived.
 
     A fixed wait makes a slow screen look like a wrong answer. Ask.
+
+    An empty tree is not an answer about the screen: the probe is armed
+    before the first `setContent`, so right after a start it says `[]`
+    until the screen composes, and under load the next read can land on
+    that first composition and come back busy with no tree at all.
     """
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        if probe_tree(device, app) is not None:
+        if probe_tree(device, app):
             return True
         time.sleep(0.5)
     return False
