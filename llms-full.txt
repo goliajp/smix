@@ -1624,7 +1624,10 @@ already have: `tapOn` it, then the scalar form.
   a button answers `keyboard_did_not_close` instead of pressing one, and
   names the field's return key when it is one of those (`return key:
   Search, the field's own submit, not pressed`). If submitting is what
-  the flow wants, `pressKey: enter` presses it.
+  the flow wants, `pressKey: enter` presses it. A field that already
+  holds focus with no keyboard in the tree yet (the first keyboard on a
+  simulator just booted comes up slowly) is given up to 2 s for the
+  keyboard to arrive before the answer is "no keyboard".
 - Android: Kotlin runner `/hide-keyboard` → `IME.hide()`.
 
 **It answers about the keyboard, not about itself.** No keyboard present
@@ -2930,7 +2933,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:16.3.0")
+    debugImplementation("jp.golia.smix:smix-probe:16.3.1")
 }
 ```
 

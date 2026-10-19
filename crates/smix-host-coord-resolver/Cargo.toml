@@ -17,10 +17,10 @@ categories = ["development-tools::testing"]
 workspace = true
 
 [dependencies]
-smix-input = { path = "../smix-input", version = "16.3.0" }
-smix-screen = { path = "../smix-screen", version = "16.3.0" }
-smix-selector = { path = "../smix-selector", version = "16.3.0" }
-smix-selector-resolver = { path = "../smix-selector-resolver", version = "16.3.0" }
+smix-input = { path = "../smix-input", version = "16.3.1" }
+smix-screen = { path = "../smix-screen", version = "16.3.1" }
+smix-selector = { path = "../smix-selector", version = "16.3.1" }
+smix-selector-resolver = { path = "../smix-selector-resolver", version = "16.3.1" }
 thiserror.workspace = true
 
 [dev-dependencies]
