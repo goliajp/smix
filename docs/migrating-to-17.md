@@ -21,6 +21,10 @@ for code that implements smix's traits.
 - `smix_adapter_maestro::Step` has a new variant `Pinch { at, spans,
   duration_ms, pan }`, and there is a new `PinchAt` enum. `Step` was already
   `#[non_exhaustive]`; a `match` with a wildcard arm keeps compiling.
+- `smix_adapter_maestro::selector_support::Slot` has a new variant
+  `PinchTarget` (the element a `pinch: { over: }` names), placed after
+  `SwipeOverTarget`, so the two variants after it moved by one. A `match` on
+  `Slot` adds an arm; code casting a `Slot` to a number reads the new value.
 - New in `smix_input`: `Pinch`, `Pan`, `PinchSpans`, and the constants
   `PINCH_SCALE_SPAN`, `PINCH_DEFAULT_DURATION_MS`, `PINCH_DEFAULT_PAN_MS`,
   `PINCH_DURATION_RANGE`.
