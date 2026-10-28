@@ -21,7 +21,7 @@ use smix_error::{FailureCode, FailureInit};
 use std::time::Duration;
 
 use smix_error::ExpectationFailure;
-use smix_input::{KeyName, SwipeDirection};
+use smix_input::{KeyName, Pinch, SwipeDirection};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
@@ -355,6 +355,11 @@ pub trait Driver: Send + Sync {
         from: (f64, f64),
         to: (f64, f64),
     ) -> Result<(), ExpectationFailure>;
+
+    /// Two fingers moved apart or together about a point, with an optional
+    /// drag before they lift. A finger that would leave the screen is the
+    /// runner's refusal, not a clipped gesture.
+    async fn pinch(&self, pinch: &Pinch) -> Result<(), ExpectationFailure>;
 
     /// Dismiss the keyboard.
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure>;

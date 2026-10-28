@@ -2353,6 +2353,23 @@ impl App {
         self.driving()?.swipe_at_norm_coord(from, to).await
     }
 
+    /// Two fingers moved apart (zoom in) or together (zoom out) about
+    /// `pinch.centre`, optionally dragged before they lift.
+    ///
+    /// Checked here first, in the caller's terms; a finger that would
+    /// leave this particular screen is the runner's refusal, which names
+    /// the finger and the point.
+    pub async fn pinch(&self, pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure> {
+        if let Err(why) = pinch.check() {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("pinch: {why}"),
+                ..Default::default()
+            }));
+        }
+        self.driving()?.pinch(pinch).await
+    }
+
     /// Swipe one gesture anchored at an element: the gesture starts from
     /// the selector's resolved centroid instead of the viewport centre.
     ///

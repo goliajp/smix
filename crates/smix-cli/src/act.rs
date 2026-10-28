@@ -183,7 +183,7 @@ pub enum ActError {
 /// half of C3: the same capability reaches the same driver from every
 /// entrance. iOS-only sense (`describe`) stays on `SimctlDriver` because
 /// it is an inherent method, not on the `Driver` trait.
-fn driver_for(platform: Platform, port: u16) -> Box<dyn Driver> {
+pub(crate) fn driver_for(platform: Platform, port: u16) -> Box<dyn Driver> {
     let client = HttpRunnerClient::new(port);
     match platform {
         Platform::Android => Box::new(AndroidDriver::new(client)),

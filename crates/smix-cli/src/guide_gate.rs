@@ -319,11 +319,13 @@ impl AppLike for MockApp {
         // `btn-ptz-stop` is the guide's `rememberBounds` /
         // `assertBoundsUnchanged` example, which measures a named
         // element's box the same way; `summary-card` is the element the
-        // screenshot examples crop to.
+        // screenshot examples crop to; `player` is what the pinch examples
+        // zoom.
         Ok(box_named(
             "root",
             vec![
                 box_named("view-timeline", Vec::new()),
+                box_named("player", Vec::new()),
                 box_named("btn-ptz-stop", Vec::new()),
                 box_named("summary-card", Vec::new()),
             ],
@@ -413,6 +415,9 @@ impl AppLike for MockApp {
     ) -> Result<Vec<String>, ExpectationFailure> {
         self.record(MockCall::Launch(format!("{opts:?}")));
         Ok(vec![])
+    }
+    async fn pinch(&self, _pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure> {
+        Ok(())
     }
     async fn swipe_at_coord(
         &self,
@@ -755,7 +760,7 @@ fn remove_artifacts(flow: &smix_adapter_maestro::Flow) {
 const KNOWN_BROKEN: &[(&str, usize, &str)] = &[
     (
         "02-yaml-reference",
-        11,
+        12,
         "repeat.while.visible loops until the element leaves the screen; \
          a mock that always says visible never exits, and one that said \
          otherwise would be inventing a screen.",

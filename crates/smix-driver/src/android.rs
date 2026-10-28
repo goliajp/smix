@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_host_coord_resolver::{HostResolveError, resolve_to_norm_coord};
-use smix_input::{KeyName, SwipeDirection};
+use smix_input::{KeyName, Pinch, SwipeDirection};
 use smix_runner_client::{HttpRunnerClient, IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::{A11yNode, DEFAULT_VISIBLE_LIMIT, collect_visible_summaries, screen_facts};
 use smix_selector::{Selector, describe_selector};
@@ -659,6 +659,16 @@ impl Driver for AndroidDriver {
                     ..Default::default()
                 })
             })
+    }
+
+    async fn pinch(&self, pinch: &Pinch) -> Result<(), ExpectationFailure> {
+        self.runner.pinch_at_norm_coord(pinch).await.map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("AndroidDriver::pinch: {e}"),
+                ..Default::default()
+            })
+        })
     }
 
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure> {

@@ -66,6 +66,8 @@ enum MockCall {
     OpenUrl(String),
     /// `App::swipe_at_coord(from, to)`.
     SwipeAtCoord((f64, f64), (f64, f64)),
+    /// `App::pinch(pinch)`.
+    Pinch(smix_input::Pinch),
     /// `App::scroll_screen(direction)`.
     ScrollScreen(SwipeDirection),
     /// `App::assert_not_visible(selector)`. Adapter only records
@@ -720,6 +722,10 @@ impl AppLike for MockApp {
             .unwrap()
             .push(MockCall::LaunchAppWithOptions(opts.clone()));
         Ok(Vec::new())
+    }
+    async fn pinch(&self, pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure> {
+        self.calls.lock().unwrap().push(MockCall::Pinch(*pinch));
+        Ok(())
     }
     async fn swipe_at_coord(
         &self,
@@ -4375,4 +4381,88 @@ async fn a_subflow_file_naming_its_app_logically_launches_that_app() {
         })
         .collect();
     assert_eq!(launched, vec!["com.example.app".to_string()]);
+}
+
+// --- pinch ---------------------------------------------------------------
+
+fn pinches(app: &MockApp) -> Vec<smix_input::Pinch> {
+    app.calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            MockCall::Pinch(p) => Some(*p),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn pinch_at_a_point_sends_scales_as_spans_with_the_drag() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- pinch: { at: \"50%,40%\", from: 1, to: 3, pan: \"0%,-20%\" }\n",
+    )
+    .unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect("run ok");
+    let sent = pinches(&app);
+    assert_eq!(sent.len(), 1, "one pinch: {:?}", app.calls.lock().unwrap());
+    let p = sent[0];
+    assert_eq!(p.centre, (0.5, 0.4));
+    assert!(
+        (p.from_span - 0.2).abs() < 1e-9 && (p.to_span - 0.6).abs() < 1e-9,
+        "{p:?}"
+    );
+    assert_eq!(p.duration_ms, 500);
+    assert_eq!(
+        p.pan,
+        Some(smix_input::Pan {
+            dx: 0.0,
+            dy: -0.2,
+            ms: 300
+        })
+    );
+}
+
+#[tokio::test]
+async fn pinch_over_an_element_meets_at_its_centre() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- pinch: { over: { id: \"fixture-input\" }, fromSpan: 0.5, toSpan: 0.25 }\n",
+    )
+    .unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect("run ok");
+    let sent = pinches(&app);
+    assert_eq!(sent.len(), 1);
+    let (x, y) = sent[0].centre;
+    assert!(
+        (0.0..=1.0).contains(&x) && (0.0..=1.0).contains(&y),
+        "{x} {y}"
+    );
+    assert_ne!(
+        sent[0].centre,
+        (0.5, 0.5),
+        "the element's centre, not the screen's"
+    );
+    assert_eq!((sent[0].from_span, sent[0].to_span), (0.5, 0.25));
+}
+
+#[tokio::test]
+async fn pinch_over_a_missing_element_sends_nothing() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- pinch: { over: { id: \"no-such-thing\" }, from: 1, to: 3 }\n",
+    )
+    .unwrap();
+    assert!(Adapter::new(&app, fixtures_dir()).run(&flow).await.is_err());
+    assert!(
+        pinches(&app).is_empty(),
+        "no pinch at the middle of the screen instead"
+    );
 }

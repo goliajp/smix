@@ -259,6 +259,7 @@ mod expr;
 mod junit;
 mod output;
 mod parser;
+mod pinch;
 mod runtime;
 pub mod selector_support;
 mod watch;
@@ -546,6 +547,21 @@ pub enum Step {
         from: (f64, f64),
         /// End, same frame of reference.
         to: (f64, f64),
+    },
+    /// Two fingers moved apart or together about a point — smix's own
+    /// verb; maestro has no pinch. The point is an element's centre or a
+    /// share of the screen, the distances are zoom factors or shares of
+    /// the screen's shorter side, and `pan` drags both fingers before
+    /// they lift.
+    Pinch {
+        /// Where the two fingers' midpoint is.
+        at: PinchAt,
+        /// How far apart the fingers start and end.
+        spans: smix_input::PinchSpans,
+        /// Length of the pinch, in milliseconds.
+        duration_ms: u64,
+        /// A drag after the pinch, fingers still down.
+        pan: Option<smix_input::Pan>,
     },
     /// Launch / relaunch the app under test. Supports the full maestro
     /// yaml sub-parameter set: appId / clearState / clearKeychain /
@@ -1196,6 +1212,18 @@ fn is_default_until(u: &smix_driver::ScrollUntil) -> bool {
 /// [`smix_driver::ScrollUntil`] in the words a flow uses for it:
 /// `visibilityPercentage` (1–100), `centerElement`, `timeout` in
 /// milliseconds.
+/// Where a [`Step::Pinch`] is centred.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub enum PinchAt {
+    /// The centre of the element's box.
+    Over(Selector),
+    /// A point as shares of the screen (0..1) — the coordinate form, for a
+    /// screen with nothing nameable at the place to pinch.
+    Point((f64, f64)),
+}
+
 mod scroll_until_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use smix_driver::ScrollUntil;

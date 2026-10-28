@@ -198,6 +198,7 @@ pub const ROUTES: &[Route] = &[
     r("/long-press-at-norm-coord", NONE, REQ, false),
     r("/swipe-at-norm-coord", ms(0), ms(500), true),
     r("/swipe-once", ms(0), ms(500), true),
+    r("/pinch-at-norm-coord", REQ, REQ, true),
     r("/press-key", ms(0), ms(500), false),
     // iOS: five navigation settles of 2 s, two synthesis waits of 5 s and
     // one fixed 0.5 s settle. Android: up to 1.5 s for a still screen

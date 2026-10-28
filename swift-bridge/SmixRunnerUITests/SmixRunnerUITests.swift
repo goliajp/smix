@@ -2727,6 +2727,54 @@ final class SmixRunnerUITests: XCTestCase {
           return false
         }
       },
+      // POST /pinch-at-norm-coord handler. Planned against the app's
+      // frame, every point delivered the same way a swipe's are.
+      pinchHandler: { req in
+        let app = await resolveApp()
+        var size = CGSize.zero
+        var origin = CGPoint.zero
+        var layout = SmixLayout(size: .zero, orientation: .portrait, source: "frame")
+        let setupOk = smixGuarded("pinch-at-norm-coord-setup") {
+          let frame = app.frame
+          size = frame.size
+          origin = frame.origin
+          layout = smixLayout(of: app)
+          return true
+        }
+        guard setupOk == true else { return .notDispatched }
+        let plan: PinchRoute.PinchPlan
+        do {
+          plan = try PinchRoute.plan(req, size: size)
+        } catch {
+          return .refused("\(error)")
+        }
+        func deliver(_ p: CGPoint) -> CGPoint {
+          smixDelivery(of: CGPoint(x: origin.x + p.x, y: origin.y + p.y), layout: layout).point
+        }
+        func both(_ f: PinchRoute.Fingers) -> PinchRoute.Fingers {
+          PinchRoute.Fingers(deliver(f.first), deliver(f.second))
+        }
+        let stamp = smixDelivery(of: CGPoint(x: origin.x, y: origin.y), layout: layout).orientation
+        guard let record = SmixEventRecord(orientation: stamp),
+          record.addPointerPinch(
+            PinchRoute.PinchPlan(
+              down: both(plan.down), start: both(plan.start), pinched: both(plan.pinched),
+              end: both(plan.end)),
+            durationMs: req.durationMs, panMs: req.panMs)
+        else {
+          FileHandle.standardError.write(
+            Data("smix-runner: pinch-at-norm-coord: XCSynthesizedEventRecord / XCPointerEventPath unavailable\n".utf8))
+          return .notDispatched
+        }
+        do {
+          try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
+          return .dispatched(plan)
+        } catch {
+          FileHandle.standardError.write(
+            Data("smix-runner: pinch-at-norm-coord: synthesize error: \(error)\n".utf8))
+          return .notDispatched
+        }
+      },
       // POST /set-orientation handler. XCUIDevice.shared.orientation
       // public XCUI API. orientation literal aligned with iOS UIDeviceOrientation
       // raw values via switch mapping.
