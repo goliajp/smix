@@ -57,6 +57,7 @@ KNOWS_PRIOR_STATE = re.compile(
 SHUTS_DOWN_SCRIPTS = {
     "v10.2-c1-devicectl-capture-e2e.sh",
     "v16.0-c11-pinch-e2e.sh",
+    "v17.0-c2-a-view-beside-compose-e2e.sh",
     "v10.2-c2-devicectl-pasteboard-e2e.sh",
     "v10.2-c3-devicectl-location-e2e.sh",
     "v11.0-c1-a-press-that-lands-e2e.sh",

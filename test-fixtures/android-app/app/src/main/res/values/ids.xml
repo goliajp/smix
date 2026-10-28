@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="fixture_input" type="id" />
+    <item name="scale_state" type="id" />
+    <item name="scale_reset" type="id" />
+    <item name="scale_surface" type="id" />
     <item name="fixture_submit" type="id" />
     <item name="fixture_result" type="id" />
     <item name="fixture_blocked_ticker" type="id" />

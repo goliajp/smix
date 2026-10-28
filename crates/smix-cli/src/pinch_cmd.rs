@@ -1,7 +1,7 @@
 //! `smix pinch <selector>` — two fingers about an element or a point.
 
 use smix_driver::Platform;
-use smix_input::{Pan, Pinch, PinchSpans};
+use smix_input::{Pan, Pinch, PinchSpans, RunUp};
 use smix_selector::Selector;
 
 use crate::act::{ActError, driver_for, parse_selector};
@@ -16,6 +16,7 @@ pub struct PinchArgs {
     pub duration_ms: u64,
     pub pan: Option<String>,
     pub pan_ms: u64,
+    pub run_up: String,
 }
 
 /// The finger distances the flags name: one whole pair.
@@ -56,15 +57,15 @@ pub async fn cmd_pinch(args: PinchArgs, port: u16, platform: Platform) -> Result
     let pan = args
         .pan
         .as_deref()
-        .map(|s| {
-            pan(s).map(|(dx, dy)| Pan {
-                dx,
-                dy,
-                ms: args.pan_ms,
-            })
-        })
+        .map(|s| pan(s).map(|(dx, dy)| Pan::new(dx, dy, args.pan_ms)))
         .transpose()
         .map_err(bad)?;
+    let run_up = RunUp::from_name(&args.run_up).ok_or_else(|| {
+        bad(format!(
+            "--run-up {}: expected spread, slide or none",
+            args.run_up
+        ))
+    })?;
     let d = driver_for(platform, port);
     let centre = match &selector {
         Selector::Point { nx, ny } => (*nx, *ny),
@@ -77,13 +78,10 @@ pub async fn cmd_pinch(args: PinchArgs, port: u16, platform: Platform) -> Result
                 .map_err(|e| bad(format!("no centre to pinch about: {e:?}")))?
         }
     };
-    let pinch = Pinch {
-        centre,
-        from_span,
-        to_span,
-        duration_ms: args.duration_ms,
-        pan,
-    };
+    let pinch = Pinch::new(centre, from_span, to_span)
+        .with_duration_ms(args.duration_ms)
+        .with_pan(pan)
+        .with_run_up(run_up);
     pinch.check().map_err(bad)?;
     d.pinch(&pinch)
         .await
@@ -113,6 +111,7 @@ mod tests {
             duration_ms: 500,
             pan: None,
             pan_ms: 300,
+            run_up: "spread".into(),
         }
     }
 

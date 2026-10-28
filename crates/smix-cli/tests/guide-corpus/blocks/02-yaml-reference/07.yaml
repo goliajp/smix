@@ -17,3 +17,10 @@
     to: 3
     pan: "0%,-20%"                       # a fifth of the screen up
     panDuration: 300                     # ms; default 300
+
+# A recognizer that counts from the touch, or begins on any movement:
+- pinch:
+    over: { id: "player" }
+    from: 1
+    to: 3
+    runUp: slide                         # spread (default) | slide | none

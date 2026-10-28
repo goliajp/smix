@@ -265,10 +265,18 @@ object SemanticsProbe {
             // and a probe that leaves it out sees LESS than the
             // accessibility path it replaces.
             val hosted = root.view.hostedViews()
-            root.view.rootView to (if (hosted.isEmpty()) node else HostedNesting.nest(node, hosted))
+            root.view to (if (hosted.isEmpty()) node else HostedNesting.nest(node, hosted))
+        }
+        // The Views each window draws beside its Compose roots, and the
+        // roots of one window in the order that window draws them — see
+        // [WindowSiblings].
+        val withSiblings = composed.groupBy { it.first.rootView }.flatMap { (window, inWindow) ->
+            val index = inWindow.withIndex().associate { (i, item) -> item.first to i }
+            WindowSiblings.attach(inWindow.map { it.second }, WindowSiblings.walk(window, index))
+                .map { window to it }
         }
         val windows = WindowInspector.getGlobalWindowViews()
-        val stacked = StackOrder.bottomFirst(composed + windowsWithoutCompose(compose), { it.first }, windows)
+        val stacked = StackOrder.bottomFirst(withSiblings + windowsWithoutCompose(compose), { it.first }, windows)
         return Occlusion.prune(
             stacked.map { (window, root) -> opaqueFace(window) to root.copy(modal = takesEveryTouch(window)) },
         ).toWireJson()
