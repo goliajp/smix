@@ -21,7 +21,7 @@
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_host_coord_resolver::{HostResolveError, resolve_to_norm_coord};
-use smix_input::{KeyName, SwipeDirection};
+use smix_input::{KeyName, Pinch, SwipeDirection};
 use smix_screen::{
     A11yNode, DEFAULT_VISIBLE_LIMIT, ScreenDescription, collect_visible_summaries, screen_facts,
     summarize_node,
@@ -1093,6 +1093,14 @@ impl IosDriver {
             .await
             .map_err(transport_to_failure)?;
         Ok(())
+    }
+
+    /// `POST /pinch-at-norm-coord` passthru — two fingers in one gesture.
+    pub async fn pinch(&self, pinch: &Pinch) -> Result<(), ExpectationFailure> {
+        self.runner
+            .pinch_at_norm_coord(pinch)
+            .await
+            .map_err(transport_to_failure)
     }
 
     /// `POST /foreground {bundleId}` passthru.

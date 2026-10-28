@@ -35,6 +35,8 @@ const ROSTER: &[&str] = &[
     // in raw pixels would give `within: 1` a different meaning on each
     // phone.
     "pixels_per_point",
+    // Two fingers at once; every other gesture here is one finger.
+    "pinch",
     "press_key",
     "set_orientation",
     "swipe_at_norm_coord",

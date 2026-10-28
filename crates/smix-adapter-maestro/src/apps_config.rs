@@ -229,6 +229,7 @@ fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
         Step::NeverVisible { during, .. } => Some(during),
         Step::TapOn { .. }
         | Step::SwipeOver { .. }
+        | Step::Pinch { .. }
         | Step::RepeatTap { .. }
         | Step::DoubleTapOn { .. }
         | Step::LongPressOn { .. }

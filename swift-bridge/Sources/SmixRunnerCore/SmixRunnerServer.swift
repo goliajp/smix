@@ -695,6 +695,10 @@ public actor SmixRunnerServer {
     _ fromNx: Double, _ fromNy: Double, _ toNx: Double, _ toNy: Double
   ) async -> Bool
 
+  /// POST /pinch-at-norm-coord handler: two fingers in one synthesized
+  /// event record. Plans with `PinchRoute.plan` against the app's frame.
+  public typealias PinchHandler = @Sendable (PinchRoute.PinchRequest) async -> PinchRoute.Outcome
+
   /// POST /set-orientation handler. XCUIDevice.shared.orientation is a
   /// framework-documented public XCUI property, so the rule requiring
   /// private symbols to be resolved via dlsym does not apply here.
@@ -1498,6 +1502,7 @@ public actor SmixRunnerServer {
     findTextByOcrHandler: FindTextByOcrHandler? = nil,
     screenshotHandler: ScreenshotHandler? = nil,
     swipeAtCoordHandler: SwipeAtCoordHandler? = nil,
+    pinchHandler: PinchHandler? = nil,
     setOrientationHandler: SetOrientationHandler? = nil,
     recordHandlers: RecordHandlers? = nil,
     selectResolveHandler: SelectResolveHandler? = nil,
@@ -2256,6 +2261,22 @@ public actor SmixRunnerServer {
         ) {
           let ok = await swipeAtCoordHandler(req.fromNx, req.fromNy, req.toNx, req.toNy)
           return SwipeAtCoordRoute.success(ok: ok)
+        }
+      }
+    }
+
+    if let pinchHandler {
+      // OK MEANS: injected — both fingers' touches were dispatched along the planned paths; whether the app zoomed is the caller's next assertion.
+      // LONGEST WAIT /pinch-at-norm-coord: from the request — durationMs + panMs and 0.4 s around them (prerollMs, holdBeforeLiftMs)
+      await server.appendRoute("POST /pinch-at-norm-coord") { request in
+        let req: PinchRoute.PinchRequest
+        do {
+          req = try PinchRoute.decode(try await request.bodyData)
+        } catch {
+          return PinchRoute.badRequest(reason: "\(error)")
+        }
+        return await Self.contextGuardedResponse(request: request, fallback: PinchRoute.failure()) {
+          PinchRoute.response(for: await pinchHandler(req))
         }
       }
     }

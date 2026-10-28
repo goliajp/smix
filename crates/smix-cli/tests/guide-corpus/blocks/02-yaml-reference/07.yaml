@@ -1,8 +1,19 @@
-- pressKey: ENTER                        # ENTER / TAB / SPACE / DELETE / ESCAPE
-- pressKey: HOME                         # iOS home button
-- pressKey: VOLUME_UP                    # Android; iOS fails the step by name
-- pressKey: Back                         # the same as `- back`
-- back                                   # navigation back
-- back:
-    optional: true                       # skipped, not failed, if the screen never moved
-    label: "close the detail"            # name reports use for the step
+- pinch:
+    over: { id: "player" }               # the fingers meet at this element's centre
+    from: 1                              # zoom factor at the start
+    to: 3                                # ...and at the end: 1 → 3 zooms in threefold
+    duration: 500                        # ms, 50..10000; default 500
+
+- pinch:
+    at: "50%,50%"                        # a point on the screen, when nothing there has a name
+    fromSpan: 0.6                        # finger distances as shares of the screen's shorter side
+    toSpan: 0.2                          # 0.6 → 0.2 zooms out
+
+# Zoom and then drag without lifting: both fingers move together by
+# `pan` (shares of the screen's width and height) after the pinch.
+- pinch:
+    over: { id: "player" }
+    from: 1
+    to: 3
+    pan: "0%,-20%"                       # a fifth of the screen up
+    panDuration: 300                     # ms; default 300

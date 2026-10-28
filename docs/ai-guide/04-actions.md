@@ -328,6 +328,21 @@ looking is `keyboard_state_unknown` — see
 [07 — Error codes](07-errors.md). Until 9.0.0 all four cases answered
 `ok: true`.
 
+## Pinch
+
+```yaml
+- pinch: { over: { id: "player" }, from: 1, to: 3 }
+```
+
+- iOS: two touch paths in one synthesized event record — two fingers on the
+  screen at once.
+- Android: two-pointer touchscreen motion events (`ACTION_POINTER_DOWN`
+  … `ACTION_POINTER_UP`) injected through UiAutomation.
+- `ok` means every touch of both fingers went in; whether the app zoomed is
+  the next step's question (read its zoom label, or assert on what the
+  zoom reveals).
+- Full shape and limits: [02 — YAML reference](02-yaml-reference.md#pinch-two-fingers).
+
 ## Scroll
 
 ### One-shot scroll

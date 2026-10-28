@@ -306,6 +306,16 @@ object RunnerWire {
     fun decodeAimedBy(payload: String): HitChain.Reader =
         HitChain.Reader.named(JSONObject(payload).optString("aimedBy").ifEmpty { null })
 
+    /// `/pinch-at-norm-coord`: `ok` and where both fingers started and ended.
+    fun pinchBody(ok: Boolean, plan: PinchGesture.Plan): String = JSONObject()
+        .put("ok", ok)
+        .put("fingers", JSONObject().put("from", fingerPair(plan.start)).put("to", fingerPair(plan.end)))
+        .toString()
+
+    private fun fingerPair(f: PinchGesture.Fingers): JSONArray = JSONArray()
+        .put(JSONObject().put("x", Math.round(f.first.x)).put("y", Math.round(f.first.y)))
+        .put(JSONObject().put("x", Math.round(f.second.x)).put("y", Math.round(f.second.y)))
+
     fun swipeAtNormCoordBody(ok: Boolean, q: SwipeQuad): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "swipe_returned_false")

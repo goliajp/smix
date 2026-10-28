@@ -39,6 +39,7 @@ smix-annotate = { path = "../smix-annotate", version = "16.3.1" }
 smix-recorder = { path = "../smix-recorder", version = "16.3.1" }
 smix-authoring-propose = { path = "../smix-authoring-propose", version = "16.3.1" }
 smix-input = { path = "../smix-input", version = "16.3.1" }
+smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "16.3.1" }
 serde_norway.workspace = true
 smix-selector = { path = "../smix-selector", version = "16.3.1" }
 smix-screen = { path = "../smix-screen", version = "16.3.1" }
