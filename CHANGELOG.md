@@ -4,6 +4,8 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+## [17.0.0] — 2026-10-29
+
 ### Added
 
 - **`pinch` — two fingers in one gesture, on iOS and Android.** A flow can
@@ -17,12 +19,17 @@ All notable changes to the `smix` workspace are documented here. The format foll
   recognizer is already counting when the pinch begins: 1 → 3 measures
   about 3.0x on iOS and 3.1x on Android.
 
-### Changed
+### Breaking
 
-- **Breaking (Rust API):** the `Driver` trait and the flow adapter's
-  `AppLike` trait each gain a required `pinch` method; an implementation
-  outside this workspace must add it. See
-  [docs/migrating-to-17.md](docs/migrating-to-17.md).
+- **Rust API: the `Driver` trait has a new required method, `pinch`.** A
+  `Driver` implemented outside smix must add it.
+- **Rust API: the flow adapter's `AppLike` trait has a new required method,
+  `pinch`.** Test doubles that implement it add one that records or ignores
+  the call.
+- **Rust API: `selector_support::Slot` has a new variant, `PinchTarget`.**
+  The two variants after it moved by one; a `match` on `Slot` adds an arm.
+
+What to change, and nothing else: [docs/migrating-to-17.md](docs/migrating-to-17.md).
 
 ## [16.3.1] — 2026-10-19
 

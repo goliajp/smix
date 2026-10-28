@@ -46,9 +46,9 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "cc"
-version = "1.8.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6651c9ed80effdc7db0ff72512157f901af5e3549e341e24b1dd4887d836d838"
+checksum = "86e055fa6e3e40ad6187ba25b6855eeb635d5271f8e0f0e1e9a5826b8d75bea0"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -94,9 +94,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.14"
+version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "futures-core"
@@ -588,7 +588,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smix-error"
-version = "16.3.1"
+version = "17.0.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -597,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "smix-lease"
-version = "16.3.1"
+version = "17.0.0"
 dependencies = [
  "chrono",
  "serde",
@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "16.3.1"
+version = "17.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "16.3.1"
+version = "17.0.0"
 dependencies = [
  "regex",
  "serde",
@@ -624,14 +624,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "16.3.1"
+version = "17.0.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "16.3.1"
+version = "17.0.0"
 dependencies = [
  "libc",
  "serde",
@@ -655,7 +655,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "16.3.1"
+version = "17.0.0"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -717,9 +717,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.53.3"
+version = "1.54.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
+checksum = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"
 dependencies = [
  "bytes",
  "libc",

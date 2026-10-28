@@ -30,15 +30,15 @@ npm install -g @goliapkg/smix-cli
 cargo install smix-cli --locked
 
 # Swift Package Manager
-# add https://github.com/goliajp/smix (product: SmixSDK, from: "16.3.1")
+# add https://github.com/goliajp/smix (product: SmixSDK, from: "17.0.0")
 
 # Gradle / Maven (Kotlin / Java)
-# implementation("jp.golia.smix:smix-sdk:16.3.1")
+# implementation("jp.golia.smix:smix-sdk:17.0.0")
 
 # Optional, Android only, debug builds only: lets smix read Compose's own
 # semantics tree instead of the accessibility projection of it, so a control
 # inside a dialog can be addressed by id. Everything works without it.
-# debugImplementation("jp.golia.smix:smix-probe:16.3.1")
+# debugImplementation("jp.golia.smix:smix-probe:17.0.0")
 
 # TypeScript / Node / Bun (drives a simulator through the native addon)
 npm install @goliapkg/smix
