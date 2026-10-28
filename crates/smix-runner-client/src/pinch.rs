@@ -21,6 +21,7 @@ struct Req {
     pan_dx: f64,
     pan_dy: f64,
     pan_ms: u64,
+    run_up: &'static str,
 }
 
 impl From<&Pinch> for Req {
@@ -35,6 +36,7 @@ impl From<&Pinch> for Req {
             pan_dx,
             pan_dy,
             pan_ms,
+            run_up: p.run_up.as_wire(),
         }
     }
 }
@@ -68,26 +70,22 @@ mod tests {
 
     #[test]
     fn the_body_is_the_one_both_runners_read() {
-        let p = Pinch {
-            centre: (0.5, 0.4),
-            from_span: 0.2,
-            to_span: 0.6,
-            duration_ms: 500,
-            pan: Some(Pan {
-                dx: 0.1,
-                dy: -0.2,
-                ms: 300,
-            }),
-        };
+        let p = Pinch::new((0.5, 0.4), 0.2, 0.6)
+            .with_pan(Some(Pan::new(0.1, -0.2, 300)))
+            .with_run_up(smix_input::RunUp::Slide);
         let v = serde_json::to_value(Req::from(&p)).unwrap();
         assert_eq!(
             v,
             serde_json::json!({
                 "cx": 0.5, "cy": 0.4, "fromSpan": 0.2, "toSpan": 0.6, "durationMs": 500,
-                "panDx": 0.1, "panDy": -0.2, "panMs": 300
+                "panDx": 0.1, "panDy": -0.2, "panMs": 300, "runUp": "slide"
             })
         );
-        let v = serde_json::to_value(Req::from(&Pinch { pan: None, ..p })).unwrap();
+        let v = serde_json::to_value(Req::from(
+            &p.with_pan(None).with_run_up(smix_input::RunUp::default()),
+        ))
+        .unwrap();
         assert_eq!(v["panMs"], 0);
+        assert_eq!(v["runUp"], "spread");
     }
 }

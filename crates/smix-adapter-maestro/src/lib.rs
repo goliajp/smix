@@ -562,6 +562,9 @@ pub enum Step {
         duration_ms: u64,
         /// A drag after the pinch, fingers still down.
         pan: Option<smix_input::Pan>,
+        /// How the fingers reach the start before the counted pinch.
+        #[serde(default)]
+        run_up: smix_input::RunUp,
     },
     /// Launch / relaunch the app under test. Supports the full maestro
     /// yaml sub-parameter set: appId / clearState / clearKeychain /

@@ -4,6 +4,38 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- **`pinch` takes `runUp:` (`--run-up` on the CLI): `spread`, `slide` or
+  `none`.** An app's recognizer counts a pinch from where it begins, and
+  recognizers begin at different moments: on a consumer's Samsung S22 a
+  `ScaleGestureDetector` counted from the touch and read `from: 1, to: 3` as
+  3.8x. `spread`, the default and what 17.0.0 did, suits UIKit and
+  Android's stock `ScaleGestureDetector`; `slide` suits Compose's transform
+  detector and a recognizer that counts from the touch. The guide lists what
+  each one measured on each recognizer.
+
+### Fixed
+
+- **Android: a View laid over a Compose screen is in the tree.** A window
+  that holds a `ComposeView` was reported as that root's semantics and the
+  Views it hosts, so a View the app put beside it — an environment badge on
+  `android.R.id.content` — was found by neither `smix tree` nor `find`, while
+  the accessibility dump listed it. Such Views are now under the Compose
+  root, in the order the window draws them, and the Compose roots of one
+  window come out in that order too. Needs the app built against this
+  release's `smix-probe`.
+
+### Breaking
+
+- **Rust API: `smix_input::Pinch` and `smix_input::Pan` are
+  `#[non_exhaustive]`.** Build them with `Pinch::new` and its `with_*`
+  methods, and `Pan::new`; `Pinch` has a new field, `run_up`.
+- **Rust API: `Step::Pinch` has a new field, `run_up`.** A pattern that
+  names every field adds it, or ends in `..`.
+
+What to change, and nothing else: [docs/migrating-to-18.md](docs/migrating-to-18.md).
+
 ## [17.0.0] — 2026-10-29
 
 ### Added

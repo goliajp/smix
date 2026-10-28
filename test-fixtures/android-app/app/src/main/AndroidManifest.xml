@@ -91,5 +91,11 @@
         <activity
             android:name=".ZoomActivity"
             android:exported="true" />
+        <activity
+            android:name=".BadgeActivity"
+            android:exported="true" />
+        <activity
+            android:name=".ScaleActivity"
+            android:exported="true" />
     </application>
 </manifest>

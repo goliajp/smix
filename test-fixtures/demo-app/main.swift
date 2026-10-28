@@ -691,6 +691,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       root = UIKitSignInController(tapsAway: false)
     } else if CommandLine.arguments.contains("-uikit-signin-taps-away") {
       root = UIKitSignInController(tapsAway: true)
+    } else if CommandLine.arguments.contains("-pinch") {
+      root = PinchController()
     } else if CommandLine.arguments.contains("-zoom") {
       root = ZoomController()
     } else if CommandLine.arguments.contains("-blink") {

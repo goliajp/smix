@@ -3,7 +3,7 @@ import FlyingFox
 import Foundation
 
 // POST /pinch-at-norm-coord
-// {"cx","cy","fromSpan","toSpan","durationMs","panDx"?,"panDy"?,"panMs"?}
+// {"cx","cy","fromSpan","toSpan","durationMs","panDx"?,"panDy"?,"panMs"?,"runUp"?}
 // → 200 {ok, fingers} | 400 bad_request.
 //
 // Two fingers side by side on a horizontal line through (cx, cy), moved
@@ -17,6 +17,21 @@ import Foundation
 // the finger and the point. Clamping it would pinch by a different ratio
 // than the one asked for and report it as done.
 public enum PinchRoute {
+  /// How the fingers reach the start before the counted pinch. A
+  /// recognizer counts from where it begins, and recognizers begin at
+  /// different moments; see `prerollPoints` for what was measured.
+  public enum RunUp: String, Equatable, Sendable {
+    /// Down `prerollPoints` inside the start (outside, zooming out), then
+    /// apart to it: for a recognizer that begins once the span has changed.
+    case spread
+    /// Down at the start's span, `prerollPoints` below it, then up to it
+    /// together: for one that begins on any movement, or counts from the
+    /// touch.
+    case slide
+    /// Down at the start; the pinch begins at once.
+    case none
+  }
+
   public struct PinchRequest: Equatable, Sendable {
     public let cx: Double
     public let cy: Double
@@ -26,9 +41,10 @@ public enum PinchRoute {
     public let panDx: Double
     public let panDy: Double
     public let panMs: Int
+    public let runUp: RunUp
     public init(
       cx: Double, cy: Double, fromSpan: Double, toSpan: Double, durationMs: Int,
-      panDx: Double = 0, panDy: Double = 0, panMs: Int = 0
+      panDx: Double = 0, panDy: Double = 0, panMs: Int = 0, runUp: RunUp = .spread
     ) {
       self.cx = cx
       self.cy = cy
@@ -38,6 +54,7 @@ public enum PinchRoute {
       self.panDx = panDx
       self.panDy = panDy
       self.panMs = panMs
+      self.runUp = runUp
     }
   }
 
@@ -71,6 +88,7 @@ public enum PinchRoute {
     case missingField(String)
     case invalidField(String, String)
     case outOfRange(String, Double)
+    case unknownRunUp(String)
     case offScreen(finger: Int, moment: String, x: Double, y: Double)
 
     public var description: String {
@@ -79,6 +97,7 @@ public enum PinchRoute {
       case .missingField(let k): return "missing field \(k)"
       case .invalidField(let k, let v): return "\(k) is not a number: \(v)"
       case .outOfRange(let k, let v): return "\(k) out of range: \(v)"
+      case .unknownRunUp(let v): return "runUp must be spread, slide or none, not \(v)"
       case .offScreen(let finger, let moment, let x, let y):
         return String(
           format: "finger %d leaves the screen %@ at (%.0f, %.0f); move the centre or use smaller spans",
@@ -106,13 +125,11 @@ public enum PinchRoute {
   }
 
   /// A pinch recognizer counts from where it begins, not from where the
-  /// fingers came down, and it begins only after the fingers have moved a
-  /// few points: on a UIScrollView about 4.5 points each, whatever the
-  /// span. A 1 → 3 pinch sent as asked left it at 2.2-2.7x. So each finger
-  /// comes down `prerollPoints` short of its start, moves there over
-  /// `prerollMs`, and the counted pinch starts with the recognizer already
-  /// running; measured 1 → 3 at 3.03-3.12x and 1 → 2 at 2.03x over
-  /// 300-1500 ms.
+  /// fingers came down. UIScrollView and UIPinchGestureRecognizer begin
+  /// once each finger has moved about 4.5 points apart, whatever the span,
+  /// and do not begin on a slide: a 1 → 3 pinch sent as asked left a
+  /// UIScrollView at 2.2-2.7x, sliding first at 2.59x, and spreading by
+  /// `prerollPoints` over `prerollMs` first at 3.03-3.12x (1 → 2 at 2.03x).
   public static let prerollMs = 200
   public static let prerollPoints = 5.0
 
@@ -146,6 +163,14 @@ public enum PinchRoute {
     let panDx = try num("panDx", default: 0)
     let panDy = try num("panDy", default: 0)
     let panMs = try num("panMs", default: 0)
+    let runUp: RunUp
+    switch root["runUp"] {
+    case nil: runUp = .spread
+    case let v as String:
+      guard let r = RunUp(rawValue: v) else { throw DecodeError.unknownRunUp(v) }
+      runUp = r
+    case let v?: throw DecodeError.unknownRunUp("\(v)")
+    }
     try inRange("cx", cx) { (0...1).contains($0) }
     try inRange("cy", cy) { (0...1).contains($0) }
     try inRange("fromSpan", fromSpan) { $0 > 0 && $0 <= 1 }
@@ -156,7 +181,7 @@ public enum PinchRoute {
     try inRange("panMs", panMs) { panRange.contains(Int($0)) }
     return PinchRequest(
       cx: cx, cy: cy, fromSpan: fromSpan, toSpan: toSpan, durationMs: Int(duration),
-      panDx: panDx, panDy: panDy, panMs: Int(panMs))
+      panDx: panDx, panDy: panDy, panMs: Int(panMs), runUp: runUp)
   }
 
   /// The finger positions for `req` on a screen of `size`, or the first
@@ -177,15 +202,26 @@ public enum PinchRoute {
     let pinched = pair(mid, req.toSpan)
     let moved = CGPoint(x: mid.x + CGFloat(req.panDx * w), y: mid.y + CGFloat(req.panDy * h))
     let end = req.panMs > 0 ? pair(moved, req.toSpan) : pinched
-    func shortOf(_ from: CGPoint, towards to: CGPoint) -> CGPoint {
+    let by = CGFloat(prerollPoints)
+    func spreadFrom(_ from: CGPoint, towards to: CGPoint) -> CGPoint {
       let dx = to.x - from.x
       let dy = to.y - from.y
       let len = max(1, (dx * dx + dy * dy).squareRoot())
-      let by = CGFloat(prerollPoints)
       return CGPoint(x: from.x - dx / len * by, y: from.y - dy / len * by)
     }
-    let down = Fingers(
-      shortOf(start.first, towards: pinched.first), shortOf(start.second, towards: pinched.second))
+    let down: Fingers
+    switch req.runUp {
+    case .spread:
+      down = Fingers(
+        spreadFrom(start.first, towards: pinched.first), spreadFrom(start.second, towards: pinched.second))
+    case .slide:
+      let shift = start.first.y + by <= CGFloat(h) ? by : -by
+      down = Fingers(
+        CGPoint(x: start.first.x, y: start.first.y + shift),
+        CGPoint(x: start.second.x, y: start.second.y + shift))
+    case .none:
+      down = start
+    }
     for (moment, fingers) in [
       ("as it comes down", down), ("at the start", start), ("after the pinch", pinched),
       ("after the pan", end),

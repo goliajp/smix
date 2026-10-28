@@ -2087,6 +2087,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 spans,
                 duration_ms,
                 pan,
+                run_up,
             } => {
                 let at = match at {
                     crate::PinchAt::Over(selector) => {
@@ -2094,7 +2095,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     }
                     point => point.clone(),
                 };
-                crate::pinch::run(self.app, &at, *spans, *duration_ms, *pan).await?;
+                crate::pinch::run(self.app, &at, *spans, *duration_ms, *pan, *run_up).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::Scroll => {

@@ -910,6 +910,7 @@ smix swipe down                            # one gesture; `down` reveals what is
 smix pinch id:player --from 1 --to 3       # two fingers about the element's centre: zoom in threefold
 smix pinch point:50%,50% --from-span 0.6 --to-span 0.2   # zoom out about a point
 smix pinch id:player --from 1 --to 3 --pan 0,-0.2        # then drag up a fifth of the screen before lifting
+smix pinch id:player --from 1 --to 3 --run-up slide      # for a recognizer that counts from the touch
 smix hide-keyboard
 
 smix tree --json | jq .                    # full a11y tree

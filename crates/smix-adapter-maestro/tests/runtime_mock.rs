@@ -4417,14 +4417,7 @@ async fn pinch_at_a_point_sends_scales_as_spans_with_the_drag() {
         "{p:?}"
     );
     assert_eq!(p.duration_ms, 500);
-    assert_eq!(
-        p.pan,
-        Some(smix_input::Pan {
-            dx: 0.0,
-            dy: -0.2,
-            ms: 300
-        })
-    );
+    assert_eq!(p.pan, Some(smix_input::Pan::new(0.0, -0.2, 300)));
 }
 
 #[tokio::test]
