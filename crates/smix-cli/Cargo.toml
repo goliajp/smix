@@ -21,28 +21,28 @@ name = "smix"
 path = "src/main.rs"
 
 [dependencies]
-smix-usbmux = { path = "../smix-usbmux", version = "17.0.0" }
-smix-lease = { path = "../smix-lease", version = "17.0.0" }
-smix-capsule = { path = "../smix-capsule", version = "17.0.0" }
-smix-store = { path = "../smix-store", version = "17.0.0" }
-smix-error = { path = "../smix-error", version = "17.0.0" }
-smix-simctl = { path = "../smix-simctl", version = "17.0.0" }
-smix-adb = { path = "../smix-adb", version = "17.0.0" }
-smix-sdk = { path = "../smix-sdk", version = "17.0.0" }
-smix-runner-client = { path = "../smix-runner-client", version = "17.0.0" }
-smix-runner-sources = { path = "../smix-runner-sources", version = "17.0.0" }
-smix-runner-wire = { path = "../smix-runner-wire", version = "17.0.0" }
-smix-driver = { path = "../smix-driver", version = "17.0.0" }
-smix-adapter-maestro = { path = "../smix-adapter-maestro", version = "17.0.0" }
-smix-migrate = { path = "../smix-migrate", version = "17.0.0" }
-smix-annotate = { path = "../smix-annotate", version = "17.0.0" }
-smix-recorder = { path = "../smix-recorder", version = "17.0.0" }
-smix-authoring-propose = { path = "../smix-authoring-propose", version = "17.0.0" }
-smix-input = { path = "../smix-input", version = "17.0.0" }
-smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "17.0.0" }
+smix-usbmux = { path = "../smix-usbmux", version = "18.0.0" }
+smix-lease = { path = "../smix-lease", version = "18.0.0" }
+smix-capsule = { path = "../smix-capsule", version = "18.0.0" }
+smix-store = { path = "../smix-store", version = "18.0.0" }
+smix-error = { path = "../smix-error", version = "18.0.0" }
+smix-simctl = { path = "../smix-simctl", version = "18.0.0" }
+smix-adb = { path = "../smix-adb", version = "18.0.0" }
+smix-sdk = { path = "../smix-sdk", version = "18.0.0" }
+smix-runner-client = { path = "../smix-runner-client", version = "18.0.0" }
+smix-runner-sources = { path = "../smix-runner-sources", version = "18.0.0" }
+smix-runner-wire = { path = "../smix-runner-wire", version = "18.0.0" }
+smix-driver = { path = "../smix-driver", version = "18.0.0" }
+smix-adapter-maestro = { path = "../smix-adapter-maestro", version = "18.0.0" }
+smix-migrate = { path = "../smix-migrate", version = "18.0.0" }
+smix-annotate = { path = "../smix-annotate", version = "18.0.0" }
+smix-recorder = { path = "../smix-recorder", version = "18.0.0" }
+smix-authoring-propose = { path = "../smix-authoring-propose", version = "18.0.0" }
+smix-input = { path = "../smix-input", version = "18.0.0" }
+smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "18.0.0" }
 serde_norway.workspace = true
-smix-selector = { path = "../smix-selector", version = "17.0.0" }
-smix-screen = { path = "../smix-screen", version = "17.0.0" }
+smix-selector = { path = "../smix-selector", version = "18.0.0" }
+smix-screen = { path = "../smix-screen", version = "18.0.0" }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 clap = { workspace = true, features = ["env"] }
 serde.workspace = true
@@ -58,8 +58,8 @@ thiserror.workspace = true
 [dev-dependencies]
 async-trait.workspace = true
 criterion.workspace = true
-smix-fixture = { path = "../smix-fixture", version = "17.0.0" }
-smix-metro-log = { path = "../smix-metro-log", version = "17.0.0" }
+smix-fixture = { path = "../smix-fixture", version = "18.0.0" }
+smix-metro-log = { path = "../smix-metro-log", version = "18.0.0" }
 tempfile = "3"
 
 [[bench]]
