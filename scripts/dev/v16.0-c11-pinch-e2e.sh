@@ -141,7 +141,49 @@ judge() {
   sleep 1
   read -r s6 _ _ <<<"$(state)"
   [ "$s6" = "1.00" ] || fail "$PLATFORM: the refused pinch moved the picture to ${s6}x"
+  log "$PLATFORM: 5. the other recognizers, each with the run-up that suits it"
+  recognizers
   echo "PINCH-PASS $PLATFORM"
+}
+
+# One reading of a pinch on another screen: $1 a name for the logs, $2 how to
+# open it (a launch argument on iOS, an activity on Android), $3 and $4 the
+# range the app's scale must end in, $5 the pinch step.
+judge_screen() {
+  local name="$1" open="$2" lo="$3" hi="$4" step="$5" got
+  if [ "$PLATFORM" = ios ]; then
+    flow "open-$name" "- launchApp: { clearState: true, arguments: [\"$open\"] }"
+  else
+    adb -s "$DEVICE" shell am start -W -S -n "$APP/.$open" >/dev/null 2>&1 \
+      || fail "android: could not start $open"
+    sleep 2
+  fi
+  flow "pinch-$name" "$step"
+  sleep 1
+  got="$(curl -s -m 60 -H "App-Bundle-Id: $APP" "http://127.0.0.1:$PORT/tree" \
+    | grep -oE 'scale=[0-9.]+' | head -1 | sed 's/scale=//')"
+  [ -n "$got" ] || fail "$PLATFORM: $name shows no scale"
+  log "$PLATFORM: $name: ${got}x (want ${lo}–${hi})"
+  between "$got" "$lo" "$hi" || fail "$PLATFORM: $name ended at ${got}x, outside ${lo}–${hi}"
+}
+
+recognizers() {
+  if [ "$PLATFORM" = ios ]; then
+    # UIPinchGestureRecognizer's own scale, with the default run-up.
+    judge_screen uipinch -pinch 2.85 3.15 \
+      '- pinch: { over: { id: pinch-surface }, from: 1, to: 3 }'
+  else
+    # The platform ScaleGestureDetector begins only once the fingers are
+    # about 27 mm apart, so this one starts wide.
+    judge_screen scale-detector ScaleActivity 1.85 2.15 \
+      '- pinch: { at: "50%,60%", fromSpan: 0.45, toSpan: 0.9 }'
+    # Compose's transform detector begins on any movement; a slide gets
+    # it going without changing the span it counts from. The range is
+    # narrow on purpose: the default spread lands at 3.13 here, so a
+    # runner that ignored `runUp` would fall outside it.
+    judge_screen compose-slide ZoomActivity 2.9 3.08 \
+      '- pinch: { over: { id: zoom-surface }, from: 1, to: 3, runUp: slide }'
+  fi
 }
 
 ios_leg() {

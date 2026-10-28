@@ -11,7 +11,7 @@
 //! ```
 
 use serde_norway::{Mapping, Value};
-use smix_input::{Pan, Pinch, PinchSpans};
+use smix_input::{Pan, Pinch, PinchSpans, RunUp};
 
 use crate::parser::{millis, parse_point, reject_unknown_keys, visible_to_selector};
 use crate::runtime::AppLike;
@@ -28,6 +28,7 @@ const KEYS: &[&str] = &[
     "duration",
     "pan",
     "panDuration",
+    "runUp",
 ];
 
 fn get<'a>(map: &'a Mapping, key: &str) -> Option<&'a Value> {
@@ -105,20 +106,35 @@ pub(crate) fn parse(v: &Value) -> Result<Step, ParseError> {
     let pan = match (get(map, "pan"), pan_ms) {
         (Some(p), ms) => {
             let (dx, dy) = offset(p)?;
-            Some(Pan {
+            Some(Pan::new(
                 dx,
                 dy,
-                ms: ms.unwrap_or(smix_input::PINCH_DEFAULT_PAN_MS),
-            })
+                ms.unwrap_or(smix_input::PINCH_DEFAULT_PAN_MS),
+            ))
         }
         (None, Some(_)) => return Err(invalid("`panDuration` without `pan` drags nowhere")),
         (None, None) => None,
     };
+    let run_up =
+        match get(map, "runUp") {
+            None => RunUp::default(),
+            Some(v) => v.as_str().and_then(RunUp::from_name).ok_or_else(|| {
+                ParseError::InvalidValue {
+                    field: "pinch.runUp".into(),
+                    reason: format!(
+                        "expected spread, slide or none, got {v:?} — spread suits UIKit, Android's \
+                 ScaleGestureDetector and most apps; slide suits a recognizer that counts from \
+                 the touch or begins on any movement"
+                    ),
+                }
+            })?,
+        };
     Ok(Step::Pinch {
         at,
         spans,
         duration_ms,
         pan,
+        run_up,
     })
 }
 
@@ -203,6 +219,7 @@ pub(crate) async fn run<A: AppLike + ?Sized>(
     spans: PinchSpans,
     duration_ms: u64,
     pan: Option<Pan>,
+    run_up: RunUp,
 ) -> Result<(), ExpectationFailure> {
     let centre = match at {
         PinchAt::Point(p) => *p,
@@ -235,13 +252,12 @@ pub(crate) async fn run<A: AppLike + ?Sized>(
             ..Default::default()
         })
     })?;
-    app.pinch(&Pinch {
-        centre,
-        from_span,
-        to_span,
-        duration_ms,
-        pan,
-    })
+    app.pinch(
+        &Pinch::new(centre, from_span, to_span)
+            .with_duration_ms(duration_ms)
+            .with_pan(pan)
+            .with_run_up(run_up),
+    )
     .await
 }
 
@@ -267,6 +283,7 @@ mod tests {
             spans,
             duration_ms,
             pan,
+            run_up,
         } = step("over: { id: player }\nfrom: 1\nto: 3").unwrap()
         else {
             panic!("not a pinch")
@@ -275,6 +292,7 @@ mod tests {
         assert_eq!(spans, PinchSpans::Scales { from: 1.0, to: 3.0 });
         assert_eq!(duration_ms, 500);
         assert_eq!(pan, None);
+        assert_eq!(run_up, RunUp::Spread);
     }
 
     #[test]
@@ -289,11 +307,8 @@ mod tests {
                 at: PinchAt::Point((0.5, 0.4)),
                 spans: PinchSpans::Spans { from: 0.2, to: 0.6 },
                 duration_ms: 800,
-                pan: Some(Pan {
-                    dx: 0.0,
-                    dy: -0.2,
-                    ms: 250
-                }),
+                pan: Some(Pan::new(0.0, -0.2, 250)),
+                run_up: RunUp::Spread,
             }
         );
     }
@@ -305,14 +320,19 @@ mod tests {
         else {
             panic!("not a pinch")
         };
-        assert_eq!(
-            pan,
-            Some(Pan {
-                dx: 0.1,
-                dy: 0.0,
-                ms: 300
-            })
-        );
+        assert_eq!(pan, Some(Pan::new(0.1, 0.0, 300)));
+    }
+
+    #[test]
+    fn run_up_is_read_by_name_and_a_stranger_is_refused() {
+        let Step::Pinch { run_up, .. } =
+            step("at: \"50%,50%\"\nfrom: 1\nto: 3\nrunUp: slide").unwrap()
+        else {
+            panic!("not a pinch")
+        };
+        assert_eq!(run_up, RunUp::Slide);
+        let e = reason(step("at: \"50%,50%\"\nfrom: 1\nto: 3\nrunUp: wiggle").unwrap_err());
+        assert!(e.starts_with("pinch.runUp"), "{e}");
     }
 
     #[test]

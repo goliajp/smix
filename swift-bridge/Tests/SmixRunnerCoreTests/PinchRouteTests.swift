@@ -66,6 +66,31 @@ final class PinchRouteTests: XCTestCase {
     XCTAssertEqual(q.down.first, CGPoint(x: 75, y: 400))
   }
 
+  func test_decode_runUp_defaultsToSpreadAndReadsTheOthers() throws {
+    let base = #"{"cx":0.5,"cy":0.5,"fromSpan":0.2,"toSpan":0.6,"durationMs":500"#
+    XCTAssertEqual(try req(base + "}").runUp, .spread)
+    XCTAssertEqual(try req(base + #","runUp":"slide"}"#).runUp, .slide)
+    XCTAssertEqual(try req(base + #","runUp":"none"}"#).runUp, PinchRoute.RunUp.none)
+    XCTAssertThrowsError(try req(base + #","runUp":"wiggle"}"#)) {
+      XCTAssertEqual($0 as? PinchRoute.DecodeError, .unknownRunUp("wiggle"))
+    }
+  }
+
+  func test_plan_slideKeepsTheSpanAndComesDownBelow() throws {
+    let r = PinchRoute.PinchRequest(cx: 0.5, cy: 0.5, fromSpan: 0.2, toSpan: 0.6, durationMs: 500, runUp: .slide)
+    let p = try PinchRoute.plan(r, size: CGSize(width: 400, height: 800))
+    XCTAssertEqual(p.down.first, CGPoint(x: 160, y: 405))
+    XCTAssertEqual(p.down.second, CGPoint(x: 240, y: 405))
+    let atBottom = PinchRoute.PinchRequest(cx: 0.5, cy: 1, fromSpan: 0.2, toSpan: 0.6, durationMs: 500, runUp: .slide)
+    XCTAssertEqual(try PinchRoute.plan(atBottom, size: CGSize(width: 400, height: 800)).down.first.y, 795)
+  }
+
+  func test_plan_noRunUpComesDownAtTheStart() throws {
+    let r = PinchRoute.PinchRequest(cx: 0.5, cy: 0.5, fromSpan: 0.2, toSpan: 0.6, durationMs: 500, runUp: .none)
+    let p = try PinchRoute.plan(r, size: CGSize(width: 400, height: 800))
+    XCTAssertEqual(p.down, p.start)
+  }
+
   func test_plan_comingDownOffTheEdge_refused() {
     // zooming out with the fingers at the edges: the start is on screen, the
     // point 5 points outside it is not

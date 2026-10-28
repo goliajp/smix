@@ -506,6 +506,13 @@ gesture.
     to: 3
     pan: "0%,-20%"                       # a fifth of the screen up
     panDuration: 300                     # ms; default 300
+
+# A recognizer that counts from the touch, or begins on any movement:
+- pinch:
+    over: { id: "player" }
+    from: 1
+    to: 3
+    runUp: slide                         # spread (default) | slide | none
 ```
 
 - Give exactly one of `over:` or `at:`, and exactly one pair of `from`/`to`
@@ -513,11 +520,36 @@ gesture.
 - With `from`/`to`, the larger factor puts the fingers 0.6 of the
   screen's shorter side apart and the other end is scaled down from it:
   `from: 1, to: 3` is 0.2 → 0.6.
-- Each finger comes down a few points short of its start and moves there
-  first, so the app's pinch recognizer has started by the time the counted
-  pinch does. Recognizers count from where they begin, after the touch
-  slop; without this a 1 → 3 pinch left a UIScrollView at about 2.3x.
-  With it, 1 → 3 measures about 3.0x on iOS and 3.1x on Android.
+- An app's pinch recognizer counts from where it **begins**, and
+  recognizers begin at different moments, so the same gesture reads as
+  different zooms. `runUp:` says how the fingers reach the start before the
+  counted pinch:
+  - `spread` (the default): each finger comes down a few points inside its
+    start and opens to it — for recognizers that begin once the span has
+    changed (UIKit's, Android's `ScaleGestureDetector`).
+  - `slide`: both fingers come down at the start's span a few points below
+    it and slide to it together — for a recognizer that begins on any
+    movement (Compose's transform detector) or counts from the touch (one
+    Samsung build of `ScaleGestureDetector`).
+  - `none`: the pinch begins where the fingers come down.
+
+  Measured, 1 → 3 (1 → 2 for `ScaleGestureDetector`):
+
+  | Recognizer | spread | slide | none |
+  |---|---|---|---|
+  | iOS `UIScrollView` | 3.04 | 2.59 | 2.32 |
+  | iOS `UIPinchGestureRecognizer` | 3.07 | 2.72 | 2.72 |
+  | Android Compose `detectTransformGestures` | 3.13 | 3.02 | 2.65 |
+  | Android `ScaleGestureDetector` (emulator, from 27 mm) | 2.01 | 1.81 | 1.81 |
+  | Android `ScaleGestureDetector` (Samsung S22, an app's report) | 3.8 | — | — |
+
+  Read the zoom back from the app when the number matters.
+- Android's `ScaleGestureDetector` does not begin at all until the fingers
+  are about 27 mm apart (`config_minScalingSpan`; 470 px on a 440 dpi
+  emulator). `from: 1, to: 3` starts at 0.2 of the shorter side, closer
+  than that on a phone, and such an app zooms far less than asked. Start
+  wider with `fromSpan`/`toSpan`, or pinch twice. A person's fingers meet
+  the same limit.
 - A finger that would leave the screen at any moment of the gesture is
   refused with the finger and the point named; nothing is clipped.
 - `over:` reads the element from the accessibility tree; `ocrText:` and
@@ -2798,6 +2830,7 @@ smix swipe down                            # one gesture; `down` reveals what is
 smix pinch id:player --from 1 --to 3       # two fingers about the element's centre: zoom in threefold
 smix pinch point:50%,50% --from-span 0.6 --to-span 0.2   # zoom out about a point
 smix pinch id:player --from 1 --to 3 --pan 0,-0.2        # then drag up a fifth of the screen before lifting
+smix pinch id:player --from 1 --to 3 --run-up slide      # for a recognizer that counts from the touch
 smix hide-keyboard
 
 smix tree --json | jq .                    # full a11y tree

@@ -478,6 +478,14 @@ enum Cmd {
         /// Length of the drag, in milliseconds.
         #[arg(long, default_value_t = smix_input::PINCH_DEFAULT_PAN_MS)]
         pan_ms: u64,
+        /// How the fingers reach the start before the counted pinch:
+        /// `spread` (the default) comes down a few points inside the start
+        /// and opens to it, which UIKit's recognizers and Android's
+        /// ScaleGestureDetector need; `slide` comes down at the start's span
+        /// and slides to it, for a recognizer that counts from the touch;
+        /// `none` starts at once.
+        #[arg(long, default_value = "spread")]
+        run_up: String,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -4096,6 +4104,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             duration_ms,
             pan,
             pan_ms,
+            run_up,
             port,
             device,
             platform,
@@ -4110,6 +4119,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 duration_ms,
                 pan,
                 pan_ms,
+                run_up,
             };
             pinch_cmd::cmd_pinch(args, p, plat)
                 .await
