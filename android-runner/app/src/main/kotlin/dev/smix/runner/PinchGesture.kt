@@ -16,7 +16,34 @@ data class PinchGesture(
     val panDx: Double = 0.0,
     val panDy: Double = 0.0,
     val panMs: Long = 0,
+    val runUp: RunUp = RunUp.SPREAD,
 ) {
+    /// How the fingers reach the start before the counted pinch; the iOS
+    /// runner reads the same three. A recognizer counts from where it
+    /// begins, and they begin at different moments (measured on the
+    /// fixture's emulator, 1 → 3): a Compose transform begins on any
+    /// movement past touch slop — 3.13x after a spread, 3.02x after a
+    /// slide; the platform ScaleGestureDetector begins once the span has
+    /// changed by its slop and is at least `config_minScalingSpan` (about
+    /// 27 mm) — exact after a spread, short after a slide; a consumer's
+    /// ScaleGestureDetector on a Samsung S22 began at the touch, 3.8x after
+    /// a spread.
+    enum class RunUp(val wire: String) {
+        /// Down a touch slop inside the start (outside, zooming out), then apart to it.
+        SPREAD("spread"),
+        /// Down at the start's span, a touch slop below it, then up to it together.
+        SLIDE("slide"),
+        /// Down at the start.
+        NONE("none"),
+        ;
+
+        companion object {
+            fun of(wire: String): RunUp =
+                entries.firstOrNull { it.wire == wire }
+                    ?: throw IllegalArgumentException("runUp must be spread, slide or none, not $wire")
+        }
+    }
+
     data class Point(val x: Float, val y: Float)
 
     data class Fingers(val first: Point, val second: Point)
@@ -38,12 +65,10 @@ data class PinchGesture(
             "move the centre or use smaller spans",
     )
 
-    /// `prerollPx` is how far short of the start each finger comes down —
-    /// the display's touch slop. A recognizer counts a pinch from where it
-    /// begins, and begins only once the fingers have moved that far, so a
-    /// pinch sent as asked loses its first slop of movement: 1 → 3 left a
-    /// Compose transform at 2.62x. Moving that distance first, slowly,
-    /// starts the recognizer before the counted pinch does.
+    /// `prerollPx` is how far from the start each finger comes down under
+    /// [runUp] — the display's touch slop. Sent with no run-up, 1 → 3 left
+    /// a Compose transform at 2.62x: the recognizer had used its slop of
+    /// the movement before it began counting.
     fun plan(width: Int, height: Int, prerollPx: Float): Plan {
         val short = minOf(width, height).toDouble()
         fun pair(x: Double, y: Double, span: Double): Fingers {
@@ -55,13 +80,20 @@ data class PinchGesture(
         val start = pair(mx, my, fromSpan)
         val pinched = pair(mx, my, toSpan)
         val end = if (panMs > 0) pair(mx + panDx * width, my + panDy * height, toSpan) else pinched
-        fun shortOf(from: Point, to: Point): Point {
+        fun spreadFrom(from: Point, to: Point): Point {
             val dx = to.x - from.x
             val dy = to.y - from.y
             val len = maxOf(1f, Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat())
             return Point(from.x - dx / len * prerollPx, from.y - dy / len * prerollPx)
         }
-        val down = Fingers(shortOf(start.first, pinched.first), shortOf(start.second, pinched.second))
+        val down = when (runUp) {
+            RunUp.SPREAD -> Fingers(spreadFrom(start.first, pinched.first), spreadFrom(start.second, pinched.second))
+            RunUp.SLIDE -> {
+                val shift = if (start.first.y + prerollPx <= height) prerollPx else -prerollPx
+                Fingers(Point(start.first.x, start.first.y + shift), Point(start.second.x, start.second.y + shift))
+            }
+            RunUp.NONE -> start
+        }
         val moments = listOf(
             "as it comes down" to down,
             "at the start" to start,
@@ -93,10 +125,11 @@ data class PinchGesture(
                 )
             }
         }
-        moves(plan.down, plan.start, 0, PREROLL_MS)
-        moves(plan.start, plan.pinched, PREROLL_MS, durationMs)
-        if (panMs > 0) moves(plan.pinched, plan.end, PREROLL_MS + durationMs, panMs)
-        val liftMs = PREROLL_MS + durationMs + panMs + HOLD_MS
+        val preroll = if (plan.down == plan.start) 0L else PREROLL_MS
+        if (preroll > 0) moves(plan.down, plan.start, 0, preroll)
+        moves(plan.start, plan.pinched, preroll, durationMs)
+        if (panMs > 0) moves(plan.pinched, plan.end, preroll + durationMs, panMs)
+        val liftMs = preroll + durationMs + panMs + HOLD_MS
         events += Event(liftMs, Action.POINTER_UP, listOf(plan.end.first, plan.end.second))
         events += Event(liftMs, Action.UP, listOf(plan.end.first))
         return events
@@ -139,6 +172,7 @@ data class PinchGesture(
                 panDx = optShare("panDx"),
                 panDy = optShare("panDy"),
                 panMs = ms("panMs", PAN_RANGE, 0),
+                runUp = if (req.has("runUp")) RunUp.of(req.getString("runUp")) else RunUp.SPREAD,
             )
         }
     }

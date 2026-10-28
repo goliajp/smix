@@ -21,8 +21,12 @@ pub const DURATION_RANGE: std::ops::RangeInclusive<u64> = 50..=10_000;
 /// Two fingers on a horizontal line through `centre`, moved from
 /// `from_span` apart to `to_span` apart. Spans are shares of the screen's
 /// shorter side, so a ratio means the same zoom in either orientation.
+///
+/// Built with [`Pinch::new`] and the `with_*` methods: the struct is
+/// `#[non_exhaustive]`, so a field added later does not break a caller.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct Pinch {
     /// Midpoint of the two fingers, as shares of the screen (0..1).
     pub centre: (f64, f64),
@@ -34,10 +38,63 @@ pub struct Pinch {
     pub duration_ms: u64,
     /// A drag after the pinch, with the fingers still down.
     pub pan: Option<Pan>,
+    /// How the fingers reach the start before the counted pinch.
+    #[serde(default)]
+    pub run_up: RunUp,
+}
+
+/// How the fingers reach the start of a pinch before it is counted.
+///
+/// An app's recognizer counts a pinch from where it begins, and recognizers
+/// begin at different moments, so one gesture reads as different zooms.
+/// Measured 1 → 3 on the fixture apps: UIScrollView 3.04 / 2.59 / 2.32
+/// (spread / slide / none), UIPinchGestureRecognizer 3.07 / 2.72 / 2.72,
+/// Compose's transform detector 3.13 / 3.02 / 2.65; Android's
+/// ScaleGestureDetector, 1 → 2 from 27 mm apart, 2.01 / 1.81 / 1.81. A
+/// ScaleGestureDetector on a Samsung S22 counted from the touch: 3.8x after
+/// a spread.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub enum RunUp {
+    /// Each finger comes down a few points inside its start (outside it
+    /// when zooming out) and moves apart to it, so a recognizer that begins
+    /// once the span has changed is counting when the pinch starts.
+    #[default]
+    Spread,
+    /// Both fingers come down at the start's span a few points below it
+    /// and slide to it together: for a recognizer that begins on any
+    /// movement, or counts from the touch.
+    Slide,
+    /// The fingers come down at the start and the pinch begins at once.
+    None,
+}
+
+impl RunUp {
+    /// The spelling both runners read.
+    pub fn as_wire(self) -> &'static str {
+        match self {
+            RunUp::Spread => "spread",
+            RunUp::Slide => "slide",
+            RunUp::None => "none",
+        }
+    }
+
+    /// The run-up a flow or a command line names, or `None` for a word that
+    /// is not one.
+    pub fn from_name(s: &str) -> Option<RunUp> {
+        match s {
+            "spread" => Some(RunUp::Spread),
+            "slide" => Some(RunUp::Slide),
+            "none" => Some(RunUp::None),
+            _ => None,
+        }
+    }
 }
 
 /// Both fingers moving together after the pinch, before they lift.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Pan {
     /// Horizontal distance, as a share of the screen's width (-1..1).
     pub dx: f64,
@@ -45,6 +102,13 @@ pub struct Pan {
     pub dy: f64,
     /// Length of the drag, in milliseconds.
     pub ms: u64,
+}
+
+impl Pan {
+    /// A drag of (`dx`, `dy`) shares of the screen over `ms` milliseconds.
+    pub fn new(dx: f64, dy: f64, ms: u64) -> Pan {
+        Pan { dx, dy, ms }
+    }
 }
 
 /// How far apart the fingers are, given one of two ways.
@@ -102,6 +166,37 @@ impl PinchSpans {
 }
 
 impl Pinch {
+    /// A pinch about `centre` from `from_span` to `to_span`, over
+    /// [`DEFAULT_DURATION_MS`], with no drag and the default run-up.
+    pub fn new(centre: (f64, f64), from_span: f64, to_span: f64) -> Pinch {
+        Pinch {
+            centre,
+            from_span,
+            to_span,
+            duration_ms: DEFAULT_DURATION_MS,
+            pan: None,
+            run_up: RunUp::default(),
+        }
+    }
+
+    /// This pinch over `ms` milliseconds.
+    pub fn with_duration_ms(self, ms: u64) -> Pinch {
+        Pinch {
+            duration_ms: ms,
+            ..self
+        }
+    }
+
+    /// This pinch, then `pan` before the fingers lift.
+    pub fn with_pan(self, pan: Option<Pan>) -> Pinch {
+        Pinch { pan, ..self }
+    }
+
+    /// This pinch with `run_up`.
+    pub fn with_run_up(self, run_up: RunUp) -> Pinch {
+        Pinch { run_up, ..self }
+    }
+
     /// Why this pinch cannot be sent, checked before it is: the same
     /// ranges the runners refuse, said here in the caller's terms.
     pub fn check(&self) -> Result<(), String> {
@@ -178,13 +273,32 @@ mod tests {
     }
 
     fn zoom() -> Pinch {
-        Pinch {
-            centre: (0.5, 0.5),
-            from_span: 0.2,
-            to_span: 0.6,
-            duration_ms: 500,
-            pan: None,
+        Pinch::new((0.5, 0.5), 0.2, 0.6)
+    }
+
+    #[test]
+    fn a_new_pinch_has_the_defaults_and_the_builders_set_one_thing_each() {
+        let p = zoom();
+        assert_eq!(
+            (p.duration_ms, p.pan, p.run_up),
+            (DEFAULT_DURATION_MS, None, RunUp::Spread)
+        );
+        let q = p
+            .with_duration_ms(800)
+            .with_pan(Some(Pan::new(0.0, -0.2, 300)))
+            .with_run_up(RunUp::Slide);
+        assert_eq!(q.duration_ms, 800);
+        assert_eq!(q.pan, Some(Pan::new(0.0, -0.2, 300)));
+        assert_eq!(q.run_up, RunUp::Slide);
+        assert_eq!(q.centre, p.centre);
+    }
+
+    #[test]
+    fn run_up_names_round_trip_and_a_stranger_is_refused() {
+        for r in [RunUp::Spread, RunUp::Slide, RunUp::None] {
+            assert_eq!(RunUp::from_name(r.as_wire()), Some(r));
         }
+        assert_eq!(RunUp::from_name("wiggle"), None);
     }
 
     #[test]

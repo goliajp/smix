@@ -219,7 +219,7 @@ private fun collectHosted(v: View, composePackage: String, into: MutableList<Pro
  */
 internal fun View.asWindowRoot(): ProbeNode? = viewSubtree(this)
 
-private fun viewSubtree(v: View): ProbeNode? {
+internal fun viewSubtree(v: View): ProbeNode? {
     // Neither a GONE nor an INVISIBLE View is drawn or takes a touch, and
     // neither has a size that says so: a parent skips a GONE child when it
     // lays out, so the child keeps the size it had while it showed, and a

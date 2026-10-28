@@ -31,7 +31,7 @@
 //! - `POST /clear` `{selector}` → [`RunnerKeyboardResult`]
 //! - `POST /press-key` `{key}` → [`RunnerKeyboardResult`]
 //! - `POST /swipe-once` `{direction}` → `{ok}`
-//! - `POST /pinch-at-norm-coord` `{cx, cy, fromSpan, toSpan, durationMs, panDx?, panDy?, panMs?}` → `{ok, fingers}`
+//! - `POST /pinch-at-norm-coord` `{cx, cy, fromSpan, toSpan, durationMs, panDx?, panDy?, panMs?, runUp?}` → `{ok, fingers}`
 //! - `POST /foreground` `{bundleId}` → `{ok}`
 //! - `POST /hide-keyboard` → `{ok}`
 //! - `POST /back` → `{ok}`

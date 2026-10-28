@@ -128,4 +128,31 @@ class PinchGestureTest {
         assertEquals(80, to.getJSONObject(0).getInt("x"))
         assertEquals(320, to.getJSONObject(1).getInt("x"))
     }
+
+    @Test
+    fun runUpDefaultsToSpreadAndReadsTheOthers() {
+        val base = """{"cx":0.5,"cy":0.5,"fromSpan":0.2,"toSpan":0.6,"durationMs":500"""
+        assertEquals(PinchGesture.RunUp.SPREAD, PinchGesture.decode("$base}").runUp)
+        assertEquals(PinchGesture.RunUp.SLIDE, PinchGesture.decode("""$base,"runUp":"slide"}""").runUp)
+        assertEquals(PinchGesture.RunUp.NONE, PinchGesture.decode("""$base,"runUp":"none"}""").runUp)
+        val e = assertThrows(IllegalArgumentException::class.java) { PinchGesture.decode("""$base,"runUp":"wiggle"}""") }
+        assertEquals("runUp must be spread, slide or none, not wiggle", e.message)
+    }
+
+    @Test
+    fun slideKeepsTheSpanAndComesDownBelow() {
+        val p = zoomIn.copy(runUp = PinchGesture.RunUp.SLIDE).plan(400, 800, 5f)
+        assertEquals(Point(160f, 405f), p.down.first)
+        assertEquals(Point(240f, 405f), p.down.second)
+    }
+
+    @Test
+    fun noRunUpComesDownAtTheStartAndStartsAtOnce() {
+        val g = zoomIn.copy(runUp = PinchGesture.RunUp.NONE)
+        val plan = g.plan(400, 800, 5f)
+        assertEquals(plan.start, plan.down)
+        val events = g.timeline(plan)
+        assertEquals(50, events.count { it.action == Action.MOVE })
+        assertEquals(700L, events.last().atMs)
+    }
 }
