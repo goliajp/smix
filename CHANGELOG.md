@@ -4,6 +4,8 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+## [18.0.0] — 2026-10-29
+
 ### Added
 
 - **`pinch` takes `runUp:` (`--run-up` on the CLI): `spread`, `slide` or

@@ -10,5 +10,5 @@ package dev.smix.runner
 
 internal object SmixRunner {
     /// Build identifier surfaced via GET /health route.
-    const val VERSION: String = "17.0.0"
+    const val VERSION: String = "18.0.0"
 }
