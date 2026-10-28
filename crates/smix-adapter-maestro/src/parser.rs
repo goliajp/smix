@@ -619,7 +619,7 @@ fn get_spelled<'a>(map: &'a serde_norway::Mapping, name: &str) -> Option<&'a Val
 /// Refuse every key of `map` that is not in `known`. `refused` names keys
 /// that exist elsewhere (maestro) but that smix deliberately does not
 /// take, each with the reason given instead of "unknown".
-fn reject_unknown_keys(
+pub(crate) fn reject_unknown_keys(
     map: &serde_norway::Mapping,
     field: &str,
     what: &str,
@@ -1157,7 +1157,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
 // selector-surface: Point — `point:` — `"50%,80%"` or `"0.5,0.8"`, dispatched by Step::TapAtPoint
 // selector-surface: Fallback — `fallback:` — a chain tried in order, dispatched element by element
 
-fn parse_point(s: &str) -> Result<(f64, f64), ParseError> {
+pub(crate) fn parse_point(s: &str) -> Result<(f64, f64), ParseError> {
     // The reading of `%` and the refusal of pixels both live in
     // `smix_selector::point_from_str` — three surfaces type a point now,
     // and the last time two of them owned a copy of a vocabulary the
@@ -1617,7 +1617,7 @@ fn visibility_share(v: &Value) -> Result<f64, ParseError> {
 
 /// Milliseconds, written as a number or — maestro's schema types these
 /// as strings — a string of digits.
-fn millis(v: &Value, field: &str) -> Result<u64, ParseError> {
+pub(crate) fn millis(v: &Value, field: &str) -> Result<u64, ParseError> {
     v.as_u64()
         .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
         .ok_or_else(|| ParseError::InvalidValue {
@@ -3298,6 +3298,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "scrollUntilVisible" => parse_scroll_until_visible(value),
         "eraseText" => parse_erase_text(value),
         "swipe" => parse_swipe(value),
+        "pinch" => crate::pinch::parse(value),
         "launchApp" => parse_launch_app(value),
         "openLink" => parse_open_link(value),
         "stopApp" => Ok(Step::StopApp),

@@ -47,6 +47,7 @@ DRIVES_THE_APP = {
     "POST /hittable",
     "POST /find-text-by-ocr",
     "POST /swipe-at-norm-coord",
+    "POST /pinch-at-norm-coord",
     "POST /hide-keyboard",
     "POST /input-text",
     "POST /session/relaunch-app",

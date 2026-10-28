@@ -162,6 +162,9 @@ impl AppLike for SilentMockApp {
     ) -> Result<Vec<String>, ExpectationFailure> {
         Ok(Vec::new())
     }
+    async fn pinch(&self, _: &smix_input::Pinch) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     async fn swipe_at_coord(&self, _: (f64, f64), _: (f64, f64)) -> Result<(), ExpectationFailure> {
         Ok(())
     }

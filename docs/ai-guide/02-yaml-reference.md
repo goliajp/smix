@@ -308,6 +308,51 @@ measure it: 45.3–50.5% of screen height on Android, 47.7–53.2% on iOS,
 49% taken as the overlap, and a note that a device of a different shape
 would need measuring again.
 
+### Pinch (two fingers)
+
+smix's own verb; maestro has none. Two fingers side by side on a
+horizontal line, moved apart (zoom in) or together (zoom out) in one
+gesture.
+
+```yaml
+- pinch:
+    over: { id: "player" }               # the fingers meet at this element's centre
+    from: 1                              # zoom factor at the start
+    to: 3                                # ...and at the end: 1 → 3 zooms in threefold
+    duration: 500                        # ms, 50..10000; default 500
+
+- pinch:
+    at: "50%,50%"                        # a point on the screen, when nothing there has a name
+    fromSpan: 0.6                        # finger distances as shares of the screen's shorter side
+    toSpan: 0.2                          # 0.6 → 0.2 zooms out
+
+# Zoom and then drag without lifting: both fingers move together by
+# `pan` (shares of the screen's width and height) after the pinch.
+- pinch:
+    over: { id: "player" }
+    from: 1
+    to: 3
+    pan: "0%,-20%"                       # a fifth of the screen up
+    panDuration: 300                     # ms; default 300
+```
+
+- Give exactly one of `over:` or `at:`, and exactly one pair of `from`/`to`
+  or `fromSpan`/`toSpan`.
+- With `from`/`to`, the larger factor puts the fingers 0.6 of the
+  screen's shorter side apart and the other end is scaled down from it:
+  `from: 1, to: 3` is 0.2 → 0.6.
+- Each finger comes down a few points short of its start and moves there
+  first, so the app's pinch recognizer has started by the time the counted
+  pinch does. Recognizers count from where they begin, after the touch
+  slop; without this a 1 → 3 pinch left a UIScrollView at about 2.3x.
+  With it, 1 → 3 measures about 3.0x on iOS and 3.1x on Android.
+- A finger that would leave the screen at any moment of the gesture is
+  refused with the finger and the point named; nothing is clipped.
+- `over:` reads the element from the accessibility tree; `ocrText:` and
+  `anchorRelative:` are refused there — give the point with `at:` instead.
+- Pinching and then a separate `swipe` also drags the zoomed content: the
+  zoom stays in the app once the fingers lift.
+
 ### Keyboard / hardware keys
 
 ```yaml

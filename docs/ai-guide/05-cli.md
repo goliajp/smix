@@ -907,6 +907,9 @@ smix press-key back                        # navigation back — fails when noth
 smix scroll "text:Row #5000" --direction down   # stops when it is wholly in view
 smix scroll "ocrText:Row #5000" --direction down # looks with OCR too
 smix swipe down                            # one gesture; `down` reveals what is below
+smix pinch id:player --from 1 --to 3       # two fingers about the element's centre: zoom in threefold
+smix pinch point:50%,50% --from-span 0.6 --to-span 0.2   # zoom out about a point
+smix pinch id:player --from 1 --to 3 --pan 0,-0.2        # then drag up a fifth of the screen before lifting
 smix hide-keyboard
 
 smix tree --json | jq .                    # full a11y tree

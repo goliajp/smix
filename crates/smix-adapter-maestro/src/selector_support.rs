@@ -93,6 +93,9 @@ pub enum Slot {
     /// `swipe: { over: <selector>, from, to }` — the element whose box
     /// the swipe happens inside.
     SwipeOverTarget,
+    /// `pinch: { over: <selector> }` — the element whose centre the two
+    /// fingers meet at.
+    PinchTarget,
     /// `rememberBounds:` / `assertBoundsUnchanged:` — the element whose
     /// box is measured.
     BoundsTarget,
@@ -134,6 +137,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         Step::RunFlowInline { .. } | Step::RunFlowConditional { .. } => &[Slot::RunFlowGate],
         Step::TakeScreenshot { .. } => &[Slot::AnnotationAnchor],
         Step::SwipeOver { .. } => &[Slot::SwipeOverTarget],
+        Step::Pinch { .. } => &[Slot::PinchTarget],
         Step::TapAtPoint { .. }
         | Step::WebViewEval { .. }
         | Step::WaitForAnimationToEnd { .. }
@@ -186,7 +190,7 @@ impl Slot {
     /// this list against the `Slot::` names `slots()` actually hands
     /// out, because a list written by hand beside a list derived from
     /// the code is two truths waiting to disagree.
-    pub const ALL: [Slot; 16] = [
+    pub const ALL: [Slot; 17] = [
         Slot::TapOnTarget,
         Slot::RepeatTapTarget,
         Slot::DoubleTapTarget,
@@ -201,6 +205,7 @@ impl Slot {
         Slot::RunFlowGate,
         Slot::AnnotationAnchor,
         Slot::SwipeOverTarget,
+        Slot::PinchTarget,
         Slot::BoundsTarget,
         Slot::NeverVisibleTarget,
     ];
@@ -245,6 +250,18 @@ pub fn support(slot: Slot, form: UnreadableForm) -> Support {
         // is the one `over:` exists to let you stop using.
         (S::SwipeOverTarget, F::AnchorRelative) => Support::Refused(
             "an anchor plus a shift is a point, and a swipe inside a box needs              the box: there is nothing to take a share of. Name the element              itself, or use `swipe: { from, to }` if it has no identity to name",
+        ),
+
+        // The centre comes from the element's box in the accessibility
+        // tree; neither of these is read there.
+        (S::PinchTarget, F::OcrText) => Support::Refused(
+            "pinch finds the element's centre in the accessibility tree and does not \
+             look for text in the pixels. Name the element by id, text, label or role, \
+             or give the point with `at: \"X%,Y%\"`",
+        ),
+        (S::PinchTarget, F::AnchorRelative) => Support::Refused(
+            "an anchor plus a shift is already a point; give that point as \
+             `at: \"X%,Y%\"`, or name the element to pinch over",
         ),
 
         // Tapping is where a coordinate is enough. OCR gives a box and
@@ -341,6 +358,10 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
     match step {
         Step::TapOn { selector, .. } => vec![(Slot::TapOnTarget, selector)],
         Step::SwipeOver { selector, .. } => vec![(Slot::SwipeOverTarget, selector)],
+        Step::Pinch {
+            at: crate::PinchAt::Over(selector),
+            ..
+        } => vec![(Slot::PinchTarget, selector)],
         Step::RepeatTap { selector, .. } => vec![(Slot::RepeatTapTarget, selector)],
         Step::DoubleTapOn { selector, .. } => vec![(Slot::DoubleTapTarget, selector)],
         Step::LongPressOn { selector, .. } => vec![(Slot::LongPressTarget, selector)],
@@ -421,7 +442,11 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
         | Step::ExpectSignal { .. }
         | Step::ExpectSignals { .. }
         | Step::ExpectLogClean
-        | Step::Fixture { .. } => vec![],
+        | Step::Fixture { .. }
+        | Step::Pinch {
+            at: crate::PinchAt::Point(_),
+            ..
+        } => vec![],
     }
 }
 

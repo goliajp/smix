@@ -185,6 +185,44 @@ final class SmixEventRecord {
   }
 }
 
+extension SmixEventRecord {
+  /// Add two fingers that move from `start` to `pinched` over
+  /// `durationMs`, then, when `panMs > 0`, on to `end` without lifting.
+  ///
+  /// Each finger first comes down `PinchRoute.prerollPoints` short of its
+  /// start and moves there slowly, so the app's recognizer has begun by
+  /// the time the counted pinch does.
+  ///
+  /// Both paths go in this one record, which is what makes them two
+  /// fingers on the screen at once rather than two touches in turn.
+  func addPointerPinch(
+    _ plan: PinchRoute.PinchPlan, durationMs: Int, panMs: Int
+  ) -> Bool {
+    let preroll = TimeInterval(PinchRoute.prerollMs) / 1000
+    let pinchAt = preroll + TimeInterval(durationMs) / 1000
+    let panAt = pinchAt + TimeInterval(panMs) / 1000
+    let liftAt = panAt + TimeInterval(PinchRoute.holdBeforeLiftMs) / 1000
+    let selector = NSSelectorFromString("addPointerEventPath:")
+    let fingers = [
+      (plan.down.first, plan.start.first, plan.pinched.first, plan.end.first),
+      (plan.down.second, plan.start.second, plan.pinched.second, plan.end.second),
+    ]
+    for (back, from, mid, to) in fingers {
+      guard let path = SmixPointerEventPath.forTouch(at: back, offset: 0) else { return false }
+      path.moveTo(point: from, atOffset: preroll)
+      path.moveTo(point: mid, atOffset: pinchAt)
+      if panMs > 0 { path.moveTo(point: to, atOffset: panAt) }
+      path.offset = liftAt
+      path.liftUp()
+      let imp = record.method(for: selector)
+      typealias Method = @convention(c) (NSObject, Selector, NSObject) -> Void
+      let method = unsafeBitCast(imp, to: Method.self)
+      method(record, selector, path.path)
+    }
+    return true
+  }
+}
+
 /// Wraps `XCTRunnerDaemonSession.sharedSession.daemonProxy` for raw event
 /// synthesis. Same proxy as `DaemonKeyboard` (which uses `_XCT_sendString:...`);
 /// this class uses `_XCT_synthesizeEvent:completion:`.

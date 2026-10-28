@@ -97,6 +97,7 @@ that is why.
 | `scroll` | ✅ | ✅ | |
 | `scrollUntilVisible` | ✅ | ✅ | One host-side loop on both: swipe, look (tree, then each `ocrText`), stop when the element is wholly on screen and has stopped moving. `visibilityPercentage` / `centerElement` / `timeout` / `label` / `optional` read; `speed` / `waitToSettleTimeoutMs` refused by name |
 | `swipe` (`direction:` or `start:`/`end:` or `from:`/`to:`) | ✅ | ✅ | Absolute + relative coord shapes |
+| `pinch` (`over:` or `at:`, `from`/`to` or `fromSpan`/`toSpan`, optional `pan:`) | ✅ | ✅ | smix's own verb (maestro has none). Two fingers in one gesture about an element's centre or a point; the iOS runner synthesises two touch paths in one event record, the Android runner injects two-pointer motion events. A finger that would leave the screen is refused by name, never clipped |
 | `hideKeyboard` | ✅ | ✅ | |
 
 ## Device

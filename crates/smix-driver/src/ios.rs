@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use std::time::Duration;
 
 use smix_error::ExpectationFailure;
-use smix_input::{KeyName, SwipeDirection};
+use smix_input::{KeyName, Pinch, SwipeDirection};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
@@ -245,6 +245,10 @@ impl Driver for IosDriver {
         to: (f64, f64),
     ) -> Result<(), ExpectationFailure> {
         IosDriver::swipe_at_norm_coord(self, from, to).await
+    }
+
+    async fn pinch(&self, pinch: &Pinch) -> Result<(), ExpectationFailure> {
+        IosDriver::pinch(self, pinch).await
     }
 
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure> {
