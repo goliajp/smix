@@ -1,7 +1,2 @@
-- webViewEval: |
-    document.getElementById('user-input').value = 'alice';
-    submitForm();
-    document.getElementById('form-result').textContent
-
-# Returns the JS expression result (last-expression value). Async support via
-# evaluating a Promise-returning expression — handled by the smix runner.
+- addMedia:                              # iOS Photos / Android Gallery seed
+  - "/path/to/test-photo.jpg"

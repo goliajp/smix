@@ -310,6 +310,8 @@ pub trait AppLike: Send + Sync {
         from: (f64, f64),
         to: (f64, f64),
     ) -> Result<(), ExpectationFailure>;
+    /// Two fingers in one gesture. Mirrors [`App::pinch`].
+    async fn pinch(&self, pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure>;
     /// Viewport scroll one swipe in the given direction. Mirrors
     /// [`App::scroll_screen`].
     async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure>;
@@ -610,6 +612,9 @@ impl AppLike for App {
         to: (f64, f64),
     ) -> Result<(), ExpectationFailure> {
         App::swipe_at_coord(self, from, to).await
+    }
+    async fn pinch(&self, pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure> {
+        App::pinch(self, pinch).await
     }
     async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {
         App::scroll_screen(self, direction).await
@@ -931,6 +936,7 @@ fn describe_box(r: smix_sdk::Rect) -> String {
 fn summarize_step_verb(step: &Step) -> String {
     match step {
         Step::SwipeOver { .. } => "swipe",
+        Step::Pinch { .. } => "pinch",
         Step::LaunchApp { .. } => "launchApp",
         Step::StopApp => "stopApp",
         Step::ClearAppData { .. } => "clearAppData",
@@ -2074,6 +2080,21 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     }
                 };
                 self.app.swipe_at_coord(a, b).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::Pinch {
+                at,
+                spans,
+                duration_ms,
+                pan,
+            } => {
+                let at = match at {
+                    crate::PinchAt::Over(selector) => {
+                        crate::PinchAt::Over(self.desugar_localized_text(selector).as_ref().clone())
+                    }
+                    point => point.clone(),
+                };
+                crate::pinch::run(self.app, &at, *spans, *duration_ms, *pan).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::Scroll => {

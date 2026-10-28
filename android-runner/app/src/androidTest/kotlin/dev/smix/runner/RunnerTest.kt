@@ -318,6 +318,9 @@ class SmixHttpServer(
                 // LONGEST WAIT /swipe-at-norm-coord: 500 ms — a 0.5 s idle wait
                 uri == "/swipe-at-norm-coord" && session.method == Method.POST ->
                     serveSwipeAtNormCoord(session)
+                // LONGEST WAIT /pinch-at-norm-coord: from the request — durationMs + panMs and 0.4 s around them (PREROLL_MS, HOLD_MS), then a 0.5 s idle wait
+                uri == "/pinch-at-norm-coord" && session.method == Method.POST ->
+                    servePinch(session)
                 // LONGEST WAIT /swipe-once: 500 ms — a 0.5 s idle wait
                 uri == "/swipe-once" && session.method == Method.POST ->
                     serveSwipeOnce(session)
@@ -696,6 +699,101 @@ class SmixHttpServer(
         device.waitForIdle(500)
         val body = RunnerWire.swipeAtNormCoordBody(ok, q)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    private fun servePinch(session: IHTTPSession): Response {
+        // OK MEANS: injected — every motion event of both fingers went in; whether the app zoomed is the caller's next assertion.
+        val gesture: PinchGesture
+        val plan: PinchGesture.Plan
+        try {
+            gesture = PinchGesture.decode(readBodyString(session))
+            val (w, h) = displaySize()
+            val slop = android.view.ViewConfiguration.get(instrumentation.targetContext).scaledTouchSlop
+            plan = gesture.plan(w, h, slop.toFloat())
+        } catch (e: IllegalArgumentException) {
+            return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad pinch request")
+        }
+        val ok = injectPinch(gesture.timeline(plan))
+        device.waitForIdle(500)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", RunnerWire.pinchBody(ok, plan))
+    }
+
+    /// Put a two-finger timeline in as touchscreen motion events, each at
+    /// its own time after the first. `UiDevice` has no multi-finger
+    /// gesture at a point, so the events are built here. Stops at the
+    /// first event that does not go in, after lifting what is down, so a
+    /// failed gesture does not leave a finger on the screen.
+    private fun injectPinch(events: List<PinchGesture.Event>): Boolean {
+        val automation = instrumentation.uiAutomation
+        val down = android.os.SystemClock.uptimeMillis()
+        val props = Array(2) { i ->
+            android.view.MotionEvent.PointerProperties().apply {
+                id = i
+                toolType = android.view.MotionEvent.TOOL_TYPE_FINGER
+            }
+        }
+        var last: PinchGesture.Event? = null
+        for (e in events) {
+            val at = down + e.atMs
+            val wait = at - android.os.SystemClock.uptimeMillis()
+            if (wait > 0) android.os.SystemClock.sleep(wait)
+            if (!automation.injectInputEvent(motionEvent(down, at, e, props), true)) {
+                last?.let { liftAfterFailure(down, it, props) }
+                return false
+            }
+            last = e
+        }
+        return true
+    }
+
+    private fun motionEvent(
+        down: Long,
+        at: Long,
+        e: PinchGesture.Event,
+        props: Array<android.view.MotionEvent.PointerProperties>,
+    ): android.view.MotionEvent {
+        val action = when (e.action) {
+            PinchGesture.Action.DOWN -> android.view.MotionEvent.ACTION_DOWN
+            PinchGesture.Action.POINTER_DOWN -> android.view.MotionEvent.ACTION_POINTER_DOWN or
+                (1 shl android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT)
+            PinchGesture.Action.MOVE -> android.view.MotionEvent.ACTION_MOVE
+            PinchGesture.Action.POINTER_UP -> android.view.MotionEvent.ACTION_POINTER_UP or
+                (1 shl android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT)
+            PinchGesture.Action.UP -> android.view.MotionEvent.ACTION_UP
+        }
+        val coords = e.fingers.map { p ->
+            android.view.MotionEvent.PointerCoords().apply {
+                x = p.x
+                y = p.y
+                pressure = 1f
+                size = 1f
+            }
+        }.toTypedArray()
+        return android.view.MotionEvent.obtain(
+            down, at, action, coords.size, props.copyOfRange(0, coords.size), coords,
+            0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0,
+        )
+    }
+
+    private fun liftAfterFailure(
+        down: Long,
+        last: PinchGesture.Event,
+        props: Array<android.view.MotionEvent.PointerProperties>,
+    ) {
+        val now = android.os.SystemClock.uptimeMillis()
+        val automation = instrumentation.uiAutomation
+        if (last.fingers.size == 2 && last.action != PinchGesture.Action.POINTER_UP) {
+            automation.injectInputEvent(
+                motionEvent(down, now, PinchGesture.Event(0, PinchGesture.Action.POINTER_UP, last.fingers), props),
+                true,
+            )
+        }
+        if (last.action != PinchGesture.Action.UP) {
+            automation.injectInputEvent(
+                motionEvent(down, now, PinchGesture.Event(0, PinchGesture.Action.UP, listOf(last.fingers[0])), props),
+                true,
+            )
+        }
     }
 
     private fun serveSwipeOnce(session: IHTTPSession): Response {

@@ -4,6 +4,26 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- **`pinch` — two fingers in one gesture, on iOS and Android.** A flow can
+  zoom: `pinch: { over: { id: player }, from: 1, to: 3 }` pinches about an
+  element's centre, `at: "50%,50%"` about a point, `fromSpan`/`toSpan` give
+  the finger distances directly, and `pan:` drags both fingers before they
+  lift. On the command line, `smix pinch id:player --from 1 --to 3`. Both
+  runners serve `POST /pinch-at-norm-coord`. A finger that would leave the
+  screen is refused by name rather than clipped. Each finger comes down a
+  few points short of its start and moves there first, so the app's
+  recognizer is already counting when the pinch begins: 1 → 3 measures
+  about 3.0x on iOS and 3.1x on Android.
+
+### Changed
+
+- **Breaking (Rust API):** the `Driver` trait and the flow adapter's
+  `AppLike` trait each gain a required `pinch` method; an implementation
+  outside this workspace must add it. See
+  [docs/migrating-to-17.md](docs/migrating-to-17.md).
+
 ## [16.3.1] — 2026-10-19
 
 ### Fixed

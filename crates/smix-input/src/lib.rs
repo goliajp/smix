@@ -10,6 +10,12 @@
 
 use serde::{Deserialize, Serialize};
 
+mod pinch;
+pub use pinch::{
+    DEFAULT_DURATION_MS as PINCH_DEFAULT_DURATION_MS, DEFAULT_PAN_MS as PINCH_DEFAULT_PAN_MS,
+    DURATION_RANGE as PINCH_DURATION_RANGE, Pan, Pinch, PinchSpans, SCALE_SPAN as PINCH_SCALE_SPAN,
+};
+
 /// Maestro yaml `direction:` semantic: the direction names what
 /// content the caller wants to **see** (navigation through content),
 /// NOT the finger gesture direction. `Down` = "navigate down through

@@ -18,6 +18,7 @@
 //! - `POST /press-key {key}` — press named key (Return/Tab/etc.)
 //! - `POST /scroll {selector, direction, include?}` — scroll-until-visible
 //! - `POST /swipe-once {direction}` — single swipe gesture (no probe loop)
+//! - `POST /pinch-at-norm-coord {cx, cy, fromSpan, toSpan, durationMs, pan*}` — two-finger pinch
 //! - `POST /foreground {bundleId}` — bring app to foreground
 //! - `POST /hide-keyboard` — take the keyboard down: its Return or Done key,
 //!   a drag of the focused field's scroll view into it, a touch on an empty
@@ -37,6 +38,7 @@ pub use acts::{TapTarget, target_gone_before_touch};
 mod hide_keyboard;
 mod hittable;
 mod input_text;
+mod pinch;
 pub mod port_owner;
 pub mod route_limits;
 mod screen_read;

@@ -719,6 +719,14 @@ fn block_label(opts: &crate::BlockOptions) -> String {
 pub(crate) fn summarize_step(step: &Step) -> String {
     match step {
         Step::RepeatTap { times, .. } => format!("repeatTap x{times}"),
+        Step::Pinch { spans, pan, .. } => {
+            let (a, b, unit) = match spans {
+                smix_input::PinchSpans::Scales { from, to } => (*from, *to, "x"),
+                smix_input::PinchSpans::Spans { from, to } => (*from, *to, " span"),
+            };
+            let drag = if pan.is_some() { " then drag" } else { "" };
+            format!("pinch {a}{unit} → {b}{unit}{drag}")
+        }
         Step::SwipeOver { from, to, .. } => format!(
             "swipe over element {:.0}%,{:.0}% → {:.0}%,{:.0}%",
             from.0 * 100.0,

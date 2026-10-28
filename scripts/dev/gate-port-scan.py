@@ -63,7 +63,7 @@ SCRIPTS = os.path.join(ROOT, "scripts")
 RUNNER_COMMANDS = {
     "runner up", "runner down", "runner supervise", "runner cycle",
     "runner list-sessions", "capsule up", "capsule down", "down", "doctor", "run",
-    "run-script", "tap", "find", "wait-for", "fill", "press-key", "swipe",
+    "run-script", "tap", "find", "wait-for", "fill", "press-key", "swipe", "pinch",
     "scroll", "hide-keyboard", "tree", "describe", "system-popups",
     "system-popup-action", "authoring suggest", "authoring capture-tree",
     "authoring diff-tree", "authoring record", "diagnostic dump",

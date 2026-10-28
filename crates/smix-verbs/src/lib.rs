@@ -409,6 +409,7 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         ArgShape::Mapping,
     ),
     v("swipe", "swipe", VerbCategory::Gesture, ArgShape::Mapping),
+    v("pinch", "pinch", VerbCategory::Gesture, ArgShape::Mapping),
     v(
         "hideKeyboard",
         "hideKeyboard",
@@ -672,7 +673,7 @@ mod tests {
 
     #[test]
     fn table_covers_smix_native_verbs() {
-        for name in ["fixture", "webviewEval"] {
+        for name in ["fixture", "webviewEval", "pinch"] {
             assert!(
                 find_by_smix(name).is_some() || find_by_maestro(name).is_some(),
                 "smix-native verb {name:?} missing from VERB_TABLE"

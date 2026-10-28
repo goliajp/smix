@@ -1630,6 +1630,7 @@ dependencies = [
  "smix-driver",
  "smix-fixture",
  "smix-host-coord-resolver",
+ "smix-input",
  "smix-lease",
  "smix-metro-log",
  "smix-sdk",

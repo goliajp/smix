@@ -362,6 +362,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::WebViewEval { .. } => "webViewEval",
         Step::WaitForAnimationToEnd { .. } => "waitForAnimationToEnd",
         Step::SwipeOver { .. } => "swipe",
+        Step::Pinch { .. } => "pinch",
         Step::ExtendedWaitUntil { .. } => "extendedWaitUntil",
         Step::AssertVisible { .. } => "assertVisible",
         Step::InputText(_) => "inputText",
