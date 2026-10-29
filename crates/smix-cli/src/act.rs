@@ -457,8 +457,15 @@ pub async fn cmd_fill(
     // default, and detection fails open on the fields it cannot read.
     // The length is confirmation enough — the caller already knows the
     // value, and what they need to know is that it arrived whole.
-    let how = if set { ", set without the keyboard" } else { "" };
-    println!("filled {selector_str} ({} chars{how})", text.chars().count());
+    let how = if set {
+        ", set without the keyboard"
+    } else {
+        ""
+    };
+    println!(
+        "filled {selector_str} ({} chars{how})",
+        text.chars().count()
+    );
     Ok(())
 }
 

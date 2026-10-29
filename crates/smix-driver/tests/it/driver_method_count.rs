@@ -39,6 +39,9 @@ const ROSTER: &[&str] = &[
     "pinch",
     "press_key",
     "set_orientation",
+    // `fill` without the keyboard (v18.0-C3): an input method in a CJK
+    // mode composes typed keys into its own script. iOS refuses it.
+    "set_text",
     "swipe_at_norm_coord",
     "swipe_once",
     "system_popup_action",
