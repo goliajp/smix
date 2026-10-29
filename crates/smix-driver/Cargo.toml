@@ -25,7 +25,7 @@ smix-input = { path = "../smix-input", version = "18.0.0" }
 smix-error = { path = "../smix-error", version = "18.0.0" }
 smix-runner-client = { path = "../smix-runner-client", version = "18.0.0" }
 smix-runner-wire = { path = "../smix-runner-wire", version = "18.0.0" }
-tokio = { workspace = true, features = ["time", "macros"] }
+tokio = { workspace = true, features = ["time", "macros", "rt"] }
 tracing.workspace = true
 serde_json.workspace = true
 async-trait.workspace = true

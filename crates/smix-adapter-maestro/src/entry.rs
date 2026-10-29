@@ -161,6 +161,40 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
 /// attribution — it used to parse the Debug string, with parse failure
 /// mapping to 0, i.e. "success".
 pub async fn run_flow_code(args: FlowArgs) -> u8 {
+    let outcome = run_flow_outcome(args).await;
+    if let Some(suite) = &outcome.junit {
+        println!(
+            "{}",
+            crate::junit::junit_document(std::slice::from_ref(suite))
+        );
+    }
+    outcome.code
+}
+
+/// What one flow's run comes to: its exit code, and with `--format junit`
+/// its `<testsuite>` element, left to the caller to print — a caller
+/// running several flows, or one flow more than once, puts them in one
+/// document with [`crate::junit_document`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct FlowOutcome {
+    /// The exit code [`run_flow_code`] would return.
+    pub code: u8,
+    /// The flow's `<testsuite>` when the format is JUnit.
+    pub junit: Option<String>,
+}
+
+/// [`run_flow_code`] without printing the JUnit document: the flow's
+/// suite comes back in [`FlowOutcome::junit`] instead. Every other output
+/// is printed as before.
+pub async fn run_flow_outcome(args: FlowArgs) -> FlowOutcome {
+    let mut junit = None;
+    let code = run_flow_inner(args, &mut junit).await;
+    FlowOutcome { code, junit }
+}
+
+async fn run_flow_inner(args: FlowArgs, junit: &mut Option<String>) -> u8 {
+    let run_began = std::time::Instant::now();
     // 1. parse yaml — BEFORE any wire traffic, because the flow's own
     // `appId:` is the default app to open the session for. The session
     // used to open first, on the CLI-supplied bundle alone, which made
@@ -505,6 +539,7 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
     // would drop the tokio runtime and orphan the runner-side session
     // until its idle-close timer fired.
     let mut interrupted_by: Option<&'static str> = None;
+    let setup_ms = run_began.elapsed().as_millis() as u64;
     let result = {
         let flow_task = adapter.run(&flow);
         tokio::pin!(flow_task);
@@ -544,6 +579,8 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
     // the adapter, so a failed run still surfaces its partial trace
     // in run-summary.json.
     let debug_records: Vec<crate::StepDebugRecord> = adapter.debug_records().to_vec();
+    let step_timings: Vec<crate::StepTiming> = adapter.step_timings().to_vec();
+    let steps_ended = std::time::Instant::now();
     drop(adapter);
 
     if holds_animations {
@@ -570,16 +607,25 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
         }
     }
 
+    let timing = crate::RunTiming {
+        total_ms: run_began.elapsed().as_millis() as u64,
+        setup_ms,
+        teardown_ms: steps_ended.elapsed().as_millis() as u64,
+        steps: step_timings,
+    };
+
     // debug-output + json format handling. debug_output writes a
     // summary JSON at exit; format=Json emits the same to stdout.
     // Both work together (debug_output for the on-disk artifact,
     // format=Json for pipe consumption).
     if let Some(dir) = &args.debug_output
-        && let Err(e) = write_debug_output(dir, args.flow.as_path(), &result, &debug_records)
+        && let Err(e) =
+            write_debug_output(dir, args.flow.as_path(), &result, &debug_records, &timing)
     {
         eprintln!("WARN: debug-output write failed: {e}");
     }
 
+    print_time(&timing);
     match result {
         Ok(report) => {
             for w in &report.warnings {
@@ -590,8 +636,16 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
             // summary line (which was already JSON-shaped but under a
             // different schema).
             match args.format {
-                OutputFormat::Json => emit_json_success(&args.flow, &report),
-                OutputFormat::Junit => crate::junit::emit_junit(&args.flow, Ok(&report)),
+                OutputFormat::Json => {
+                    emit_json_success(&args.flow, &report, &debug_records, &timing)
+                }
+                OutputFormat::Junit => {
+                    *junit = Some(crate::junit::testsuite(
+                        &args.flow,
+                        Ok(&report),
+                        timing.total_ms,
+                    ))
+                }
                 OutputFormat::Human => print_summary(&report),
             }
             0
@@ -599,8 +653,14 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
         Err(e) => {
             eprintln!("error: {e}");
             match args.format {
-                OutputFormat::Json => emit_json_failure(&args.flow, &e),
-                OutputFormat::Junit => crate::junit::emit_junit(&args.flow, Err(&e)),
+                OutputFormat::Json => emit_json_failure(&args.flow, &e, &debug_records, &timing),
+                OutputFormat::Junit => {
+                    *junit = Some(crate::junit::testsuite(
+                        &args.flow,
+                        Err(&e),
+                        timing.total_ms,
+                    ))
+                }
                 OutputFormat::Human => {}
             }
             // POSIX-conventional exit codes for signal
@@ -614,18 +674,27 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
     }
 }
 
-// debug-output writer. MVP shape: writes one `run-summary.json` at run
-// end. Per-step files + on-fail screenshots are deferred to a future
-// increment (they need a coordinated hook inside the adapter's
-// run_step loop).
+/// The run's time on one stderr line, before the summary line.
+fn print_time(t: &crate::RunTiming) {
+    let steps: u64 = t.steps.iter().map(|s| s.wall_ms).sum();
+    eprintln!(
+        "time: {} ms — setup {} ms, steps {steps} ms, teardown {} ms",
+        t.total_ms, t.setup_ms, t.teardown_ms
+    );
+}
+
+// `run-summary.json`, beside the per-step files the adapter writes as
+// each step ends.
 fn write_debug_output(
     dir: &Path,
     flow: &Path,
     result: &Result<crate::RunReport, crate::RunError>,
     debug_records: &[crate::StepDebugRecord],
+    timing: &crate::RunTiming,
 ) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
-    let summary = build_summary_json(flow, result.as_ref(), debug_records);
+    let mut summary = build_summary_json(flow, result.as_ref(), debug_records);
+    summary["timing"] = timing.to_json();
     let path = dir.join("run-summary.json");
     std::fs::write(
         path,
@@ -659,20 +728,33 @@ fn build_summary_json(
     }
 }
 
-fn emit_json_success(flow: &Path, report: &crate::RunReport) {
-    // Stdout emission path: no debug_records available at this call
-    // site (the CLI aggregate that owns them writes them to disk via
-    // write_debug_output). Pass empty slice.
-    let payload = build_summary_json(flow, Ok(report), &[]);
+fn emit_json_success(
+    flow: &Path,
+    report: &crate::RunReport,
+    debug_records: &[crate::StepDebugRecord],
+    timing: &crate::RunTiming,
+) {
+    let mut payload = build_summary_json(flow, Ok(report), debug_records);
+    payload["timing"] = timing.to_json();
     println!("{}", serde_json::to_string(&payload).unwrap_or_default());
 }
 
-fn emit_json_failure(flow: &Path, err: &crate::RunError) {
-    let payload = json_failure_payload(flow, err);
+fn emit_json_failure(
+    flow: &Path,
+    err: &crate::RunError,
+    debug_records: &[crate::StepDebugRecord],
+    timing: &crate::RunTiming,
+) {
+    let mut payload = json_failure_payload(flow, err, debug_records);
+    payload["timing"] = timing.to_json();
     println!("{}", serde_json::to_string(&payload).unwrap_or_default());
 }
 
-fn json_failure_payload(flow: &Path, err: &crate::RunError) -> serde_json::Value {
+fn json_failure_payload(
+    flow: &Path,
+    err: &crate::RunError,
+    debug_records: &[crate::StepDebugRecord],
+) -> serde_json::Value {
     use serde_json::json;
     // For SDK failures, surface the ExpectationFailure's own
     // structured form when we can. For parse/io/unknown, plain string.
@@ -690,7 +772,7 @@ fn json_failure_payload(flow: &Path, err: &crate::RunError) -> serde_json::Value
             }
         })
     } else {
-        build_summary_json(flow, Err(err), &[])
+        build_summary_json(flow, Err(err), debug_records)
     }
 }
 
@@ -981,7 +1063,7 @@ mod json_failure {
             message: "m".to_string(),
             ..Default::default()
         });
-        json_failure_payload(Path::new("f.yaml"), &crate::RunError::Sdk(f))
+        json_failure_payload(Path::new("f.yaml"), &crate::RunError::Sdk(f), &[])
     }
 
     /// A reader of the JSON report can tell a verdict about the screen
