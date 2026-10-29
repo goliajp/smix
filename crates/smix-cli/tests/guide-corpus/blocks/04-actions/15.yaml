@@ -1,4 +1,4 @@
-- pressKey: ENTER
-- pressKey: HOME
-- pressKey: VOLUME_UP
-- pressKey: LOCK
+- swipe:
+    start: "10%,50%"
+    end: "90%,50%"
+    duration: 400

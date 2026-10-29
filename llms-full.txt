@@ -1675,6 +1675,46 @@ already have: `tapOn` it, then the scalar form.
   is refused there; clear the field first.
 - Important Android quirk: UiAutomation.executeShellCommand does NOT use `sh -c`, so quote-wrapping the text causes literal quotes. The runner handles this; do not pre-quote yourself.
 
+### Set without the keyboard
+
+```yaml
+- inputText:
+    id: "form-email-input"
+    text: "probe@example.test"
+    method: setText              # replaces what the field holds
+- inputText:
+    text: "probe@example.test"
+    method: setText              # the focused field, appending
+```
+
+`input text` presses keys, and the keys go through whatever keyboard
+the device has up. A keyboard in a Chinese, Japanese or Korean input
+mode composes Latin keys into its own script: on a Samsung S22 in
+Chinese mode, `probe@example.test` landed as `probe@买票了.`. The read-back
+catches it and fails the step with `text_did_not_land`, and the message
+says so: the field gained characters no key makes, which the keyboard
+on screen composed (or the app rewrote), and it names the keyboard's
+package.
+
+`method: setText` puts the text in without the keyboard: the field is
+given what it held with the new text after it (`ACTION_SET_TEXT`), so no
+input method sees a key. The field is read back as a typed one is, and
+the app's text listeners still hear the change. `method: type` is the
+default spelled out. From the command line it is `smix fill --set-text`.
+
+- Never chosen for you. A typed step that the keyboard rewrote fails;
+  it is not retried as a set, because what typing left in the field is
+  yours to see, and a set would replace it.
+- No pasteboard: the device's clipboard is shared with the user's Mac
+  and their other devices.
+- Android only. iOS refuses the step by name: XCUITest enters text by
+  typing it.
+- A masked field that already holds text is refused, as it is for text
+  past ASCII: its content cannot be read back to keep. Clear it first,
+  or name it — a named field is emptied before the set.
+- An app that rewrites what is set on it (a formatter, a length limit)
+  fails the read-back, as it would when typed.
+
 ### Clear
 
 ```yaml
@@ -2872,6 +2912,7 @@ smix wait-for id:loading-spinner --timeout 5    # seconds, not ms
 smix wait-for id:loading-spinner --absent  # wait until it is GONE
 
 smix fill id:form-email-input --text alice@example.com
+smix fill id:form-email-input --text alice@example.com --set-text   # Android: without the keyboard (see 04-actions)
 smix press-key return                      # positional key name, read as a flow's pressKey reads it
 smix press-key back                        # navigation back — fails when nothing went back
 smix scroll "text:Row #5000" --direction down   # stops when it is wholly in view
@@ -5483,8 +5524,8 @@ began clearing first, and still wrong past fifty characters.
 
 ### `POST /input-text` (Android)
 
-Body: `{ text: string, focusRect?: [nx, ny, nw, nh], budgetMs?: number }`
-Response: `{ ok: bool, status: "ok" | "text_did_not_land", text, before, held, chunks, retyped }`
+Body: `{ text: string, method?: "type" | "setText", focusRect?: [nx, ny, nw, nh], budgetMs?: number }`
+Response: `{ ok: bool, status: "ok" | "text_did_not_land", method: "type" | "setText", text, before, held, chunks, retyped }`
 — for a masked field `beforeLength` and `heldLength` in place of `before`
 and `held`.
 
@@ -5521,6 +5562,19 @@ with text still to send, or a short chunk's field has lost focus, the
 runner types nothing more and answers `{ error: "field_left" }` or
 `{ error: "focus_left" }`, the message naming the chunk and what the
 field held when last read.
+
+`method: "setText"` (absent means `"type"`) gives the focused field
+what it held with `text` after it through `ACTION_SET_TEXT`, which no
+keyboard sees, and reads it back the same way; text `input text` cannot
+type (past ASCII) is set this way whatever `method` says, and the
+response's `method` says which way it went in. A set that did not land
+answers `{ error: "text_did_not_land", message }`, the message saying
+whether the node took the action and what the field held. Any other
+`method` is a 400 `bad_request`.
+
+When typed ASCII leaves characters past ASCII in the field, the
+`text_did_not_land` message says the keyboard composed them, names the
+input method's package, and points at `method: setText`.
 
 ### `POST /press-key`
 
@@ -5850,6 +5904,7 @@ that is why.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `inputText` / `fill` | ✅ | ✅ | `--force-key-events` opt-in bypasses a11y-focus resolution for RN hidden-input patterns |
+| `inputText` `method: setText` / `fill --set-text` | ❌ | ✅ | Puts the text in without the keyboard (`ACTION_SET_TEXT`), so a CJK input mode cannot compose it. iOS refuses by name: XCUITest enters text only by typing |
 | `eraseText` / `clear` | ✅ | ✅ | iOS deletes proportionally to the field's own length; Android empties the focused node exactly (`ACTION_SET_TEXT`), falling back to bounded deletes for a field the tree cannot address |
 | `pasteText` | ✅ | ❌ | Since Android 10 the clipboard serves only the focused app, and the runner cannot be focused while driving yours. Use `inputText` |
 | `setClipboard` | ✅ | ❌ | Same clipboard restriction as `pasteText`. On a registered physical iPhone it needs Xcode 27 (`devicectl device pasteboard`) |

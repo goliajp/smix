@@ -1,0 +1,3 @@
+- startRecording: "trace.mp4"
+- stopRecording
+- takeScreenshot: "step5.png"
