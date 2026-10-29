@@ -4,6 +4,8 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+## [19.0.0] — 2026-10-30
+
 ### Added
 
 - **Text can go into a field without the keyboard.** `inputText` takes
