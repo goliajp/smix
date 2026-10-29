@@ -989,7 +989,7 @@ checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
 
 [[package]]
 name = "smix-adb"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1001,7 +1001,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "async-trait",
  "serde_json",
@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -1028,7 +1028,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "smix-input",
  "smix-screen",
@@ -1039,14 +1039,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-lease"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1056,7 +1056,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-client"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -1075,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1086,7 +1086,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "smix-sdk"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1126,7 +1126,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "regex",
  "serde",
@@ -1135,7 +1135,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1143,14 +1143,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "libc",
  "serde",
@@ -1165,7 +1165,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "19.0.0"
+version = "20.0.0"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -1390,9 +1390,18 @@ dependencies = [
 
 [[package]]
 name = "utf8_iter"
-version = "1.0.4"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
+checksum = "af3bd9d3e571c26fcce9d033b87ea5ab061b8d2ffe9b7a5675d810d68f03edf0"
+dependencies = [
+ "utf_types",
+]
+
+[[package]]
+name = "utf_types"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a3b425286980a367278453f3b6d28cdcb134b574e5a35824a6ff5eebad50bb6"
 
 [[package]]
 name = "want"
