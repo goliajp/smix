@@ -4,6 +4,8 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+## [18.1.0] — 2026-10-29
+
 ### Added
 
 - **`smix run` says where the time went.** Every step is timed, whatever
