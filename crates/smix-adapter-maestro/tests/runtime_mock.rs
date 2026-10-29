@@ -48,6 +48,7 @@ enum MockCall {
     GoBack,
     TapAtCoord(f64, f64),
     Fill(Selector, String),
+    SetText(Selector, String),
     PressKey(KeyName),
     Scroll(Selector, SwipeDirection, smix_driver::ScrollUntil),
     WaitFor(Selector, Duration),
@@ -536,6 +537,13 @@ impl AppLike for MockApp {
             .lock()
             .unwrap()
             .push(MockCall::Fill(selector.clone(), text.to_string()));
+        Ok(())
+    }
+    async fn set_text(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(MockCall::SetText(selector.clone(), text.to_string()));
         Ok(())
     }
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure> {
@@ -1248,6 +1256,33 @@ async fn mock_run_input_text_calls_fill_focused() {
         MockCall::Fill(Selector::Focused { .. }, text) => assert_eq!(text, "hello"),
         other => panic!("expected Fill(Focused, hello), got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn mock_run_input_text_set_goes_to_set_text_not_fill() {
+    let flow = parse_inline(
+        "appId: x\n---\n\
+         - inputText: { text: \"probe@example.test\", method: setText }\n\
+         - inputText: { id: email, text: \"a@b.test\", method: setText }\n\
+         - inputText: { id: email, text: \"typed\", method: type }\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("run ok");
+    let calls = app.calls();
+    assert_eq!(calls.len(), 3, "{calls:?}");
+    match &calls[0] {
+        MockCall::SetText(Selector::Focused { .. }, text) => assert_eq!(text, "probe@example.test"),
+        other => panic!("expected SetText(Focused), got {other:?}"),
+    }
+    match &calls[1] {
+        MockCall::SetText(Selector::Id { id, .. }, text) => {
+            assert_eq!(id, "email");
+            assert_eq!(text, "a@b.test");
+        }
+        other => panic!("expected SetText(Id email), got {other:?}"),
+    }
+    assert!(matches!(&calls[2], MockCall::Fill(Selector::Id { .. }, t) if t == "typed"), "{calls:?}");
 }
 
 #[tokio::test]

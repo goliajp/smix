@@ -59,6 +59,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v16.0-c11-pinch-e2e.sh",
     "v17.0-c2-a-view-beside-compose-e2e.sh",
     "v18.0-c2-where-the-time-went-e2e.sh",
+    "v18.0-c3-a-keyboard-that-composes-e2e.sh",
     "v10.2-c2-devicectl-pasteboard-e2e.sh",
     "v10.2-c3-devicectl-location-e2e.sh",
     "v11.0-c1-a-press-that-lands-e2e.sh",

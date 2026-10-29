@@ -364,6 +364,12 @@ enum Cmd {
         /// The text to type.
         #[arg(long)]
         text: String,
+        /// Put the text in the field without the keyboard (Android:
+        /// `ACTION_SET_TEXT`), so an input method that composes typed
+        /// keys into Chinese, Japanese or Korean cannot change it. iOS
+        /// refuses it. A flow spells it `method: setText`.
+        #[arg(long = "set-text", default_value_t = false)]
+        set_text: bool,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
@@ -4068,12 +4074,13 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Fill {
             selector,
             text,
+            set_text,
             port,
             device,
             platform,
         } => {
             let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
-            act::cmd_fill(selector, text, p, plat)
+            act::cmd_fill(selector, text, p, plat, set_text)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }

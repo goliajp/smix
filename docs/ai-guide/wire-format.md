@@ -184,8 +184,8 @@ began clearing first, and still wrong past fifty characters.
 
 ### `POST /input-text` (Android)
 
-Body: `{ text: string, focusRect?: [nx, ny, nw, nh], budgetMs?: number }`
-Response: `{ ok: bool, status: "ok" | "text_did_not_land", text, before, held, chunks, retyped }`
+Body: `{ text: string, method?: "type" | "setText", focusRect?: [nx, ny, nw, nh], budgetMs?: number }`
+Response: `{ ok: bool, status: "ok" | "text_did_not_land", method: "type" | "setText", text, before, held, chunks, retyped }`
 — for a masked field `beforeLength` and `heldLength` in place of `before`
 and `held`.
 
@@ -222,6 +222,19 @@ with text still to send, or a short chunk's field has lost focus, the
 runner types nothing more and answers `{ error: "field_left" }` or
 `{ error: "focus_left" }`, the message naming the chunk and what the
 field held when last read.
+
+`method: "setText"` (absent means `"type"`) gives the focused field
+what it held with `text` after it through `ACTION_SET_TEXT`, which no
+keyboard sees, and reads it back the same way; text `input text` cannot
+type (past ASCII) is set this way whatever `method` says, and the
+response's `method` says which way it went in. A set that did not land
+answers `{ error: "text_did_not_land", message }`, the message saying
+whether the node took the action and what the field held. Any other
+`method` is a 400 `bad_request`.
+
+When typed ASCII leaves characters past ASCII in the field, the
+`text_did_not_land` message says the keyboard composed them, names the
+input method's package, and points at `method: setText`.
 
 ### `POST /press-key`
 

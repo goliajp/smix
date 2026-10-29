@@ -85,6 +85,7 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
             inner.insert(Value::String("text".into()), Value::String(text.clone()));
             Ok(single("inputText", Value::Mapping(inner)))
         }
+        Step::SetText { .. } => Err(EmitError::Unsupported { verb: "inputText" }),
         Step::AssertVisible { selector } => {
             Ok(single("assertVisible", selector_to_maestro(selector)?))
         }
@@ -367,6 +368,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::AssertVisible { .. } => "assertVisible",
         Step::InputText(_) => "inputText",
         Step::InputTextInto { .. } => "inputTextInto",
+        Step::SetText { .. } => "inputText",
         Step::PressKey(_) => "pressKey",
         Step::Back(_) => "back",
         Step::RunFlow(_) => "runFlow",

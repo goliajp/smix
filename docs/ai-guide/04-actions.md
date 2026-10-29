@@ -289,6 +289,46 @@ already have: `tapOn` it, then the scalar form.
   is refused there; clear the field first.
 - Important Android quirk: UiAutomation.executeShellCommand does NOT use `sh -c`, so quote-wrapping the text causes literal quotes. The runner handles this; do not pre-quote yourself.
 
+### Set without the keyboard
+
+```yaml
+- inputText:
+    id: "form-email-input"
+    text: "probe@example.test"
+    method: setText              # replaces what the field holds
+- inputText:
+    text: "probe@example.test"
+    method: setText              # the focused field, appending
+```
+
+`input text` presses keys, and the keys go through whatever keyboard
+the device has up. A keyboard in a Chinese, Japanese or Korean input
+mode composes Latin keys into its own script: on a Samsung S22 in
+Chinese mode, `probe@example.test` landed as `probe@买票了.`. The read-back
+catches it and fails the step with `text_did_not_land`, and the message
+says so: the field gained characters no key makes, which the keyboard
+on screen composed (or the app rewrote), and it names the keyboard's
+package.
+
+`method: setText` puts the text in without the keyboard: the field is
+given what it held with the new text after it (`ACTION_SET_TEXT`), so no
+input method sees a key. The field is read back as a typed one is, and
+the app's text listeners still hear the change. `method: type` is the
+default spelled out. From the command line it is `smix fill --set-text`.
+
+- Never chosen for you. A typed step that the keyboard rewrote fails;
+  it is not retried as a set, because what typing left in the field is
+  yours to see, and a set would replace it.
+- No pasteboard: the device's clipboard is shared with the user's Mac
+  and their other devices.
+- Android only. iOS refuses the step by name: XCUITest enters text by
+  typing it.
+- A masked field that already holds text is refused, as it is for text
+  past ASCII: its content cannot be read back to keep. Clear it first,
+  or name it — a named field is emptied before the set.
+- An app that rewrites what is set on it (a formatter, a length limit)
+  fails the read-back, as it would when typed.
+
 ### Clear
 
 ```yaml

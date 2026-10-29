@@ -4,6 +4,33 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- **Text can go into a field without the keyboard.** `inputText` takes
+  `method: setText` — with a target, which is emptied first, or without
+  one, for the focused field — and `smix fill` takes `--set-text`. On
+  Android the field is given its new content through `ACTION_SET_TEXT`,
+  so no input method sees a key, and it is read back as a typed one is.
+  A keyboard in a Chinese, Japanese or Korean input mode composes typed
+  Latin keys into its own script (`probe@example.test` landed as
+  `probe@买票了.` on a Samsung S22); a set cannot be composed. It is never
+  chosen for you, uses no pasteboard, and iOS refuses it by name.
+- `Driver::set_text`, `App::set_text`, `AppLike::set_text`,
+  `Step::SetText`, and `HttpRunnerClient::set_text` / `set_text_in`.
+  `/input-text` takes `method: "type" | "setText"` and answers with the
+  `method` it used.
+
+### Changed
+
+- **A fill the keyboard rewrote says so.** When typed text left
+  characters past ASCII in the field, `text_did_not_land` used to say
+  only that characters were there that nothing typed. It now says the
+  keyboard on screen composed them, names the input method's package,
+  and points at `method: setText`.
+- On Android, text past ASCII that does not land after being set answers
+  `text_did_not_land` with a message (whether the node took the action,
+  what the field held), where it answered `ok: false` with no reason.
+
 ## [18.1.0] — 2026-10-29
 
 ### Added
