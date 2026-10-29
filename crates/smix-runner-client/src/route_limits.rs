@@ -206,7 +206,8 @@ pub const ROUTES: &[Route] = &[
     r("/back", ms(20_500), ms(3_500), true).looks(2),
     r("/hide-keyboard", REQ, ms(2_500), true).looks(1),
     r("/input-text", REQ, REQ, false).looks(2),
-    r("/fill", ms(0), NONE, true),
+    // iOS: one automation stall and every key at the request's pace.
+    r("/fill", REQ, NONE, true),
     r("/clear", ms(0), NONE, true),
     // Android: 6 s for focus, a 0.5 s idle wait, the delete keys (sent in
     // batches, each started only while the route's limit lasts) and 2 s for
@@ -418,7 +419,8 @@ mod tests {
     #[test]
     fn a_fill_on_ios_is_waited_for_through_one_automation_stall() {
         // the CI run: one existence check inside /fill took 17.9 s
-        let wait = route_wait("/fill", false).expect("fixed");
+        let wait = wait_for_request("/fill", crate::paced_fill_budget("", 200, false), false)
+            .expect("fits");
         assert!(
             wait > Duration::from_millis(17_900) + ANSWER_MARGIN,
             "{wait:?}"

@@ -236,25 +236,23 @@ async fn tap_miss_on_an_element_held_off_screen_says_to_scroll_to_it() {
 }
 
 #[tokio::test]
-async fn fill_chunks_one_char_per_post() {
-    // Driver.fill splits multi-char text into 1-char
-    // chunks, posting each to runner /fill separately so the RN
-    // TextInput onChangeText debounce on the main thread can flush
-    // between keystrokes. Verify the mock receives exactly N posts for
-    // an N-character fill — body_json per char would over-constrain
-    // (we'd have to enumerate all 7); body_partial_json on the
-    // selector field is sufficient because every chunk posts the
-    // same selector.
+async fn fill_posts_the_whole_text_once_at_the_pace() {
+    // One request carrying the whole text and the pace the runner types
+    // it at — a React Native field drops keys typed at the daemon's full
+    // speed. This was one post per character, each a round trip.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/fill"))
-        .and(body_partial_json(serde_json::json!({
-            "selector": {"text": "Email"}
+        .and(body_json(serde_json::json!({
+            "selector": {"text": "Email"},
+            "text": "u@x.com",
+            "clearFirst": true,
+            "typingFrequency": smix_runner_client::FILL_PACE
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "tree": null, "stages": null
         })))
-        .expect(7) // chars in "u@x.com"
+        .expect(1)
         .mount(&server)
         .await;
     let d = driver_for(&server);
@@ -268,10 +266,10 @@ async fn fill_with_id_selector_focus_taps_then_fills_focused() {
     // Runner /fill only accepts text selectors (or the
     // _focused_ magic). For id/label/role/anchor selectors, driver.fill
     // host-resolves + taps the target first (to give it keyboard focus),
-    // then issues chunked /fill posts with `selector: {focused: true}`.
+    // then posts the whole text to /fill with `selector: {focused: true}`.
     // This test verifies the dispatch end-to-end via wiremock route
-    // coverage: a single /tap-at-norm-coord (focus tap), then N chunked
-    // /fill posts each carrying the focused-magic selector.
+    // coverage: a single /tap-at-norm-coord (focus tap), then one /fill
+    // carrying the focused-magic selector.
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/tree"))
@@ -292,35 +290,13 @@ async fn fill_with_id_selector_focus_taps_then_fills_focused() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "tree": null, "stages": null
         })))
-        .expect(5) // "Hello" — 5 chars
+        .expect(1)
         .mount(&server)
         .await;
     let d = driver_for(&server);
     d.fill(&id_sel("login-btn"), "Hello", None, true)
         .await
         .unwrap();
-}
-
-#[tokio::test]
-async fn fill_single_char_takes_fast_path() {
-    // 1-char fills bypass the chunking loop — a single POST with the
-    // whole text. Verifies the fast-path branch stays intact.
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/fill"))
-        .and(body_json(serde_json::json!({
-            "selector": {"text": "Email"},
-            "text": "x",
-            "clearFirst": true
-        })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "tree": null, "stages": null
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    let d = driver_for(&server);
-    d.fill(&text_sel("Email"), "x", None, true).await.unwrap();
 }
 
 #[tokio::test]
@@ -976,16 +952,14 @@ async fn android_sends_the_target_package_to_the_runner() {
 }
 
 #[tokio::test]
-async fn clear_first_belongs_to_the_first_chunk_only() {
-    // Chunking is a React-Native workaround, and it must not change
-    // what the call means: asking to clear once must not clear before
-    // every character, which would leave only the last one standing.
+async fn clear_first_is_asked_once_for_the_whole_text() {
+    // Asking to clear once must clear once: the text and the clear go in
+    // the same request, so there is no later character to clear before.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/fill"))
-        .and(body_json(serde_json::json!({
-            "selector": {"text": "Email"},
-            "text": "a",
+        .and(body_partial_json(serde_json::json!({
+            "text": "abc",
             "clearFirst": true
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -994,21 +968,6 @@ async fn clear_first_belongs_to_the_first_chunk_only() {
         .expect(1)
         .mount(&server)
         .await;
-    for ch in ["b", "c"] {
-        Mock::given(method("POST"))
-            .and(path("/fill"))
-            .and(body_json(serde_json::json!({
-                "selector": {"text": "Email"},
-                "text": ch,
-                "clearFirst": false
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "tree": null, "stages": null
-            })))
-            .expect(1)
-            .mount(&server)
-            .await;
-    }
     let d = driver_for(&server);
     d.fill(&text_sel("Email"), "abc", None, true).await.unwrap();
 }
@@ -1117,4 +1076,50 @@ async fn a_covered_target_is_tapped_only_when_the_runner_says_a_touch_reaches_it
         }
         server.verify().await;
     }
+}
+
+#[tokio::test]
+async fn a_wait_on_a_still_screen_gives_up_when_asked_to() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tree_with_id_and_role()))
+        .mount(&server)
+        .await;
+    let mut d = driver_for(&server);
+    smix_driver::Driver::set_give_up_when_still(&mut d, Some(Duration::from_millis(300)));
+    let began = std::time::Instant::now();
+    let err = d
+        .wait_for(&id_sel("never-there"), Duration::from_secs(10), None)
+        .await
+        .expect_err("it is never there");
+    let took = began.elapsed();
+    assert_eq!(err.code, FailureCode::Timeout);
+    assert!(
+        err.message.contains("had not changed for 300 ms"),
+        "{}",
+        err.message
+    );
+    assert!(
+        took < Duration::from_secs(3),
+        "gave up after {took:?}, not near 300 ms"
+    );
+}
+
+#[tokio::test]
+async fn without_the_limit_a_still_screen_is_waited_on_to_the_timeout() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tree_with_id_and_role()))
+        .mount(&server)
+        .await;
+    let d = driver_for(&server);
+    let began = std::time::Instant::now();
+    let err = d
+        .wait_for(&id_sel("never-there"), Duration::from_millis(1500), None)
+        .await
+        .expect_err("it is never there");
+    assert!(began.elapsed() >= Duration::from_millis(1500));
+    assert!(err.message.contains("timed out"), "{}", err.message);
 }

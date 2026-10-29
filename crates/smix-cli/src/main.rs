@@ -21,6 +21,8 @@ macro_rules! println {
 }
 
 mod act;
+mod settle_flags;
+use settle_flags::settle_from_flags;
 mod authoring;
 mod bench;
 mod boot_avd;
@@ -885,6 +887,25 @@ Documentation: docs/AI_GUIDE.md
         /// case where the default path finds nothing to tap.
         #[arg(long = "force-key-events", default_value_t = false)]
         force_key_events: bool,
+        /// Longest a tap, double tap or long press waits for its target
+        /// to stop moving before failing (default 3000). A target still
+        /// moving at the limit fails the step rather than being touched
+        /// where it was.
+        #[arg(long = "settle-max-ms", value_parser = clap::value_parser!(u64).range(0..=60_000))]
+        settle_max_ms: Option<u64>,
+        /// Readings in a row (100 ms apart) that must put the target in
+        /// the same place before it is touched, counting the one it was
+        /// found in (default 2). 1 touches it where it was first found.
+        #[arg(long = "settle-frames", value_parser = clap::value_parser!(u32).range(1..=20))]
+        settle_frames: Option<u32>,
+        /// End a wait for an element (`extendedWaitUntil`, `waitFor`)
+        /// once the screen has not changed for this long and the element
+        /// is still not on it, rather than running its whole timeout. A
+        /// screen that does not move while the app waits on a server
+        /// fails too, so set it above the longest such wait. Off when
+        /// absent.
+        #[arg(long = "give-up-when-still-ms", value_parser = clap::value_parser!(u64).range(500..=600_000))]
+        give_up_when_still_ms: Option<u64>,
         /// Disable auto-annotate on `--debug-output` fail-PNG (default:
         /// annotate with a red circle + step summary text label at the
         /// top of the screenshot). Use when downstream tooling expects
@@ -4263,9 +4284,13 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             metro_log_url,
             fixture_registry,
             force_key_events,
+            settle_max_ms,
+            settle_frames,
+            give_up_when_still_ms,
             no_fail_annotate,
             check,
         } => {
+            let settle = settle_from_flags(settle_max_ms, settle_frames);
             // v2 break #3: resolve the four behavior switches once, here
             // at the CLI edge. Priority: `.smix/config.yaml switches.*` >
             // `SMIX_*` env > default(false). This resolver is the ONLY
@@ -4712,6 +4737,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             expect_log_clean,
                             fixture_registry: fixture_registry.clone(),
                             force_key_events,
+                            settle,
+                            give_up_when_still: give_up_when_still_ms
+                                .map(std::time::Duration::from_millis),
                             no_fail_annotate,
                             auto_ocr_fallback: Some(sw_auto_ocr.value),
                             ai_assertions: Some(sw_ai_assertions.value),

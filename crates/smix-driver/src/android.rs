@@ -41,6 +41,8 @@ pub struct AndroidDriver {
     /// `/input-text` already types into the focused field — so the
     /// mode is honoured here, by not resolving.
     force_key_events: bool,
+    settle: crate::settle::Settle,
+    give_up_when_still: Option<Duration>,
 }
 
 impl AndroidDriver {
@@ -65,6 +67,8 @@ impl AndroidDriver {
         AndroidDriver {
             runner,
             force_key_events: false,
+            settle: crate::settle::Settle::default(),
+            give_up_when_still: None,
         }
     }
 
@@ -74,6 +78,10 @@ impl AndroidDriver {
 
     pub(crate) fn forces_key_events(&self) -> bool {
         self.force_key_events
+    }
+
+    pub(crate) fn settle(&self) -> crate::settle::Settle {
+        self.settle
     }
 }
 
@@ -264,16 +272,18 @@ impl Driver for AndroidDriver {
         timeout: Duration,
         include: Option<IncludeScope>,
     ) -> Result<A11yNode, ExpectationFailure> {
-        // Poll tree at 250ms cadence up to `timeout`, return
-        // matched node on first hit. Mirror of iOS wait_for semantics.
+        // Poll the tree up to `timeout`, return the matched node on
+        // first hit. Mirror of iOS wait_for semantics.
         let budget = crate::poll::Budget::new(timeout);
+        let mut stillness = crate::poll::Stillness::new(self.give_up_when_still);
         loop {
             let look = budget.look();
             let tree = self.tree(include).await?;
             if let Some(node) = resolve_selector(&tree, selector) {
                 return Ok(node.clone());
             }
-            if budget.spent_by(look) {
+            let still = stillness.still_for_the_limit(crate::poll::fingerprint(&tree));
+            if still || budget.spent_by(look) {
                 // Suggestions scan the whole visible tree, not just the ten
                 // displayed elements: an Android window dump leads with the
                 // navigation / status bar chrome, so the first ten
@@ -288,12 +298,24 @@ impl Driver for AndroidDriver {
                 return Err(ExpectationFailure::new(
                     FailureInit {
                         code: Some(FailureCode::ElementNotFound),
-                        message: format!(
-                            "AndroidDriver::wait_for timeout after {}ms: {}{}",
-                            timeout.as_millis(),
-                            describe_selector(selector),
-                            self.reader_caveat().await,
-                        ),
+                        message: if still {
+                            format!(
+                                "{}{}",
+                                crate::poll::gave_up_still(
+                                    &describe_selector(selector),
+                                    budget.elapsed(),
+                                    stillness.limit(),
+                                ),
+                                self.reader_caveat().await,
+                            )
+                        } else {
+                            format!(
+                                "AndroidDriver::wait_for timeout after {}ms: {}{}",
+                                timeout.as_millis(),
+                                describe_selector(selector),
+                                self.reader_caveat().await,
+                            )
+                        },
                         selector: Some(selector.clone()),
                         suggestions,
                         ..Default::default()
@@ -301,7 +323,7 @@ impl Driver for AndroidDriver {
                     .with_screen(screen_facts(&tree, 10)),
                 ));
             }
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            tokio::time::sleep(budget.pause()).await;
         }
     }
 
@@ -528,6 +550,14 @@ impl Driver for AndroidDriver {
     /// focused field either way. What the mode changes is whether this
     /// driver resolves and taps the field first — and resolving is
     /// exactly what fails for the callers who ask for this mode.
+    fn set_settle(&mut self, settle: crate::settle::Settle) {
+        self.settle = settle;
+    }
+
+    fn set_give_up_when_still(&mut self, limit: Option<Duration>) {
+        self.give_up_when_still = limit;
+    }
+
     fn set_force_key_events(&mut self, force: bool) {
         self.force_key_events = force;
     }

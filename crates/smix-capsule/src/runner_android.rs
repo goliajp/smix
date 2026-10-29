@@ -315,6 +315,38 @@ fn ensure_installed_apk() -> Result<(PathBuf, bool), String> {
         );
     }
 
+    let want = format!("{:016x}", smix_runner_sources::android_sources_digest());
+    ensure_built(&dir, &want, build_apk_in)
+}
+
+/// The APK in `dir`, built by `build` unless it is recorded as built from
+/// the sources `want` names. Returns whether this call built it.
+///
+/// Under an exclusive lock on the tree: two smix processes starting the
+/// runner at once ran gradle in the same directory together, and one
+/// deleted the other's `output-metadata.json` mid-build (a consumer's two
+/// rounds, 2026-10-30). The second now waits, then finds the stamp the
+/// first wrote and builds nothing.
+fn ensure_built(
+    dir: &Path,
+    want: &str,
+    build: impl FnOnce(&Path) -> Result<PathBuf, String>,
+) -> Result<(PathBuf, bool), String> {
+    let lock_path = dir.join(".smix-build.lock");
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock_path)
+        .map_err(|e| format!("opening {}: {e}", lock_path.display()))?;
+    if lock.try_lock().is_err() {
+        println!(
+            "[runner] another smix is building the Android runner in {} — waiting for it",
+            dir.display()
+        );
+        lock.lock()
+            .map_err(|e| format!("waiting for {}: {e}", lock_path.display()))?;
+    }
     let apk = dir.join("app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk");
     // The invariant is "was this APK built from these sources", and the
     // way to know is to have written down which sources, at the time the
@@ -326,7 +358,6 @@ fn ensure_installed_apk() -> Result<(PathBuf, bool), String> {
     // runner once answered `not_implemented` for a route whose Kotlin
     // sat one directory away (the v1.0.10 cycle, on this platform).
     let stamp = dir.join(".smix-apk-sources");
-    let want = format!("{:016x}", smix_runner_sources::android_sources_digest());
     let built_from = std::fs::read_to_string(&stamp).unwrap_or_default();
     if apk.is_file() && built_from.trim() == want {
         return Ok((apk, false));
@@ -340,13 +371,14 @@ fn ensure_installed_apk() -> Result<(PathBuf, bool), String> {
             "[runner] building the instrumentation APK (first run of these sources on this machine)"
         );
     }
-    let built = build_apk_in(&dir)?;
+    let built = build(dir)?;
     debug_assert_eq!(built, apk);
     // Written only after the APK exists: a stamp for a build that did
     // not produce one would claim the artifact is current forever.
-    if let Err(e) = std::fs::write(&stamp, &want) {
+    if let Err(e) = std::fs::write(&stamp, want) {
         eprintln!("[runner] could not record what the APK was built from: {e}");
     }
+    // the lock goes with `lock`, after the stamp is written
     Ok((apk, true))
 }
 
@@ -1134,6 +1166,46 @@ pub fn runner_is_not_ours(running: Option<&str>, ours: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn two_runner_starts_at_once_build_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Barrier};
+        let tree = tempfile::tempdir().expect("tempdir");
+        let dir = tree.path().to_path_buf();
+        let builds = Arc::new(AtomicUsize::new(0));
+        let start = Arc::new(Barrier::new(2));
+        let racers: Vec<_> = (0..2)
+            .map(|_| {
+                let (dir, builds, start) = (dir.clone(), builds.clone(), start.clone());
+                std::thread::spawn(move || {
+                    start.wait();
+                    super::ensure_built(&dir, "abc", |d| {
+                        builds.fetch_add(1, Ordering::SeqCst);
+                        // long enough that an unguarded second start
+                        // would find no stamp and build too
+                        std::thread::sleep(std::time::Duration::from_millis(300));
+                        let apk = d.join(
+                            "app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk",
+                        );
+                        std::fs::create_dir_all(apk.parent().unwrap()).unwrap();
+                        std::fs::write(&apk, b"apk").unwrap();
+                        Ok(apk)
+                    })
+                })
+            })
+            .collect();
+        let built: Vec<bool> = racers
+            .into_iter()
+            .map(|r| r.join().expect("no panic").expect("ok").1)
+            .collect();
+        assert_eq!(
+            builds.load(Ordering::SeqCst),
+            1,
+            "gradle ran in the tree twice"
+        );
+        assert_eq!(built.iter().filter(|b| **b).count(), 1, "{built:?}");
+    }
 
     /// The log of a runner brought up while `uiautomator events` held the
     /// connection, emulator-5554, API 36: the cause is on line 4, above a

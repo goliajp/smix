@@ -70,7 +70,6 @@ pub use smix_runner_client::{
 
 use smix_runner_client::TouchVerdict;
 
-const POLL_INTERVAL_MS: u64 = 250;
 const TOTAL_TIMEOUT_MS: u64 = 5000;
 
 /// Driver wrapping `HttpRunnerClient` with host-side resolve dispatch.
@@ -81,6 +80,8 @@ const TOTAL_TIMEOUT_MS: u64 = 5000;
 /// callers working without source edits.
 pub struct IosDriver {
     runner: HttpRunnerClient,
+    settle: settle::Settle,
+    give_up_when_still: Option<Duration>,
 }
 
 /// Scripts the Android recogniser can read.
@@ -128,7 +129,11 @@ pub fn ocr_locales(given: &[String]) -> Vec<String> {
 
 impl IosDriver {
     pub fn new(runner: HttpRunnerClient) -> Self {
-        IosDriver { runner }
+        IosDriver {
+            runner,
+            settle: settle::Settle::default(),
+            give_up_when_still: None,
+        }
     }
 
     pub fn runner(&self) -> &HttpRunnerClient {
@@ -281,7 +286,7 @@ impl IosDriver {
                         last_transport_err = Some(failure);
                     }
                 }
-                sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
+                sleep(poll::pause_after(start.elapsed())).await;
             }
         } else {
             let tree = self.tree_with_retry(include).await?;
@@ -363,7 +368,7 @@ impl IosDriver {
     /// Transient `/tree` transport retry helper. Shared by
     /// `find_one` / `find_all` / `find` (host-resolve branch). Mirrors
     /// the transport-retry segment of `wait_for`: poll within
-    /// `TOTAL_TIMEOUT_MS` budget, sleep `POLL_INTERVAL_MS` between
+    /// `TOTAL_TIMEOUT_MS` budget, pausing [`poll::pause_after`] between
     /// attempts, surface only the last transport error on budget
     /// exhaustion.
     ///
@@ -401,7 +406,7 @@ impl IosDriver {
                     last_transport_err = Some(e);
                 }
             }
-            sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
+            sleep(poll::pause_after(start.elapsed())).await;
         }
     }
 
@@ -561,7 +566,7 @@ impl IosDriver {
                         if budget.spent_by(look) {
                             return Err(element_not_found(&tree, selector));
                         }
-                        sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
+                        sleep(poll::pause_after(began.elapsed())).await;
                         continue;
                     };
                     phases::mark("find", began);
@@ -570,7 +575,7 @@ impl IosDriver {
                     // iOS frames are in points.
                     let (nx, ny, aimed) = phases::time(
                         "settle",
-                        settle::until_aim_settles(
+                        settle::until_settled(
                             first,
                             || async {
                                 let t = self.perceived_with_retry(include).await?;
@@ -579,7 +584,7 @@ impl IosDriver {
                             },
                             1.0,
                             settle::POLL,
-                            settle::LIMIT,
+                            self.settle,
                         ),
                     )
                     .await?;
@@ -594,7 +599,7 @@ impl IosDriver {
                     if budget.spent_by(look) {
                         return Err(element_not_found(&tree, selector));
                     }
-                    sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
+                    sleep(poll::pause_after(began.elapsed())).await;
                     continue;
                 }
                 Err(HostResolveError::EmptyMatchedFrame) => {
@@ -726,7 +731,7 @@ impl IosDriver {
                     if permanent || start.elapsed() > timeout {
                         return Err(transport_to_failure(e));
                     }
-                    sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
+                    sleep(poll::pause_after(start.elapsed())).await;
                     continue;
                 }
             }
@@ -807,15 +812,13 @@ impl IosDriver {
 
     /// Fill text into the focused / matched input.
     ///
-    /// **chunked-fill**: the swift runner's daemon `_XCT_sendString`
+    /// **paced fill**: the swift runner's daemon `_XCT_sendString`
     /// path bursts every keystroke at up to 200 chars/sec, which on
     /// real-sim outraces React Native's `onChangeText` debounce on
     /// the main thread — only the leading 2-3 keystrokes commit
-    /// before later ones are dropped by the JS thread reconciler.
-    /// The fix is host-side: split `text` into 1-char chunks and post
-    /// each to runner `/fill` separately, with an `INTER_CHAR_PAUSE_MS`
-    /// gap so the JS thread can flush its onChangeText callback before
-    /// the next keystroke fires.
+    /// before later ones are dropped by the JS thread reconciler. The
+    /// whole text goes in one request, which the runner types at
+    /// [`smix_runner_client::FILL_PACE`] keystrokes a second.
     ///
     /// **selector-type dispatch** (mirrors `find()`): runner `/fill`
     /// only accepts text selectors (`selector.text` field or the
@@ -823,7 +826,7 @@ impl IosDriver {
     /// Text-with-modifiers selectors, host-resolve + tap the target
     /// first to give it keyboard focus, then fill via the `_focused_`
     /// magic. Text-without-modifiers selectors take the fast path
-    /// (direct chunked fill).
+    /// (direct paced fill).
     pub async fn fill(
         &self,
         selector: &Selector,
@@ -832,7 +835,7 @@ impl IosDriver {
         clear_first: bool,
     ) -> Result<(), ExpectationFailure> {
         if can_use_find_route(selector) {
-            self.chunked_fill_runner(selector, text, include, clear_first)
+            self.paced_fill_runner(selector, text, include, clear_first)
                 .await
         } else if matches!(selector, Selector::Focused { .. }) {
             // When the caller passes a Focused selector (e.g. via
@@ -843,7 +846,7 @@ impl IosDriver {
             // routes `_focused_` selector to daemon-level key event
             // sending regardless of a11y-focus state — exactly the
             // RN hidden-input case.
-            self.chunked_fill_runner(selector, text, include, clear_first)
+            self.paced_fill_runner(selector, text, include, clear_first)
                 .await
         } else {
             self.tap(selector, include).await?;
@@ -851,60 +854,46 @@ impl IosDriver {
             let focused = Selector::Focused {
                 focused: True(true),
             };
-            self.chunked_fill_runner(&focused, text, include, clear_first)
+            self.paced_fill_runner(&focused, text, include, clear_first)
                 .await
         }
     }
 
-    /// Post the text one character at a time.
+    /// Post the whole text in one request, typed at [`FILL_PACE`]
+    /// keystrokes a second.
     ///
-    /// `clear_first` belongs to the first chunk alone. Passing it on
-    /// every chunk would empty the field before each character and
-    /// leave the last one standing on its own — the chunking is a
-    /// React-Native workaround, and it must not change what the call
-    /// means.
-    async fn chunked_fill_runner(
+    /// The pace is for React Native: the daemon types at up to 200 a
+    /// second, and a field typed that fast commits its first two or three
+    /// keys and drops the rest while its JS thread catches up. This used
+    /// to be one request per character with a 50 ms pause between them,
+    /// which paced it as well and cost a round trip per character — about
+    /// 0.33 s each on a consumer's simulator.
+    ///
+    /// [`FILL_PACE`]: smix_runner_client::FILL_PACE
+    async fn paced_fill_runner(
         &self,
         selector: &Selector,
         text: &str,
         include: Option<IncludeScope>,
         clear_first: bool,
     ) -> Result<(), ExpectationFailure> {
-        const INTER_CHAR_PAUSE_MS: u64 = 50;
-        let chars: Vec<char> = text.chars().collect();
-        if chars.is_empty() {
-            // Nothing to type, but "fill it with nothing" is a request
-            // to empty the field, and dropping it would leave the old
-            // value in place.
-            if !clear_first {
-                return Ok(());
-            }
-            return self
-                .runner
-                .fill(selector, text, include, true)
-                .await
-                .map_err(transport_to_failure)
-                .map(|_| ());
+        // Nothing to type, but "fill it with nothing" is a request to
+        // empty the field, and dropping it would leave the old value in
+        // place.
+        if text.is_empty() && !clear_first {
+            return Ok(());
         }
-        if chars.len() == 1 {
-            return self
-                .runner
-                .fill(selector, text, include, clear_first)
-                .await
-                .map_err(transport_to_failure)
-                .map(|_| ());
-        }
-        for (i, ch) in chars.iter().enumerate() {
-            let chunk = ch.to_string();
-            self.runner
-                .fill(selector, &chunk, include, clear_first && i == 0)
-                .await
-                .map_err(transport_to_failure)?;
-            if i + 1 < chars.len() {
-                sleep(Duration::from_millis(INTER_CHAR_PAUSE_MS)).await;
-            }
-        }
-        Ok(())
+        self.runner
+            .fill_paced(
+                selector,
+                text,
+                include,
+                clear_first,
+                smix_runner_client::FILL_PACE,
+            )
+            .await
+            .map_err(transport_to_failure)
+            .map(|_| ())
     }
 
     /// Clear the focused / matched input.
@@ -915,7 +904,7 @@ impl IosDriver {
     /// field) or the `_focused_` magic. For Id / Label / Role / Anchor /
     /// Text-with-modifiers selectors, host-resolve + tap the target first
     /// so it owns keyboard focus, then clear via the `_focused_` magic
-    /// (single round-trip — clear is not chunked like fill).
+    /// (single round-trip).
     pub async fn clear(
         &self,
         selector: &Selector,
@@ -1123,8 +1112,8 @@ impl IosDriver {
     // ---- wait ----------------------------------------------------------
 
     /// Poll until the selector resolves to a node, or timeout fires.
-    /// Returns the matched node (cloned). 5s default budget, 250 ms
-    /// poll interval.
+    /// Returns the matched node (cloned). 5s default budget; looks are
+    /// paced by [`poll::pause_after`].
     pub async fn wait_for(
         &self,
         selector: &Selector,
@@ -1166,6 +1155,7 @@ impl IosDriver {
         // element with a drifted snapshot frame, which produces a
         // wait-pass → tap-miss pair).
         let mut tree_hit_offscreen = false;
+        let mut stillness = poll::Stillness::new(self.give_up_when_still);
         loop {
             let look = budget.look();
             match self.tree(include).await {
@@ -1191,12 +1181,13 @@ impl IosDriver {
                                     return Err(e);
                                 }
                                 last_transport_err = Some(e);
-                                sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
+                                sleep(poll::pause_after(start.elapsed())).await;
                                 continue;
                             }
                         }
                     }
-                    if budget.spent_by(look) {
+                    let still = stillness.still_for_the_limit(poll::fingerprint(&tree));
+                    if still || budget.spent_by(look) {
                         let screen = screen_facts(&tree, 10);
                         let target = base_text_or_id(selector);
                         let suggestions =
@@ -1205,11 +1196,19 @@ impl IosDriver {
                         return Err(ExpectationFailure::new(
                             FailureInit {
                                 code: Some(FailureCode::Timeout),
-                                message: format!(
-                                    "waitFor({}) timed out after {:?}",
-                                    describe_selector(selector),
-                                    timeout
-                                ),
+                                message: if still {
+                                    poll::gave_up_still(
+                                        &describe_selector(selector),
+                                        start.elapsed(),
+                                        stillness.limit(),
+                                    )
+                                } else {
+                                    format!(
+                                        "waitFor({}) timed out after {:?}",
+                                        describe_selector(selector),
+                                        timeout
+                                    )
+                                },
                                 selector: Some(selector.clone()),
                                 suggestions,
                                 hint,
@@ -1227,7 +1226,7 @@ impl IosDriver {
                     last_transport_err = Some(e);
                 }
             }
-            sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
+            sleep(poll::pause_after(start.elapsed())).await;
         }
     }
 

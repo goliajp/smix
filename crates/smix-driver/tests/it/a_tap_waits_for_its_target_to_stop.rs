@@ -12,7 +12,7 @@
 //! this exists to prevent.
 
 use smix_driver::HitElement;
-use smix_driver::settle::{Aim, Reading, frames_agree, until_aim_settles};
+use smix_driver::settle::{Aim, Reading, Settle, frames_agree, until_aim_settles, until_settled};
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use std::cell::RefCell;
 use std::time::Duration;
@@ -189,4 +189,67 @@ async fn a_slow_reading_begun_before_the_limit_is_not_the_last_word() {
     .await
     .expect("a reading begun after the limit found it still");
     assert_eq!(got.2.expect("aimed").frame.1, 400.0);
+}
+
+#[tokio::test]
+async fn one_reading_is_no_wait_at_all() {
+    let got = until_settled(
+        aim(180.0),
+        || -> Next { panic!("a one-reading settle read the tree again") },
+        1.0,
+        FAST,
+        Settle::new(LIMIT, 1),
+    )
+    .await
+    .expect("one reading is the reading the target was found in");
+    assert_eq!(got.2.expect("aimed").frame.1, 180.0);
+}
+
+#[tokio::test]
+async fn three_readings_need_two_more_that_agree() {
+    let calls = RefCell::new(0);
+    let mut inner = readings(&[300.0, 300.0, 300.0]);
+    let got = until_settled(
+        aim(180.0),
+        || {
+            *calls.borrow_mut() += 1;
+            inner()
+        },
+        1.0,
+        FAST,
+        Settle::new(LIMIT, 3),
+    )
+    .await
+    .expect("it holds still at 300");
+    assert_eq!(got.2.expect("aimed").frame.1, 300.0);
+    // 180 → 300 moved; 300, 300 are the second and third in a row
+    assert_eq!(*calls.borrow(), 3);
+}
+
+#[tokio::test]
+async fn too_few_still_readings_at_the_limit_say_how_many() {
+    let err = until_settled(
+        aim(180.0),
+        readings(&[180.0]),
+        1.0,
+        FAST,
+        Settle::new(Duration::ZERO, 3),
+    )
+    .await
+    .expect_err("two still readings are not the three asked for");
+    assert_eq!(err.code, FailureCode::Timeout);
+    assert!(
+        err.message.contains("2 readings in a row"),
+        "{}",
+        err.message
+    );
+    assert!(err.message.contains("3 were asked for"), "{}", err.message);
+}
+
+#[test]
+fn the_default_is_two_readings_in_three_seconds() {
+    assert_eq!(
+        Settle::default(),
+        Settle::new(Duration::from_millis(3000), 2)
+    );
 }
