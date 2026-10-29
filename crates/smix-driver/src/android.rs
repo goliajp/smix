@@ -467,17 +467,19 @@ impl Driver for AndroidDriver {
         // side dispatches 2 clicks 150ms apart), judged like a tap. The
         // trait has no outcome to return here, so a miss is the error.
         let (nx, ny, aimed, reader) = resolve_aimed(self, selector, include).await?;
-        let landed = self
-            .runner
-            .double_tap_at_norm_coord_aimed(nx, ny, Some(reader))
-            .await
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::double_tap: {e}"),
-                    ..Default::default()
-                })
-            })?;
+        let landed = crate::phases::time(
+            "touch",
+            self.runner
+                .double_tap_at_norm_coord_aimed(nx, ny, Some(reader)),
+        )
+        .await
+        .map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("AndroidDriver::double_tap: {e}"),
+                ..Default::default()
+            })
+        })?;
         crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())
     }
 
@@ -497,17 +499,19 @@ impl Driver for AndroidDriver {
         // `captureDuring` refuses on Android instead of handing back a
         // frame it cannot place. Where it was delivered is known, and
         // judged like a tap.
-        let landed = self
-            .runner
-            .long_press_at_norm_coord_aimed(nx, ny, duration_ms, Some(reader))
-            .await
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::long_press: {e}"),
-                    ..Default::default()
-                })
-            })?;
+        let landed = crate::phases::time(
+            "touch",
+            self.runner
+                .long_press_at_norm_coord_aimed(nx, ny, duration_ms, Some(reader)),
+        )
+        .await
+        .map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("AndroidDriver::long_press: {e}"),
+                ..Default::default()
+            })
+        })?;
         crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed)
             .map(|_| crate::PressTiming::unplaceable())
     }

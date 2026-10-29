@@ -4459,3 +4459,54 @@ async fn pinch_over_a_missing_element_sends_nothing() {
         "no pinch at the middle of the screen instead"
     );
 }
+
+// --- step timings --------------------------------------------------------
+
+#[tokio::test]
+async fn every_step_is_timed_and_a_repeat_holds_the_steps_it_ran() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- tapOn: \"A\"\n- repeat:\n    times: 2\n    commands:\n      - tapOn: \"B\"\n",
+    )
+    .unwrap();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("run ok");
+    let t = adapter.step_timings();
+    assert_eq!(t.len(), 2, "{t:?}");
+    assert_eq!(t[0].index, Some(1));
+    assert_eq!(t[0].verdict, "ok");
+    assert!(t[0].steps.is_empty());
+    assert_eq!(t[1].index, Some(2));
+    assert_eq!(
+        t[1].steps.len(),
+        2,
+        "the repeat's two taps under it: {:?}",
+        t[1]
+    );
+    assert!(
+        t[1].steps.iter().all(|s| s.index.is_none()),
+        "inner steps are not numbered"
+    );
+    let inner: u64 = t[1].steps.iter().map(|s| s.wall_ms).sum();
+    assert!(
+        inner <= t[1].wall_ms,
+        "children {inner} ms inside a parent of {} ms",
+        t[1].wall_ms
+    );
+}
+
+#[tokio::test]
+async fn a_failed_run_keeps_the_times_up_to_the_step_that_failed() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- tapOn: \"A\"\n- pinch: { over: { id: \"no-such-thing\" }, from: 1, to: 3 }\n- tapOn: \"C\"\n",
+    )
+    .unwrap();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    assert!(adapter.run(&flow).await.is_err());
+    let t = adapter.step_timings();
+    assert_eq!(
+        t.iter().map(|s| s.verdict).collect::<Vec<_>>(),
+        ["ok", "failed"]
+    );
+}
