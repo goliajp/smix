@@ -67,3 +67,23 @@ final class KeyboardRouteClearFirstDecodeTests: XCTestCase {
     XCTAssertThrowsError(try KeyboardRoute.decodeFill(body))
   }
 }
+
+/// `typingFrequency`: the pace the whole text goes in at.
+final class KeyboardRouteTypingFrequencyDecodeTests: XCTestCase {
+  func testAbsentIsTheDaemonsFullSpeed() throws {
+    let body = Data(#"{"selector":{"text":"_focused_"},"text":"abc"}"#.utf8)
+    XCTAssertEqual(try KeyboardRoute.decodeFill(body).typingFrequency, 200)
+  }
+
+  func testAGivenPaceIsKept() throws {
+    let body = Data(#"{"selector":{"text":"_focused_"},"text":"abc","typingFrequency":10}"#.utf8)
+    XCTAssertEqual(try KeyboardRoute.decodeFill(body).typingFrequency, 10)
+  }
+
+  func testAPaceOutsideTheRangeOrNotAWholeNumberIsRefused() {
+    for raw in ["0", "201", "2.5", "true", "\"10\""] {
+      let body = Data(#"{"selector":{"text":"_focused_"},"text":"a","typingFrequency":\#(raw)}"#.utf8)
+      XCTAssertThrowsError(try KeyboardRoute.decodeFill(body), raw)
+    }
+  }
+}

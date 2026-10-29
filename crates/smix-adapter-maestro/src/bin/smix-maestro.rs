@@ -116,6 +116,7 @@ async fn main() -> ExitCode {
                 expect_log_clean: false,
                 fixture_registry: None,
                 force_key_events: false,
+                settle: None,
                 no_fail_annotate: false,
                 // The legacy binary injects no config; each switch keeps
                 // its own `SMIX_*` env fallback.

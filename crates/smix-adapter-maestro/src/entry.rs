@@ -121,6 +121,9 @@ pub struct FlowArgs {
     /// Force key-event dispatch mode for text input verbs. Opt-in via
     /// `smix run --force-key-events`.
     pub force_key_events: bool,
+    /// How taps wait for their target to stop moving; `None` keeps the
+    /// driver's default. `smix run --settle-max-ms` / `--settle-frames`.
+    pub settle: Option<smix_driver::settle::Settle>,
     /// Disable auto-annotate on the `--debug-output` fail-PNG. Default
     /// false = annotate. Opt-out via `smix run --no-fail-annotate`.
     pub no_fail_annotate: bool,
@@ -362,6 +365,10 @@ async fn run_flow_inner(args: FlowArgs, junit: &mut Option<String>) -> u8 {
             app.with_force_key_events(true)
         } else {
             app
+        };
+        let app = match args.settle {
+            Some(settle) => app.with_settle(settle),
+            None => app,
         };
         // v2 break #3: inject the two run-time switches the CLI resolved
         // from `.smix/config.yaml`. `None` = no injection → the sdk method

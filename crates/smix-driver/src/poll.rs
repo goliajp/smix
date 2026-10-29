@@ -62,6 +62,36 @@ impl Budget {
     pub fn limit(&self) -> Duration {
         self.limit
     }
+
+    /// How long to wait before the next look; see [`pause_after`].
+    #[must_use]
+    pub fn pause(&self) -> Duration {
+        pause_after(self.elapsed())
+    }
+}
+
+/// Looks this far apart while a wait is young.
+pub const EARLY_PAUSE: Duration = Duration::from_millis(100);
+/// Looks this far apart once it is not.
+pub const LATE_PAUSE: Duration = Duration::from_millis(300);
+/// How long a wait counts as young.
+pub const EARLY_FOR: Duration = Duration::from_secs(1);
+
+/// The pause between looks in a wait that has run for `elapsed`.
+///
+/// Most waits end on their first or second look: in one consumer's
+/// 50-minute run, 1494 of 1598 waits took three looks or fewer. With a
+/// flat 250 ms, every one of those that missed once paid up to a quarter
+/// of a second for nothing. A wait still going after a second is waiting
+/// on the app, and looking more often then only adds reads — an iOS read
+/// of the screen is an accessibility snapshot taken inside the app.
+#[must_use]
+pub fn pause_after(elapsed: Duration) -> Duration {
+    if elapsed < EARLY_FOR {
+        EARLY_PAUSE
+    } else {
+        LATE_PAUSE
+    }
 }
 
 impl Look {
@@ -75,6 +105,15 @@ impl Look {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_young_wait_looks_often_and_an_old_one_less() {
+        assert_eq!(pause_after(Duration::ZERO), EARLY_PAUSE);
+        assert_eq!(pause_after(Duration::from_millis(999)), EARLY_PAUSE);
+        assert_eq!(pause_after(Duration::from_secs(1)), LATE_PAUSE);
+        assert_eq!(pause_after(Duration::from_secs(90)), LATE_PAUSE);
+        assert!(EARLY_PAUSE < LATE_PAUSE);
+    }
 
     #[test]
     fn a_look_begun_before_the_limit_does_not_end_the_wait_however_late_it_returns() {

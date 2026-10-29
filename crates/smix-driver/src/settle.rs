@@ -43,6 +43,33 @@ pub const POLL: Duration = Duration::from_millis(100);
 /// `ELEMENT_STABILITY_TIMEOUT_MS`.
 pub const LIMIT: Duration = Duration::from_millis(3000);
 
+/// How a tap waits for its target to stop moving: for at most `limit`,
+/// until `readings` readings in a row agree. The default is maestro's —
+/// two readings, three seconds. One reading is no wait at all: the tap
+/// uses the reading it found the target in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Settle {
+    /// Longest the target may keep moving before the tap fails.
+    pub limit: Duration,
+    /// Readings in a row that must agree, counting the one the target
+    /// was found in.
+    pub readings: u32,
+}
+
+impl Settle {
+    #[must_use]
+    pub fn new(limit: Duration, readings: u32) -> Self {
+        Self { limit, readings }
+    }
+}
+
+impl Default for Settle {
+    fn default() -> Self {
+        Self::new(LIMIT, 2)
+    }
+}
+
 /// Do two readings of a frame put the element in the same place?
 ///
 /// Every edge within one device-independent point. maestro compares for
@@ -105,7 +132,7 @@ fn describe(aim: &Aim) -> String {
 /// `reread` returned, when it failed.
 pub async fn until_aim_settles<F, Fut>(
     first: Aim,
-    mut reread: F,
+    reread: F,
     pixels_per_point: f64,
     poll: Duration,
     limit: Duration,
@@ -114,9 +141,36 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<Reading, ExpectationFailure>>,
 {
+    until_settled(first, reread, pixels_per_point, poll, Settle::new(limit, 2)).await
+}
+
+/// [`until_aim_settles`] by a [`Settle`]: until `settle.readings` readings
+/// in a row agree, for at most `settle.limit`.
+///
+/// # Errors
+///
+/// As [`until_aim_settles`]; a target that held still for fewer readings
+/// than asked when the limit came is still moving.
+pub async fn until_settled<F, Fut>(
+    first: Aim,
+    mut reread: F,
+    pixels_per_point: f64,
+    poll: Duration,
+    settle: Settle,
+) -> Result<Aim, ExpectationFailure>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<Reading, ExpectationFailure>>,
+{
+    if settle.readings <= 1 {
+        return Ok(first);
+    }
+    let limit = settle.limit;
     let budget = crate::poll::Budget::new(limit);
     let mut last = first;
     let mut before: Option<Aim> = None;
+    // readings in a row that agree with `last`, counting `last`
+    let mut agreeing = 1;
     loop {
         tokio::time::sleep(poll).await;
         let look = budget.look();
@@ -124,12 +178,21 @@ where
         let gone = match reread().await? {
             Reading::At(now) => {
                 if aims_agree(&last, &now, pixels_per_point) {
-                    return Ok(now);
+                    agreeing += 1;
+                    if agreeing >= settle.readings {
+                        return Ok(now);
+                    }
+                    last = now;
+                } else {
+                    agreeing = 1;
+                    before = Some(std::mem::replace(&mut last, now));
                 }
-                before = Some(std::mem::replace(&mut last, now));
                 None
             }
-            Reading::Gone(failure) => Some(*failure),
+            Reading::Gone(failure) => {
+                agreeing = 1;
+                Some(*failure)
+            }
         };
         if !budget.spent_by(look) {
             continue;
@@ -148,6 +211,24 @@ where
                 failure.message
             );
             return Err(failure);
+        }
+        if agreeing > 1 {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::Timeout),
+                message: format!(
+                    "{target} had held still at {} for {agreeing} readings in a row when \
+                     the {} ms ran out, and {} were asked for.",
+                    describe(&last),
+                    limit.as_millis(),
+                    settle.readings
+                ),
+                hint: Some(
+                    "ask for fewer readings or a longer limit (`--settle-frames`, \
+                     `--settle-max-ms`), or wait for what moves it to finish first"
+                        .into(),
+                ),
+                ..Default::default()
+            }));
         }
         let before = before.expect("the latest reading is present and differs from the one before");
         return Err(ExpectationFailure::new(FailureInit {
