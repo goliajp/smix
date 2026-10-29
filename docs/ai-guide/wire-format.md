@@ -112,7 +112,7 @@ read it from a response, and do not OR-merge the two — a response has
 
 ### `POST /fill`
 
-Body: `{ selector: Selector | "_focused_", text: string, clearFirst?: bool, include?: IncludeScope }`
+Body: `{ selector: Selector | "_focused_", text: string, clearFirst?: bool, typingFrequency?: 1..200, include?: IncludeScope }`
 Header: `Input-Dispatch-Mode`
 Response: `{ ok: bool, focusMs?: u64, daemonSendMs?: u64 }`
 
@@ -120,8 +120,14 @@ Response: `{ ok: bool, focusMs?: u64, daemonSendMs?: u64 }`
 absent** — typing appends, so a route named `fill` that did not clear
 concatenated old and new values. A runner too old to know the field
 appends, which is what it did before, so the field is additive on the
-wire. The host driver chunks long text into one POST per character;
-`clearFirst` rides the first chunk alone.
+wire.
+
+`typingFrequency` is the most keystrokes a second the daemon types
+the text at, 200 when absent. The host sends the whole text in one
+request at 10 a second: a React Native field typed at full speed keeps
+its first two or three keys. A runner too old to know the field types
+at full speed. The route's longest wait is set by the request — every
+key at that pace, after one automation stall.
 
 `key-events` is for RN apps whose hidden `<TextInput>` defeats
 a11y-focus lookup. On iOS the header reaches the runner, which skips

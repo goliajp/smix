@@ -4,6 +4,28 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- **`smix run --settle-max-ms` and `--settle-frames`.** A tap, double tap
+  or long press waits for its target to stop moving before touching it;
+  these set how long it may wait (3000 ms by default) and how many readings
+  in a row, one every 100 ms, must agree (2 by default; 1 touches the target
+  where it was found). `Settle`, `until_settled` and `Driver::set_settle`
+  in `smix-driver`, `App::with_settle` in `smix-sdk`.
+
+### Changed
+
+- **A wait looks every 100 ms for its first second, then every 300 ms.**
+  It looked every 250 ms throughout. Most waits end on their first or
+  second look, so the ones that missed once paid up to a quarter of a
+  second for nothing; a wait still going after a second is waiting on the
+  app, and looking less often then reads the screen less.
+- **An iOS fill is one request.** The text went one character per
+  request, 50 ms apart, so that a React Native field heard each key; each
+  request cost a round trip, about 0.33 s on a simulator. The whole text
+  now goes in one request, which the runner types at 10 keystrokes a
+  second. `/fill` takes `typingFrequency`.
+
 ## [19.0.0] — 2026-10-30
 
 ### Added
