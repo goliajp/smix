@@ -20,6 +20,8 @@ smix run [FLAGS] <FLOW.yaml>
 | `--no-launch` | — | (off) | Skip initial `foreground()` call. Use when you launched the app via other means |
 | `--trace-dir <PATH>` | — | `./.smix/trace/<runid>` | Where screenshots / video / JSON traces go |
 | `--dry-run` (alias `--check`) | — | (off) | Parse-only gate: validates every listed yaml (+ `runFlow:` includes) and reports `parse OK/FAIL` per file with step counts. No runner, no simulator. Exit 0 on clean parse, 2 on any error |
+| `--settle-max-ms <MS>` | — | `3000` | Longest a tap, double tap or long press waits for its target to stop moving; a target still moving then fails the step rather than being touched where it was |
+| `--settle-frames <N>` | — | `2` | Readings in a row (one every 100 ms) that must put the target in the same place before the touch, counting the one it was found in; `1` touches it where it was first found |
 | `--retry <N>` | — | `1` | Per-flow attempt count; attempts recorded in `~/.local/share/smix/flow-attempts.json` for `smix diagnostic dump` attribution |
 | `--debug-output <DIR>` | — | (unset) | Per-step JSON as each step ends, on-fail screenshot/tree, and `run-summary.json` with every step's time (see "Where the time went") |
 | `--nodes <PATH>` | — | (unset) | Distributed run across machines; see below |
