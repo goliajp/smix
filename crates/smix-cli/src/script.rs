@@ -342,7 +342,7 @@ async fn run_step(
             .await
         }
         Step::Fill { selector, text } => {
-            cmd_fill(selector.clone(), text.clone(), port, platform).await
+            cmd_fill(selector.clone(), text.clone(), port, platform, false).await
         }
         Step::PressKey { key } => cmd_press_key(key.clone(), port, platform).await,
         Step::Scroll {

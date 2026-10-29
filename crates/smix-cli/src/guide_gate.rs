@@ -337,6 +337,9 @@ impl AppLike for MockApp {
     async fn fill(&self, _selector: &Selector, _text: &str) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn set_text(&self, _selector: &Selector, _text: &str) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     async fn press_key(&self, _key: KeyName) -> Result<(), ExpectationFailure> {
         Ok(())
     }

@@ -33,4 +33,6 @@
     <item name="fixture_text_lobby_taps" type="id" />
     <item name="fixture_text_input" type="id" />
     <item name="fixture_text_echo" type="id" />
+    <item name="fixture_text_composing" type="id" />
+    <item name="fixture_text_composed_echo" type="id" />
 </resources>

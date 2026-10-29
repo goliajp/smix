@@ -1469,7 +1469,11 @@ class SmixHttpServer(
         // back from the node afterwards (v6.4). `input text` cannot
         // report a miss, so the node saying so is the only evidence
         // there is.
-        val req = RunnerWire.decodeInputText(readBodyString(session))
+        val req = try {
+            RunnerWire.decodeInputText(readBodyString(session))
+        } catch (e: IllegalArgumentException) {
+            return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad input-text request")
+        }
         val started = android.os.SystemClock.elapsedRealtime()
         val text = req.text
         val focusPx = focusRectPx(req.focusIn)
@@ -1529,13 +1533,31 @@ class SmixHttpServer(
             ?: focused.className?.toString()
             ?: "an unnamed node"
         val fieldPackage = focused.packageName?.toString()
-        if (!TextEntry.typable(text)) {
+        // Set rather than typed when asked, or when `input text` cannot
+        // type the text. Never as a second try after typing: what typing
+        // left in the field is the caller's to see, not to have replaced.
+        if (req.setText || !TextEntry.typable(text)) {
             val value = TextEntry.target(before, text, masked)
-                ?: return errorJson(Response.Status.INTERNAL_ERROR, "text_not_typable", TextEntry.maskedRefusal(whichField))
+                ?: return errorJson(
+                    Response.Status.INTERNAL_ERROR,
+                    "text_not_typable",
+                    TextEntry.maskedRefusal(whichField, asked = req.setText),
+                )
             val took = TextEntry.set(focused, value)
             val held = awaitChunk(focused, before, text, masked, TEXT_LAND_MS).text.also { focused.recycle() }
-            val landed = took && RunnerWire.textLanded(before, held, text, masked)
-            return newFixedLengthResponse(Response.Status.OK, "application/json", RunnerWire.inputTextBody(landed, text, before, held, masked))
+            if (!took || !RunnerWire.textLanded(before, held, text, masked)) {
+                return errorJson(
+                    Response.Status.INTERNAL_ERROR,
+                    "text_did_not_land",
+                    TextEntry.setDidNotLand(whichField, took, before, held, masked) +
+                        ChunkedInput.focusNow(fieldPackage, focusedWindowPackage()),
+                )
+            }
+            return newFixedLengthResponse(
+                Response.Status.OK,
+                "application/json",
+                RunnerWire.inputTextBody(true, text, before, held, masked, method = "setText"),
+            )
         }
         // In chunks, each read back before the next. One `input text` of
         // 120 characters came back short under load (2 of 10 whole at load
@@ -1837,11 +1859,21 @@ class SmixHttpServer(
         } else {
             "input-text: typed \"$text\" into $whichField in $of chunk(s); chunk " +
                 "${index + 1} did not land after $retries retype(s) of its missing " +
-                "tail. The field held \"$before\" and holds \"$now\". Characters are " +
-                "missing from the middle, or there are characters this step did not " +
-                "type — neither is repaired by typing more."
+                "tail. The field held \"$before\" and holds \"$now\". " +
+                (
+                    TextEntry.composedByKeyboard(before, now, text)?.let {
+                        TextEntry.composedSentence(it, keyboardPackage()).trimStart()
+                    } ?: (
+                        "Characters are missing from the middle, or there are characters " +
+                            "this step did not type — neither is repaired by typing more."
+                        )
+                    )
         } + focusNow,
     )
+
+    /// The package of the input method's window, when one is up.
+    private fun keyboardPackage(): String? =
+        readWindowRows().firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }?.pkg
 
     /// The package of the window holding the input focus, when the
     /// runner can read it.

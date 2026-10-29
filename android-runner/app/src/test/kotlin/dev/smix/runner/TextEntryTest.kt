@@ -31,4 +31,29 @@ class TextEntryTest {
     fun aMaskedFieldThatHoldsTextIsNotOverwritten() {
         assertNull(TextEntry.target("••••", "密码", masked = true))
     }
+
+    @Test
+    fun latinKeysComposedIntoHanziAreTheKeyboards() {
+        // measured on a Samsung S22 in Chinese input mode
+        assertEquals("probe@买票了.", TextEntry.composedByKeyboard("", "probe@买票了.", "probe@example.test"))
+        assertEquals("안녕", TextEntry.composedByKeyboard("id: ", "id: 안녕", "dkssud"))
+    }
+
+    @Test
+    fun aShortOrForeignAsciiFieldIsNotTheKeyboards() {
+        assertNull(TextEntry.composedByKeyboard("", "probe@exa", "probe@example.test"))
+        assertNull(TextEntry.composedByKeyboard("", "Probe@example.test", "probe@example.test"))
+        // text past ASCII was set, not typed, so no keyboard was involved
+        assertNull(TextEntry.composedByKeyboard("", "東京都", "東京"))
+    }
+
+    @Test
+    fun theSentenceNamesTheKeyboardAndTheWayAroundIt() {
+        val s = TextEntry.composedSentence("probe@买票了.", "com.samsung.android.honeyboard")
+        assertTrue(s.contains("\"probe@买票了.\""))
+        assertTrue(s.contains("(com.samsung.android.honeyboard)"))
+        assertTrue(s.contains("method: setText"))
+        assertTrue(s.contains("smix fill --set-text"))
+        assertFalse(TextEntry.composedSentence("x", null).contains("()"))
+    }
 }

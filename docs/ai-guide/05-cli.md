@@ -952,6 +952,7 @@ smix wait-for id:loading-spinner --timeout 5    # seconds, not ms
 smix wait-for id:loading-spinner --absent  # wait until it is GONE
 
 smix fill id:form-email-input --text alice@example.com
+smix fill id:form-email-input --text alice@example.com --set-text   # Android: without the keyboard (see 04-actions)
 smix press-key return                      # positional key name, read as a flow's pressKey reads it
 smix press-key back                        # navigation back — fails when nothing went back
 smix scroll "text:Row #5000" --direction down   # stops when it is wholly in view

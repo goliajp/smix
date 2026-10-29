@@ -1,12 +1,11 @@
 //! iOS `Driver` impl. Pure delegation layer onto the existing
-//! `IosDriver` (renamed from `SimctlDriver`) inherent methods in lib.rs.
-//!
-//! 26 trait methods → 26 1-line delegations. No new logic.
+//! `IosDriver` (renamed from `SimctlDriver`) inherent methods in lib.rs,
+//! except `set_text`, which iOS refuses.
 
 use async_trait::async_trait;
 use std::time::Duration;
 
-use smix_error::ExpectationFailure;
+use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_input::{KeyName, Pinch, SwipeDirection};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
@@ -211,6 +210,26 @@ impl Driver for IosDriver {
         clear_first: bool,
     ) -> Result<(), ExpectationFailure> {
         IosDriver::fill(self, selector, text, include, clear_first).await
+    }
+
+    async fn set_text(
+        &self,
+        _selector: &Selector,
+        _text: &str,
+        _include: Option<IncludeScope>,
+        _clear_first: bool,
+    ) -> Result<(), ExpectationFailure> {
+        // XCUITest gives a field its text only by typing it; the one way
+        // around the keyboard on a simulator is the pasteboard, which is
+        // shared with the user's Mac and their other devices.
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "IosDriver::set_text: setting a field's text without the keyboard is \
+                      Android-only; XCUITest enters text by typing it. Use inputText without \
+                      `method: setText` on iOS."
+                .into(),
+            ..Default::default()
+        }))
     }
 
     async fn clear(
