@@ -49,6 +49,10 @@ impl Driver for IosDriver {
         self.settle = settle;
     }
 
+    fn set_give_up_when_still(&mut self, limit: Option<Duration>) {
+        self.give_up_when_still = limit;
+    }
+
     fn set_force_key_events(&mut self, force: bool) {
         use smix_runner_client::InputDispatchMode;
         if force {

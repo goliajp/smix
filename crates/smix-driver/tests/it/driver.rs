@@ -1077,3 +1077,49 @@ async fn a_covered_target_is_tapped_only_when_the_runner_says_a_touch_reaches_it
         server.verify().await;
     }
 }
+
+#[tokio::test]
+async fn a_wait_on_a_still_screen_gives_up_when_asked_to() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tree_with_id_and_role()))
+        .mount(&server)
+        .await;
+    let mut d = driver_for(&server);
+    smix_driver::Driver::set_give_up_when_still(&mut d, Some(Duration::from_millis(300)));
+    let began = std::time::Instant::now();
+    let err = d
+        .wait_for(&id_sel("never-there"), Duration::from_secs(10), None)
+        .await
+        .expect_err("it is never there");
+    let took = began.elapsed();
+    assert_eq!(err.code, FailureCode::Timeout);
+    assert!(
+        err.message.contains("had not changed for 300 ms"),
+        "{}",
+        err.message
+    );
+    assert!(
+        took < Duration::from_secs(3),
+        "gave up after {took:?}, not near 300 ms"
+    );
+}
+
+#[tokio::test]
+async fn without_the_limit_a_still_screen_is_waited_on_to_the_timeout() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tree_with_id_and_role()))
+        .mount(&server)
+        .await;
+    let d = driver_for(&server);
+    let began = std::time::Instant::now();
+    let err = d
+        .wait_for(&id_sel("never-there"), Duration::from_millis(1500), None)
+        .await
+        .expect_err("it is never there");
+    assert!(began.elapsed() >= Duration::from_millis(1500));
+    assert!(err.message.contains("timed out"), "{}", err.message);
+}

@@ -124,6 +124,9 @@ pub struct FlowArgs {
     /// How taps wait for their target to stop moving; `None` keeps the
     /// driver's default. `smix run --settle-max-ms` / `--settle-frames`.
     pub settle: Option<smix_driver::settle::Settle>,
+    /// End a wait for an element once the screen has been unchanged this
+    /// long. `smix run --give-up-when-still-ms`.
+    pub give_up_when_still: Option<std::time::Duration>,
     /// Disable auto-annotate on the `--debug-output` fail-PNG. Default
     /// false = annotate. Opt-out via `smix run --no-fail-annotate`.
     pub no_fail_annotate: bool,
@@ -370,6 +373,7 @@ async fn run_flow_inner(args: FlowArgs, junit: &mut Option<String>) -> u8 {
             Some(settle) => app.with_settle(settle),
             None => app,
         };
+        let app = app.with_give_up_when_still(args.give_up_when_still);
         // v2 break #3: inject the two run-time switches the CLI resolved
         // from `.smix/config.yaml`. `None` = no injection → the sdk method
         // keeps its own `SMIX_*` env fallback (non-CLI callers).
