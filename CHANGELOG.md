@@ -26,6 +26,14 @@ All notable changes to the `smix` workspace are documented here. The format foll
   now goes in one request, which the runner types at 10 keystrokes a
   second. `/fill` takes `typingFrequency`.
 
+### Fixed
+
+- **Two `runner up`s that build the Android runner at once no longer
+  break each other's build.** Both ran gradle in the same directory, and
+  one deleted the other's `output-metadata.json` mid-build. The build now
+  holds a lock on the runner's directory; the second start waits, finds
+  the APK the first built, and builds nothing.
+
 ## [19.0.0] — 2026-10-30
 
 ### Added
