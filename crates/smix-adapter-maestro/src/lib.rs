@@ -446,6 +446,17 @@ pub enum Step {
         /// What to type.
         text: String,
     },
+    /// Put text in a field without the keyboard: yaml
+    /// `inputText: { text, method: setText }`, with a target beside them
+    /// or none for the focused field. Maps to `App::set_text`. An input
+    /// method that composes typed keys into another script cannot change
+    /// text entered this way; iOS refuses it.
+    SetText {
+        /// The field, or `None` for whatever holds focus.
+        selector: Option<Selector>,
+        /// What to put in.
+        text: String,
+    },
     /// Press a hardware / IME key. Maps to `App::press_key`. The name is
     /// read when the flow is, through [`smix_sdk::KeyName::from_name`].
     PressKey(smix_sdk::KeyName),

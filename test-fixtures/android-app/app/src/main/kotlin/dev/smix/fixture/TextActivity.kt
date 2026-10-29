@@ -3,6 +3,7 @@ package dev.smix.fixture
 import android.app.Activity
 import android.os.Bundle
 import android.text.Editable
+import android.text.InputType
 import android.text.TextWatcher
 import android.view.ViewGroup
 import android.widget.EditText
@@ -73,6 +74,26 @@ class TextActivity : Activity() {
         }
         root.addView(field)
         root.addView(echo)
+        val composedEcho = TextView(this).apply {
+            id = R.id.fixture_text_composed_echo
+            text = "composing field holds nothing"
+        }
+        val composing = ComposingField(this).apply {
+            id = R.id.fixture_text_composing
+            hint = "composes as it is typed"
+            // an email field, as the consumer's was; it also keeps the
+            // spell checker's popup off the composed words
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    composedEcho.text = "composing field holds $s"
+                }
+            })
+        }
+        root.addView(composing)
+        root.addView(composedEcho)
         setContentView(root)
     }
 }

@@ -109,3 +109,34 @@ fn bare_clear_state_means_the_current_app() {
     let parsed = parse_flow_yaml(&flow("- clearState\n")).expect("bare form must parse");
     assert!(format!("{:?}", parsed.steps).contains("ClearState"));
 }
+
+#[test]
+fn input_text_method_names_how_the_text_goes_in() {
+    let set = parse_flow_yaml(&flow("- inputText: { text: \"x\", method: setText }\n"))
+        .expect("setText without a target goes to the focused field");
+    assert!(
+        matches!(
+            set.steps[0],
+            smix_adapter_maestro::Step::SetText { selector: None, .. }
+        ),
+        "{:?}",
+        set.steps
+    );
+    let typed = parse_flow_yaml(&flow("- inputText: { id: f, text: \"x\", method: type }\n"))
+        .expect("method: type is the default spelled out");
+    assert!(
+        matches!(
+            typed.steps[0],
+            smix_adapter_maestro::Step::InputTextInto { .. }
+        ),
+        "{:?}",
+        typed.steps
+    );
+}
+
+#[test]
+fn input_text_method_it_does_not_know_is_loud() {
+    let err = parse_flow_yaml(&flow("- inputText: { text: \"x\", method: paste }\n"))
+        .expect_err("an unknown method is a mistake");
+    assert!(format!("{err}").contains("setText"), "{err}");
+}

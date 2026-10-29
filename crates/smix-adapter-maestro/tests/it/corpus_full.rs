@@ -94,6 +94,9 @@ impl AppLike for SilentMockApp {
     async fn fill(&self, _: &Selector, _: &str) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn set_text(&self, _: &Selector, _: &str) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     async fn press_key(&self, _: KeyName) -> Result<(), ExpectationFailure> {
         Ok(())
     }

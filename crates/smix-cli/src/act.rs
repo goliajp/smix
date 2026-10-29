@@ -399,12 +399,14 @@ pub async fn cmd_find(
 }
 
 /// `smix fill <selector> --text <text>` — type `text` into the matched field.
-/// Mirrors maestro `inputText:`.
+/// Mirrors maestro `inputText:`. `set` puts it in without the keyboard,
+/// as a flow's `method: setText` does.
 pub async fn cmd_fill(
     selector_str: String,
     text: String,
     port: u16,
     platform: Platform,
+    set: bool,
 ) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
         .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
@@ -428,8 +430,12 @@ pub async fn cmd_fill(
     // Same rule as the SDK: a named field is replaced, the focused one
     // is typed into. See `App::fill`.
     let names_a_field = !matches!(selector, smix_selector::Selector::Focused { .. });
-    d.fill(&selector, &text, None, names_a_field)
-        .await
+    let entered = if set {
+        d.set_text(&selector, &text, None, names_a_field).await
+    } else {
+        d.fill(&selector, &text, None, names_a_field).await
+    };
+    entered
         // Same refusal, same sentence, one definition of it — see
         // `smix_sdk::focused_fill_refusal`.
         .map_err(|e| {
@@ -451,7 +457,15 @@ pub async fn cmd_fill(
     // default, and detection fails open on the fields it cannot read.
     // The length is confirmation enough — the caller already knows the
     // value, and what they need to know is that it arrived whole.
-    println!("filled {selector_str} ({} chars)", text.chars().count());
+    let how = if set {
+        ", set without the keyboard"
+    } else {
+        ""
+    };
+    println!(
+        "filled {selector_str} ({} chars{how})",
+        text.chars().count()
+    );
     Ok(())
 }
 

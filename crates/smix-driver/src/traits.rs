@@ -322,6 +322,19 @@ pub trait Driver: Send + Sync {
         clear_first: bool,
     ) -> Result<(), ExpectationFailure>;
 
+    /// Put `text` in a focused / matched input without the keyboard:
+    /// the field is given its new content as a whole, so an input method
+    /// that composes keys into another script cannot change it. The field
+    /// is read back as a typed one is. A platform with no such way
+    /// refuses by name; nothing falls back to typing.
+    async fn set_text(
+        &self,
+        selector: &Selector,
+        text: &str,
+        include: Option<IncludeScope>,
+        clear_first: bool,
+    ) -> Result<(), ExpectationFailure>;
+
     /// Clear text from a focused / matched input.
     async fn clear(
         &self,

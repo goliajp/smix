@@ -38,6 +38,7 @@ that is why.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `inputText` / `fill` | ✅ | ✅ | `--force-key-events` opt-in bypasses a11y-focus resolution for RN hidden-input patterns |
+| `inputText` `method: setText` / `fill --set-text` | ❌ | ✅ | Puts the text in without the keyboard (`ACTION_SET_TEXT`), so a CJK input mode cannot compose it. iOS refuses by name: XCUITest enters text only by typing |
 | `eraseText` / `clear` | ✅ | ✅ | iOS deletes proportionally to the field's own length; Android empties the focused node exactly (`ACTION_SET_TEXT`), falling back to bounded deletes for a field the tree cannot address |
 | `pasteText` | ✅ | ❌ | Since Android 10 the clipboard serves only the focused app, and the runner cannot be focused while driving yours. Use `inputText` |
 | `setClipboard` | ✅ | ❌ | Same clipboard restriction as `pasteText`. On a registered physical iPhone it needs Xcode 27 (`devicectl device pasteboard`) |

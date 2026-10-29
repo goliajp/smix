@@ -840,6 +840,13 @@ pub(crate) fn summarize_step(step: &Step) -> String {
                 text.chars().count()
             )
         }
+        Step::SetText { selector, text } => match selector {
+            Some(selector) => format!(
+                "inputText into {selector:?}, set ({} chars)",
+                text.chars().count()
+            ),
+            None => format!("inputText, set ({} chars)", text.chars().count()),
+        },
         Step::PressKey(k) => format!("pressKey {k}"),
         Step::RunFlow(p) => format!("runFlow {p}"),
         Step::RunFlowConditional {

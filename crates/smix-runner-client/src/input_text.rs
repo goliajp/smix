@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{HttpRunnerClient, OkEnvelope, REQUEST_TIMEOUT, RunnerTransportError};
 
@@ -36,15 +36,26 @@ pub fn input_text_wait(text: &str) -> Result<Duration, RunnerTransportError> {
     crate::route_limits::wait_for_request("/input-text", input_text_budget(text), false)
 }
 
-/// Every `/input-text` body: the text, the budget, and the optional
-/// field target flattened in beside them.
+/// Every `/input-text` body: the text, the budget, how it goes in, and
+/// the optional field target flattened in beside them.
 #[derive(Serialize)]
 struct Req<'a, F: Serialize> {
     text: &'a str,
     #[serde(rename = "budgetMs")]
     budget_ms: u64,
+    method: Method,
     #[serde(flatten)]
     field: F,
+}
+
+/// Typed through the keyboard (`input text`), or set on the field with
+/// `ACTION_SET_TEXT`, which no keyboard sees.
+#[derive(Clone, Copy, Serialize)]
+enum Method {
+    #[serde(rename = "type")]
+    Type,
+    #[serde(rename = "setText")]
+    SetText,
 }
 
 #[derive(Serialize)]
@@ -64,34 +75,63 @@ struct AtPoint {
     focus_ny: f64,
 }
 
+/// What `/input-text` answers: the usual envelope, and how the text went in.
+#[derive(Deserialize)]
+struct Answer {
+    #[serde(flatten)]
+    envelope: OkEnvelope,
+    #[serde(default)]
+    method: Option<String>,
+}
+
+/// A set the runner did not say it did was typed. A runner older than
+/// the `method` field ignores it, types the text through the keyboard —
+/// the one thing the caller asked to avoid — and answers as it always
+/// has, so the answer's missing `method` is the only sign.
+fn set_was_done(asked: Method, answered: Option<&str>) -> Result<(), RunnerTransportError> {
+    match (asked, answered) {
+        (Method::Type, _) | (Method::SetText, Some("setText")) => Ok(()),
+        (Method::SetText, other) => Err(RunnerTransportError::MalformedBody {
+            endpoint: "/input-text".into(),
+            detail: format!(
+                "asked to set the text, it answered method {other:?}, not \"setText\": a \
+                 runner that predates `method` ignores it and types the text through the \
+                 keyboard instead. Bring the runner up from this smix and set it again"
+            ),
+        }),
+    }
+}
+
 impl HttpRunnerClient {
     async fn post_input_text<F: Serialize>(
         &self,
         text: &str,
+        method: Method,
         field: F,
     ) -> Result<(), RunnerTransportError> {
         let budget_ms = u64::try_from(input_text_budget(text).as_millis()).unwrap_or(u64::MAX);
-        let body: OkEnvelope = self
+        let body: Answer = self
             .json_post_within(
                 "/input-text",
                 &Req {
                     text,
                     budget_ms,
+                    method,
                     field,
                 },
                 None,
                 input_text_wait(text)?,
             )
             .await?;
-        body.require_ok("/input-text")?;
-        Ok(())
+        body.envelope.require_ok("/input-text")?;
+        set_was_done(method, body.method.as_deref())
     }
 
     /// `POST /input-text` — type text into currently-focused
     /// input. Caller must tap to focus the field first (AndroidDriver
     /// orchestrates). Android-specific.
     pub async fn input_text(&self, text: &str) -> Result<(), RunnerTransportError> {
-        self.post_input_text(text, Focused {}).await
+        self.post_input_text(text, Method::Type, Focused {}).await
     }
 
     /// `POST /input-text`, naming the field by the box it lies in.
@@ -110,7 +150,7 @@ impl HttpRunnerClient {
         let field = InRect {
             focus_rect: [rect.0, rect.1, rect.2, rect.3],
         };
-        self.post_input_text(text, field).await
+        self.post_input_text(text, Method::Type, field).await
     }
 
     /// `POST /input-text`, naming the field by where it was tapped.
@@ -135,7 +175,30 @@ impl HttpRunnerClient {
             focus_nx: nx,
             focus_ny: ny,
         };
-        self.post_input_text(text, field).await
+        self.post_input_text(text, Method::Type, field).await
+    }
+
+    /// `POST /input-text` with `method: setText` — the focused field is
+    /// given what it held with `text` after it, through
+    /// `ACTION_SET_TEXT`. No key goes through the keyboard, so an input
+    /// method that composes Latin keys into another script cannot change
+    /// the text; the field is read back as a typed one is. Android-specific.
+    pub async fn set_text(&self, text: &str) -> Result<(), RunnerTransportError> {
+        self.post_input_text(text, Method::SetText, Focused {})
+            .await
+    }
+
+    /// [`Self::set_text`], naming the field by the box it lies in, as
+    /// [`Self::input_text_in`] does.
+    pub async fn set_text_in(
+        &self,
+        text: &str,
+        rect: (f64, f64, f64, f64),
+    ) -> Result<(), RunnerTransportError> {
+        let field = InRect {
+            focus_rect: [rect.0, rect.1, rect.2, rect.3],
+        };
+        self.post_input_text(text, Method::SetText, field).await
     }
 }
 
@@ -174,6 +237,7 @@ mod tests {
         let body = serde_json::to_value(Req {
             text: "ab",
             budget_ms: 15_500,
+            method: Method::Type,
             field: AtPoint {
                 focus_nx: 0.5,
                 focus_ny: 0.25,
@@ -182,7 +246,30 @@ mod tests {
         .unwrap();
         assert_eq!(
             body,
-            serde_json::json!({"text": "ab", "budgetMs": 15_500, "focusNx": 0.5, "focusNy": 0.25})
+            serde_json::json!({"text": "ab", "budgetMs": 15_500, "method": "type", "focusNx": 0.5, "focusNy": 0.25})
         );
+    }
+
+    #[test]
+    fn a_set_the_runner_did_not_report_is_refused() {
+        assert!(set_was_done(Method::SetText, Some("setText")).is_ok());
+        assert!(set_was_done(Method::Type, None).is_ok());
+        assert!(set_was_done(Method::Type, Some("setText")).is_ok());
+        let old = set_was_done(Method::SetText, None).unwrap_err().to_string();
+        assert!(old.contains("predates"), "{old}");
+        assert!(set_was_done(Method::SetText, Some("type")).is_err());
+    }
+
+    #[test]
+    fn a_set_names_its_method_and_the_runner_spells_it_the_same() {
+        let body = serde_json::to_value(Req {
+            text: "probe@example.test",
+            budget_ms: 1,
+            method: Method::SetText,
+            field: Focused {},
+        })
+        .unwrap();
+        // the Android runner's decodeInputText accepts "type" and "setText"
+        assert_eq!(body["method"], "setText");
     }
 }

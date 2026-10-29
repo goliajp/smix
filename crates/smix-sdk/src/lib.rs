@@ -36,6 +36,7 @@ pub mod quiescence;
 pub mod issued_ledger;
 
 mod keyboard_note;
+mod set_text;
 pub use issued_ledger::{IssuedAction, IssuedKind, IssuedLedger};
 pub use keyboard_note::keyboard_minimized_note;
 
