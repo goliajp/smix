@@ -81,6 +81,7 @@ const TOTAL_TIMEOUT_MS: u64 = 5000;
 pub struct IosDriver {
     runner: HttpRunnerClient,
     settle: settle::Settle,
+    give_up_when_still: Option<Duration>,
 }
 
 /// Scripts the Android recogniser can read.
@@ -131,6 +132,7 @@ impl IosDriver {
         IosDriver {
             runner,
             settle: settle::Settle::default(),
+            give_up_when_still: None,
         }
     }
 
@@ -1153,6 +1155,7 @@ impl IosDriver {
         // element with a drifted snapshot frame, which produces a
         // wait-pass → tap-miss pair).
         let mut tree_hit_offscreen = false;
+        let mut stillness = poll::Stillness::new(self.give_up_when_still);
         loop {
             let look = budget.look();
             match self.tree(include).await {
@@ -1183,7 +1186,8 @@ impl IosDriver {
                             }
                         }
                     }
-                    if budget.spent_by(look) {
+                    let still = stillness.still_for_the_limit(poll::fingerprint(&tree));
+                    if still || budget.spent_by(look) {
                         let screen = screen_facts(&tree, 10);
                         let target = base_text_or_id(selector);
                         let suggestions =
@@ -1192,11 +1196,19 @@ impl IosDriver {
                         return Err(ExpectationFailure::new(
                             FailureInit {
                                 code: Some(FailureCode::Timeout),
-                                message: format!(
-                                    "waitFor({}) timed out after {:?}",
-                                    describe_selector(selector),
-                                    timeout
-                                ),
+                                message: if still {
+                                    poll::gave_up_still(
+                                        &describe_selector(selector),
+                                        start.elapsed(),
+                                        stillness.limit(),
+                                    )
+                                } else {
+                                    format!(
+                                        "waitFor({}) timed out after {:?}",
+                                        describe_selector(selector),
+                                        timeout
+                                    )
+                                },
                                 selector: Some(selector.clone()),
                                 suggestions,
                                 hint,

@@ -12,6 +12,14 @@ All notable changes to the `smix` workspace are documented here. The format foll
   in a row, one every 100 ms, must agree (2 by default; 1 touches the target
   where it was found). `Settle`, `until_settled` and `Driver::set_settle`
   in `smix-driver`, `App::with_settle` in `smix-sdk`.
+- **`smix run --give-up-when-still-ms`.** A wait for an element that is
+  not coming ran its whole timeout — 30 to 120 s in a consumer's flows —
+  on a screen that had stopped changing at the start. With this set, the
+  wait ends once the screen has been unchanged that long with the element
+  still not on it, and says so. Off by default: a screen that stays still
+  while the app waits on a server ends the wait too. `Stillness` and
+  `Driver::set_give_up_when_still` in `smix-driver`,
+  `App::with_give_up_when_still` in `smix-sdk`.
 
 ### Changed
 

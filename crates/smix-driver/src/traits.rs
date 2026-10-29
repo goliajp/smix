@@ -93,6 +93,11 @@ pub trait Driver: Send + Sync {
     /// wait has nothing to configure.
     fn set_settle(&mut self, _settle: crate::settle::Settle) {}
 
+    /// End a wait for an element early once the screen has not changed
+    /// for `limit` and the element is still not on it; `None` waits the
+    /// whole timeout. Default no-op. See [`crate::poll::Stillness`].
+    fn set_give_up_when_still(&mut self, _limit: Option<Duration>) {}
+
     /// Attach a `Session-Id` header to every subsequent
     /// request. Set to `Some(id)` after `POST /session/open`; set to
     /// `None` to revert to the legacy per-request rebind path (which

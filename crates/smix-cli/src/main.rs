@@ -898,6 +898,14 @@ Documentation: docs/AI_GUIDE.md
         /// found in (default 2). 1 touches it where it was first found.
         #[arg(long = "settle-frames", value_parser = clap::value_parser!(u32).range(1..=20))]
         settle_frames: Option<u32>,
+        /// End a wait for an element (`extendedWaitUntil`, `waitFor`)
+        /// once the screen has not changed for this long and the element
+        /// is still not on it, rather than running its whole timeout. A
+        /// screen that does not move while the app waits on a server
+        /// fails too, so set it above the longest such wait. Off when
+        /// absent.
+        #[arg(long = "give-up-when-still-ms", value_parser = clap::value_parser!(u64).range(500..=600_000))]
+        give_up_when_still_ms: Option<u64>,
         /// Disable auto-annotate on `--debug-output` fail-PNG (default:
         /// annotate with a red circle + step summary text label at the
         /// top of the screenshot). Use when downstream tooling expects
@@ -4278,6 +4286,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             force_key_events,
             settle_max_ms,
             settle_frames,
+            give_up_when_still_ms,
             no_fail_annotate,
             check,
         } => {
@@ -4729,6 +4738,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             fixture_registry: fixture_registry.clone(),
                             force_key_events,
                             settle,
+                            give_up_when_still: give_up_when_still_ms
+                                .map(std::time::Duration::from_millis),
                             no_fail_annotate,
                             auto_ocr_fallback: Some(sw_auto_ocr.value),
                             ai_assertions: Some(sw_ai_assertions.value),
