@@ -28,10 +28,17 @@ public enum KeyboardRoute {
     /// defaulting to append would keep the bug for everyone who does
     /// not know to ask.
     public let clearFirst: Bool
-    public init(selector: Selector, text: String, clearFirst: Bool = true) {
+    /// Keystrokes per second, at most. The whole text goes in one
+    /// request at this pace: a React Native field drops keys typed
+    /// faster than its JS thread can hear them, and sending one request
+    /// per character to slow them down cost a round trip each.
+    public let typingFrequency: Int
+    public static let typingFrequencyRange = 1...200
+    public init(selector: Selector, text: String, clearFirst: Bool = true, typingFrequency: Int = 200) {
       self.selector = selector
       self.text = text
       self.clearFirst = clearFirst
+      self.typingFrequency = typingFrequency
     }
   }
 
@@ -67,7 +74,16 @@ public enum KeyboardRoute {
     case let raw as Bool: clearFirst = raw
     default: throw DecodeError.wrongType("clearFirst not bool")
     }
-    return FillRequest(selector: selector, text: text, clearFirst: clearFirst)
+    let typingFrequency: Int
+    switch root["typingFrequency"] {
+    case nil, is NSNull: typingFrequency = 200
+    case let n as NSNumber where CFGetTypeID(n) != CFBooleanGetTypeID()
+      && FillRequest.typingFrequencyRange.contains(n.intValue) && Double(n.intValue) == n.doubleValue:
+      typingFrequency = n.intValue
+    default: throw DecodeError.wrongType("typingFrequency not an integer in 1...200")
+    }
+    return FillRequest(
+      selector: selector, text: text, clearFirst: clearFirst, typingFrequency: typingFrequency)
   }
 
   public static func decodeClear(_ body: Data) throws -> ClearRequest {

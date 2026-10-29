@@ -1493,6 +1493,22 @@ impl App {
         self
     }
 
+    /// How taps wait for their target to stop moving. Also via
+    /// `smix run --settle-max-ms` / `--settle-frames`.
+    #[must_use]
+    pub fn with_settle(mut self, settle: smix_driver::settle::Settle) -> Self {
+        self.driver.set_settle(settle);
+        self
+    }
+
+    /// End a wait for an element once the screen has been unchanged for
+    /// `limit` without it. Also via `smix run --give-up-when-still-ms`.
+    #[must_use]
+    pub fn with_give_up_when_still(mut self, limit: Option<std::time::Duration>) -> Self {
+        self.driver.set_give_up_when_still(limit);
+        self
+    }
+
     /// Inject the `assert_screenshot` strict-mode decision (v2 break #3).
     /// `Some(true)` = missing baseline is a `DriverError`; `Some(false)` =
     /// auto-record. `None` leaves the method on its

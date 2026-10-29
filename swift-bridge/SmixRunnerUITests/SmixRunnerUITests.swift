@@ -1588,7 +1588,7 @@ final class SmixRunnerUITests: XCTestCase {
       // through the test target's main thread). For a non-`_focused_`
       // selector, the handler first taps the matching typable element to
       // give it focus, then submits the string to the daemon.
-      fillHandler: { selectorText, text, scope, dispatch, clearFirst in
+      fillHandler: { selectorText, text, scope, dispatch, clearFirst, typingFrequency in
         let app = await resolveApp()  // Per-request target-app rebind.
         let t0 = DispatchTime.now()
         // `key-events` skips focus resolution and types into whatever
@@ -1690,7 +1690,7 @@ final class SmixRunnerUITests: XCTestCase {
             try await DaemonKeyboard.shared.sendString(deletes, typingFrequency: 200)
             KeyboardCache.shared.recordClear()
           }
-          try await DaemonKeyboard.shared.sendString(text, typingFrequency: 200)
+          try await DaemonKeyboard.shared.sendString(text, typingFrequency: typingFrequency)
           let t2 = DispatchTime.now()
           // Track typed text length. clear's hot path reads this to
           // skip the snapshot-triggering focused.value read.

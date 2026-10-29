@@ -1190,7 +1190,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     .with_screen(smix_sdk::screen_facts(&tree, 10)),
                 )));
             }
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            tokio::time::sleep(budget.pause()).await;
         }
     }
 
@@ -3674,11 +3674,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     ///   dispatches via `App::find_by_text_ocr`. First hit wins.
     ///   OCR members go LAST in each iteration so the cheap tree-based
     ///   layers get a chance first.
-    /// - Standalone `OcrText` — poll `find_by_text_ocr` on the same
-    ///   250 ms cadence as the driver's `wait_for`.
+    /// - Standalone `OcrText` — poll `find_by_text_ocr` every 250 ms.
     /// - Anything else — delegate to `App::wait_for` unchanged.
     ///
-    /// Poll cadence matches the driver's `POLL_INTERVAL_MS` (250 ms).
+    /// A flat 250 ms rather than the tree waits' quick early looks: an
+    /// OCR look is a screenshot and a recognition pass.
     /// On timeout emits `ExpectationFailure { code: Timeout }` with the
     /// per-layer trace so AI-readable output can show WHICH layer
     /// missed how (`L1 id=btn-…: NOT_FOUND; L2 text=Log in: NOT_FOUND;

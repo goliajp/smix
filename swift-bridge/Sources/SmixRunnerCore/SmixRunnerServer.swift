@@ -460,7 +460,7 @@ public actor SmixRunnerServer {
   // query mechanism as /tree.
   public typealias FillHandler = @Sendable (
     _ selector: String, _ text: String, _ scope: String?, _ dispatch: InputDispatchMode,
-    _ clearFirst: Bool
+    _ clearFirst: Bool, _ typingFrequency: Int
   ) async -> KeyboardOutcome
 
   /// How `/fill` puts text into the app.
@@ -1796,7 +1796,7 @@ public actor SmixRunnerServer {
 
     if let fillHandler {
       // OK MEANS: outcome — the field was typed into and read back.
-      // LONGEST WAIT /fill: 0 ms
+      // LONGEST WAIT /fill: from the request — every key at typingFrequency, after one automation stall
       await server.appendRoute("POST /fill") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -1816,7 +1816,8 @@ public actor SmixRunnerServer {
           fallback: KeyboardRoute.notFound(selector: req.selector)
         ) {
           let outcome = await fillHandler(
-            req.selector.text, req.text, request.query["include"], dispatch, req.clearFirst)
+            req.selector.text, req.text, request.query["include"], dispatch, req.clearFirst,
+            req.typingFrequency)
           return successFor(outcome) ?? KeyboardRoute.notFound(selector: req.selector)
         }
       }

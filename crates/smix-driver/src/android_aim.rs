@@ -115,7 +115,7 @@ pub(super) async fn resolve_aimed(
                     if budget.spent_by(look) {
                         return Err(crate::element_not_found(&tree, selector));
                     }
-                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    tokio::time::sleep(budget.pause()).await;
                     continue;
                 };
                 // Aimed only at a target that has stopped moving (the same
@@ -124,7 +124,7 @@ pub(super) async fn resolve_aimed(
                 crate::phases::mark("find", began);
                 let (nx, ny, aimed) = crate::phases::time(
                     "settle",
-                    crate::settle::until_aim_settles(
+                    crate::settle::until_settled(
                         first,
                         || async {
                             let t = driver.perceive(include).await?;
@@ -133,7 +133,7 @@ pub(super) async fn resolve_aimed(
                         },
                         ppp,
                         crate::settle::POLL,
-                        crate::settle::LIMIT,
+                        driver.settle(),
                     ),
                 )
                 .await?;
@@ -148,7 +148,7 @@ pub(super) async fn resolve_aimed(
                 if budget.spent_by(look) {
                     return Err(crate::element_not_found(&tree, selector));
                 }
-                tokio::time::sleep(Duration::from_millis(250)).await;
+                tokio::time::sleep(budget.pause()).await;
                 continue;
             }
             Err(e) => {

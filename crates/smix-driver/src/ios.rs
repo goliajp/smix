@@ -45,6 +45,14 @@ impl Driver for IosDriver {
     /// wrapped client. Sends `Input-Dispatch-Mode: key-events` header
     /// on every request; runner-side dispatches via daemon key events
     /// instead of a11y-anchored XCUIElement.typeText.
+    fn set_settle(&mut self, settle: crate::settle::Settle) {
+        self.settle = settle;
+    }
+
+    fn set_give_up_when_still(&mut self, limit: Option<Duration>) {
+        self.give_up_when_still = limit;
+    }
+
     fn set_force_key_events(&mut self, force: bool) {
         use smix_runner_client::InputDispatchMode;
         if force {
