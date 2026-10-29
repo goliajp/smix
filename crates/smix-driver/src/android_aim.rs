@@ -99,6 +99,7 @@ pub(super) async fn resolve_aimed(
     include: Option<IncludeScope>,
 ) -> Result<crate::Aimed, ExpectationFailure> {
     let budget = crate::poll::Budget::new(Duration::from_millis(5000));
+    let began = std::time::Instant::now();
     loop {
         let look = budget.look();
         let perceived = driver.perceive(include).await?;
@@ -120,16 +121,20 @@ pub(super) async fn resolve_aimed(
                 // Aimed only at a target that has stopped moving (the same
                 // wait as iOS). The tree is in pixels.
                 let ppp = crate::Driver::pixels_per_point(driver).await?;
-                let (nx, ny, aimed) = crate::settle::until_aim_settles(
-                    first,
-                    || async {
-                        let t = driver.perceive(include).await?;
-                        *read_by.lock().expect("never poisoned") = t.source;
-                        crate::settle_reading(&t.root, selector)
-                    },
-                    ppp,
-                    crate::settle::POLL,
-                    crate::settle::LIMIT,
+                crate::phases::mark("find", began);
+                let (nx, ny, aimed) = crate::phases::time(
+                    "settle",
+                    crate::settle::until_aim_settles(
+                        first,
+                        || async {
+                            let t = driver.perceive(include).await?;
+                            *read_by.lock().expect("never poisoned") = t.source;
+                            crate::settle_reading(&t.root, selector)
+                        },
+                        ppp,
+                        crate::settle::POLL,
+                        crate::settle::LIMIT,
+                    ),
                 )
                 .await?;
                 return Ok((

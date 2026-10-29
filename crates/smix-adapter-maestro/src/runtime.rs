@@ -1078,6 +1078,10 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// Kept on the adapter (not on `RunReport`) so a failed run still
     /// exposes the partial trace via [`Adapter::debug_records`].
     debug_records: Vec<StepDebugRecord>,
+    /// Every step's time, kept whatever the output: the bottom entry is the
+    /// flow's own steps, and each step running pushes one for the steps it
+    /// runs in turn.
+    timing: Vec<Vec<crate::StepTiming>>,
     /// Step index counter, monotonic per top-level `run()` call. Kept
     /// in Adapter (not thread-local, not a param) so recursive
     /// `run_steps_inner` from `repeat` / `retry` / `runFlow`-inline
@@ -1195,6 +1199,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             env: std::collections::BTreeMap::new(),
             debug_output: None,
             debug_records: Vec::new(),
+            timing: vec![Vec::new()],
             step_index: 0,
             last_locale: "en".to_string(),
             metro_tail: None,
@@ -1214,6 +1219,41 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// consumable by the CLI summary writer.
     pub fn debug_records(&self) -> &[StepDebugRecord] {
         &self.debug_records
+    }
+
+    /// The time each of the flow's steps took, with the steps each ran
+    /// under it. Kept for every run, and after a failed one up to the
+    /// step that failed.
+    pub fn step_timings(&self) -> &[crate::StepTiming] {
+        self.timing.first().map_or(&[], Vec::as_slice)
+    }
+
+    /// Run `step`, recording its time and the phases the driver marked
+    /// under the step running it.
+    async fn timed_step(
+        &mut self,
+        index: Option<usize>,
+        step: &Step,
+        warnings: &mut Vec<String>,
+    ) -> (Result<RunStepReport, RunError>, u64) {
+        self.timing.push(Vec::new());
+        let started = std::time::Instant::now();
+        let (result, phases) = smix_driver::phases::record(self.run_step(step, warnings)).await;
+        let wall_ms = started.elapsed().as_millis() as u64;
+        let steps = self.timing.pop().expect("pushed above");
+        let timing = crate::StepTiming {
+            index,
+            summary: crate::entry::summarize_step(step),
+            verdict: crate::timing::verdict_of(&result),
+            wall_ms,
+            phases,
+            steps,
+        };
+        self.timing
+            .last_mut()
+            .expect("the flow's own level is never popped")
+            .push(timing);
+        (result, wall_ms)
     }
 
     /// Point the AI-assertion verbs at a specific judge.
@@ -1438,9 +1478,8 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             // the last line in the log is then the step that was in
             // flight when the run stopped.
             eprintln!("STEP {idx}: {}", crate::entry::summarize_step(step));
-            let step_start = std::time::Instant::now();
-            let outcome_result = self.run_step(step, &mut report.warnings).await;
-            let wall_ms = step_start.elapsed().as_millis() as u64;
+            let (outcome_result, wall_ms) =
+                Box::pin(self.timed_step(Some(idx), step, &mut report.warnings)).await;
             let debug_record = match &outcome_result {
                 Ok(outcome) => {
                     self.write_step_debug(idx, &step_summary, StepOutcome::Ok(outcome), wall_ms)
@@ -1461,7 +1500,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     // the variants whose text this cannot reach: an
                     // authoring error names its own cause but not the
                     // step it happened at.
-                    eprintln!("STEP {idx}: {step_summary} → FAILED");
+                    eprintln!("STEP {idx}: {step_summary} → FAILED ({wall_ms} ms)");
                     return Err(attribute_to_step(e, idx, step, &step_summary));
                 }
             };
@@ -1472,8 +1511,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             // WHY a conditional runFlow or optional tapOn was skipped.
             // One stderr line keeps it greppable. Non-Skipped outcomes
             // stay quiet.
-            if let RunStepReport::Skipped { reason } = &outcome {
-                eprintln!("STEP {idx}: {step_summary} → SKIPPED: {reason}");
+            match &outcome {
+                RunStepReport::Skipped { reason } => {
+                    eprintln!("STEP {idx}: {step_summary} → SKIPPED: {reason} ({wall_ms} ms)")
+                }
+                RunStepReport::Ok | RunStepReport::ExpandedSubflow { .. } => {
+                    eprintln!("STEP {idx}: {step_summary} → ok ({wall_ms} ms)")
+                }
             }
             report.steps.push(outcome);
         }
@@ -1707,7 +1751,8 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         warnings: &mut Vec<String>,
     ) -> Result<(), RunError> {
         for step in steps {
-            let _ = self.run_step(step, warnings).await?;
+            let (result, _) = Box::pin(self.timed_step(None, step, warnings)).await;
+            result?;
         }
         Ok(())
     }

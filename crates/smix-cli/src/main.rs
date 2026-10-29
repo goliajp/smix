@@ -797,9 +797,14 @@ Documentation: docs/AI_GUIDE.md
         /// semantics. VALUE may contain `=`.
         #[arg(long = "env", value_parser = parse_kv_pair, action = clap::ArgAction::Append)]
         env: Vec<(String, String)>,
-        /// Directory for debug artifacts. Currently writes
-        /// `<dir>/run-summary.json` at exit. Per-step files + on-fail
-        /// screenshots ship in a follow-up.
+        /// Directory for debug artifacts: `step-<n>-<verb>.json` as each
+        /// step ends (its outcome and `wallMs`), `step-<n>-fail.png` and
+        /// `step-<n>-fail.tree.json` for a step that failed, and
+        /// `run-summary.json` at the end — every step's time with the
+        /// phases inside it (find / settle / touch, launch / appear) and
+        /// the sub-steps under the step that ran them, plus the time
+        /// before the first step and after the last. With several flows,
+        /// one subdirectory per flow.
         #[arg(long = "debug-output")]
         debug_output: Option<PathBuf>,
         /// Verbose logging (debug-level tracing on adapter/sdk/driver
@@ -4623,6 +4628,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             // keyed by flow basename.
             let multi_flow = flows.len() > 1;
             let mut worst_exit: u8 = 0;
+            // With `--format junit`, each flow's last attempt, printed as
+            // one document once every flow has run.
+            let mut junit_suites: Vec<String> = Vec::new();
             for (idx, flow_path) in flows.iter().enumerate() {
                 // Per-flow debug-output subdir when running multiple
                 // flows. Single-flow batches keep the raw dir for
@@ -4668,14 +4676,15 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| flow_path.display().to_string());
                 let mut final_code: u8 = 1;
+                let mut final_suite: Option<String> = None;
                 for attempt_index in 0..max_attempts {
                     if attempt_index > 0 {
                         eprintln!("smix run: retry #{attempt_index} for flow {flow_name}");
                     }
                     let ips_before = ips_snapshot(attribution_bundle.as_deref());
                     let started = std::time::Instant::now();
-                    let code =
-                        smix_adapter_maestro::run_flow_code(smix_adapter_maestro::FlowArgs {
+                    let outcome =
+                        smix_adapter_maestro::run_flow_outcome(smix_adapter_maestro::FlowArgs {
                             flow: flow_path.clone(),
                             udid: udid.clone(),
                             bundle_id: bundle.clone(),
@@ -4703,6 +4712,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             launch_fresh_force_reinstall: Some(sw_launch_reinstall.value),
                         })
                         .await;
+                    let code = outcome.code;
+                    final_suite = outcome.junit;
                     let wall_ms = started.elapsed().as_millis() as u64;
                     let ips_after = ips_snapshot(attribution_bundle.as_deref());
                     let new_ips: Option<String> =
@@ -4760,12 +4771,16 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 let views: Vec<AttemptView> = attempts.iter().map(AttemptView).collect();
                 smix_simctl::record_flow_attempts(&flow_name, &views);
                 worst_exit = worst_exit.max(final_code);
+                junit_suites.extend(final_suite);
                 if fail_fast && final_code != 0 {
                     eprintln!(
                         "smix run: --fail-fast — aborting batch on first failure (exit={final_code})"
                     );
                     break;
                 }
+            }
+            if !junit_suites.is_empty() {
+                println!("{}", smix_adapter_maestro::junit_document(&junit_suites));
             }
             return Ok(ExitCode::from(worst_exit));
         }

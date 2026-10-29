@@ -21,7 +21,7 @@ smix run [FLAGS] <FLOW.yaml>
 | `--trace-dir <PATH>` | — | `./.smix/trace/<runid>` | Where screenshots / video / JSON traces go |
 | `--dry-run` (alias `--check`) | — | (off) | Parse-only gate: validates every listed yaml (+ `runFlow:` includes) and reports `parse OK/FAIL` per file with step counts. No runner, no simulator. Exit 0 on clean parse, 2 on any error |
 | `--retry <N>` | — | `1` | Per-flow attempt count; attempts recorded in `~/.local/share/smix/flow-attempts.json` for `smix diagnostic dump` attribution |
-| `--debug-output <DIR>` | — | (unset) | Per-step JSON + on-fail screenshot/tree artifacts |
+| `--debug-output <DIR>` | — | (unset) | Per-step JSON as each step ends, on-fail screenshot/tree, and `run-summary.json` with every step's time (see "Where the time went") |
 | `--nodes <PATH>` | — | (unset) | Distributed run across machines; see below |
 
 Environment variables consumed by `smix run` (beyond the flag-bound ones above):
@@ -47,7 +47,57 @@ Environment variables consumed by `smix run` (beyond the flag-bound ones above):
 
 - stdout has step-by-step progress + final summary JSON
 - stderr has DEBUG / WARN lines (when `RUST_LOG=info` or higher)
+- stderr has one `STEP n: <step>` line as each step starts and one as it
+  ends, with its time: `STEP 3: tapOn → ok (412 ms)`, `→ FAILED (5012 ms)`,
+  `→ SKIPPED: <reason> (3 ms)`
+- Before the summary line, `time: 8423 ms — setup 1910 ms, steps 6380 ms, teardown 102 ms`
 - Final line is `summary: N steps, X warnings, Y skipped, Z expanded subflows` on success
+
+### Where the time went
+
+`--format json` and `--debug-output`'s `run-summary.json` both carry a
+`timing` object — on success and on failure, up to the step that failed:
+
+```json
+"timing": {
+  "totalMs": 8423,
+  "setupMs": 1910,
+  "stepsMs": 6380,
+  "teardownMs": 102,
+  "steps": [
+    { "index": 1, "summary": "launchApp jp.example", "verdict": "ok", "wallMs": 2210,
+      "phases": [ { "name": "launch", "startMs": 0, "ms": 1490 },
+                  { "name": "appear", "startMs": 1490, "ms": 702 } ],
+      "steps": [] },
+    { "index": 2, "summary": "tapOn id=login", "verdict": "ok", "wallMs": 412,
+      "phases": [ { "name": "find", "startMs": 0, "ms": 98 },
+                  { "name": "settle", "startMs": 98, "ms": 160 },
+                  { "name": "touch", "startMs": 258, "ms": 150 } ],
+      "steps": [] }
+  ]
+}
+```
+
+- `setupMs` is before the first step: parsing the flow, finding the runner,
+  opening the session, quieting animations. `teardownMs` is after the last
+  step: closing the session, putting animations back. `stepsMs` adds up the
+  flow's own steps; `totalMs` beyond the three is time between steps.
+- `phases` are the parts of a step the driver marks, in the order they
+  ended, each with its offset from the step's start. A tap (`tapOn`, double
+  tap, long press) has `find` (looking for the target in the tree),
+  `settle` (waiting for it to hold still) and `touch` (sending the touch
+  and reading where it landed); for `tapOn`, a target that leaves before
+  the touch is aimed at again, and the three repeat. `launchApp` has
+  `permissions` when it sets any, `launch`, and on iOS `appear` (until
+  XCUITest sees the app in front). What a step's `wallMs` holds beyond its
+  phases is the step's own work outside the driver.
+- `steps` under a step are the steps it ran: a `runFlow`'s, a `repeat`'s,
+  a `retry`'s. Steps inside `repeat`, `retry` and an inline `runFlow` are
+  not numbered on stderr and have `"index": null`.
+- `--format junit` gives each flow's whole run as its `time`, in seconds.
+  Several flows in one `smix run` are one document, a `<testsuites>` holding
+  one `<testsuite>` per flow; a flow run more than once by `--retry` is
+  there once, as its last attempt.
 
 ### Distributed runs across machines (`--nodes`)
 
