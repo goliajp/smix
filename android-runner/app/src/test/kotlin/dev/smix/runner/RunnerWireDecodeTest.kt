@@ -155,6 +155,21 @@ class RunnerWireDecodeTest {
     }
 
     @Test
+    fun inputTextIsTypedUnlessSetIsAskedFor() {
+        assertEquals(false, RunnerWire.decodeInputText("""{"text":"x"}""").setText)
+        assertEquals(false, RunnerWire.decodeInputText("""{"text":"x","method":"type"}""").setText)
+        assertEquals(true, RunnerWire.decodeInputText("""{"text":"x","method":"setText"}""").setText)
+    }
+
+    @Test
+    fun inputTextRefusesAMethodItDoesNotKnow() {
+        val e = assertThrows(IllegalArgumentException::class.java) {
+            RunnerWire.decodeInputText("""{"text":"x","method":"paste"}""")
+        }
+        assertEquals("method must be type or setText, not paste", e.message)
+    }
+
+    @Test
     fun inputTextMissingTextThrows() {
         assertThrows(JSONException::class.java) {
             RunnerWire.decodeInputText("{}")

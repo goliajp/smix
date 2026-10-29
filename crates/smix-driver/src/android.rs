@@ -27,6 +27,7 @@ use smix_selector_resolver::{resolve_selector, resolve_selector_all};
 
 use crate::Orientation;
 use crate::android_aim::{resolve_aimed, resolve_rect_with_implicit_wait};
+use crate::android_input::Entry;
 use crate::android_notes::dispatch_unsupported_err;
 use crate::traits::{Driver, Platform};
 
@@ -69,6 +70,10 @@ impl AndroidDriver {
 
     pub fn runner(&self) -> &HttpRunnerClient {
         &self.runner
+    }
+
+    pub(crate) fn forces_key_events(&self) -> bool {
+        self.force_key_events
     }
 }
 
@@ -534,50 +539,19 @@ impl Driver for AndroidDriver {
         include: Option<IncludeScope>,
         clear_first: bool,
     ) -> Result<(), ExpectationFailure> {
-        if self.force_key_events {
-            // No resolve, no focus tap: type where focus already is.
-            // That is the whole mode — it exists for fields the tree
-            // cannot address, so resolving first would fail for exactly
-            // the callers who asked for it.
-            if clear_first {
-                // force-key-events resolves nothing by design, so there
-                // is no field to name: type where focus already is.
-                self.clear_focused_field("AndroidDriver::fill (key-events)", None)
-                    .await?;
-            }
-            return self.runner.input_text(text).await.map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::fill (key-events): {e}"),
-                    ..Default::default()
-                })
-            });
-        }
-        if matches!(selector, Selector::Focused { .. }) {
-            return self.fill_focused(text, clear_first).await;
-        }
-        // Host-resolve → tap to focus → /input-text. Mirror
-        // of swift FlyingFox /fill semantics (selector resolves; client
-        // types text into focused field).
-        let ((nx, ny), rect) = resolve_rect_with_implicit_wait(self, selector, include).await?;
-        self.runner.tap_at_norm_coord(nx, ny).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::fill: focus tap failed: {e}"),
-                ..Default::default()
-            })
-        })?;
-        if clear_first {
-            self.clear_focused_field("AndroidDriver::fill", Some(rect))
-                .await?;
-        }
-        self.runner.input_text_in(text, rect).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::fill: input_text failed: {e}"),
-                ..Default::default()
-            })
-        })
+        self.enter_text(selector, text, include, clear_first, Entry::Type)
+            .await
+    }
+
+    async fn set_text(
+        &self,
+        selector: &Selector,
+        text: &str,
+        include: Option<IncludeScope>,
+        clear_first: bool,
+    ) -> Result<(), ExpectationFailure> {
+        self.enter_text(selector, text, include, clear_first, Entry::Set)
+            .await
     }
 
     async fn clear(

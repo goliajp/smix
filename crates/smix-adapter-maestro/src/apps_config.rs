@@ -234,6 +234,7 @@ fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
         | Step::DoubleTapOn { .. }
         | Step::LongPressOn { .. }
         | Step::InputTextInto { .. }
+        | Step::SetText { .. }
         | Step::CopyTextFrom { .. }
         | Step::RememberBounds { .. }
         | Step::AssertBoundsUnchanged { .. }

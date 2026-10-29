@@ -76,7 +76,14 @@ object RunnerWire {
     /// `budgetMs` is how long the host will wait for the answer, less the
     /// time it keeps for the answer to arrive; null from a caller that
     /// named none, which leaves the typing unbounded as before.
-    data class InputTextRequest(val text: String, val focusIn: NormRect?, val budgetMs: Long?)
+    /// `setText` puts the text in with `ACTION_SET_TEXT` whatever it is;
+    /// otherwise text `input text` can type is typed.
+    data class InputTextRequest(
+        val text: String,
+        val focusIn: NormRect?,
+        val budgetMs: Long?,
+        val setText: Boolean = false,
+    )
 
     /// The named element's own box, viewport-normalized.
     data class NormRect(val nx: Double, val ny: Double, val nw: Double, val nh: Double)
@@ -84,7 +91,12 @@ object RunnerWire {
     fun decodeInputText(payload: String): InputTextRequest {
         val req = JSONObject(payload)
         val budgetMs = if (req.has("budgetMs")) req.getLong("budgetMs") else null
-        return InputTextRequest(req.getString("text"), focusRect(req), budgetMs)
+        val setText = when (val method = req.optString("method", "type")) {
+            "type" -> false
+            "setText" -> true
+            else -> throw IllegalArgumentException("method must be type or setText, not $method")
+        }
+        return InputTextRequest(req.getString("text"), focusRect(req), budgetMs, setText)
     }
 
     /// The clear that precedes a fill needs the same target, or it
@@ -483,10 +495,12 @@ object RunnerWire {
         masked: Boolean,
         chunks: Int = 1,
         retyped: Int = 0,
+        method: String = "type",
     ): String {
         val obj = JSONObject()
             .put("ok", ok)
             .put("status", if (ok) "ok" else "text_did_not_land")
+            .put("method", method)
             .put("text", text)
             .put("chunks", chunks)
             .put("retyped", retyped)

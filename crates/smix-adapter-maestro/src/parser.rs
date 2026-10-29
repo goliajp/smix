@@ -1481,12 +1481,26 @@ fn parse_input_text(v: &Value) -> Result<Step, ParseError> {
             // ambiguity and wrong about the remedy: a field addressed
             // by label, role, OCR or a fallback chain simply could not
             // be typed into, and the verb table said otherwise.
+            let set = input_method(map)?;
             let mut target = serde_norway::Mapping::new();
             for (key, value) in map {
-                if key.as_str() == Some("text") {
+                if matches!(key.as_str(), Some("text" | "method")) {
                     continue;
                 }
                 target.insert(key.clone(), value.clone());
+            }
+            if set {
+                // Setting needs no target: without one it goes to the
+                // focused field, as the scalar form types there.
+                let selector = if target.is_empty() {
+                    None
+                } else {
+                    Some(visible_to_selector(&Value::Mapping(target))?)
+                };
+                return Ok(Step::SetText {
+                    selector,
+                    text: text.to_string(),
+                });
             }
             if target.is_empty() {
                 return Err(ParseError::InvalidValue {
@@ -1508,6 +1522,25 @@ fn parse_input_text(v: &Value) -> Result<Step, ParseError> {
             field: "inputText".into(),
             reason: format!("expected scalar or {{id, text}} mapping, got {other:?}"),
         }),
+    }
+}
+
+/// Whether `inputText`'s `method:` asks for the text to be set rather
+/// than typed. Absent means typed.
+fn input_method(map: &serde_norway::Mapping) -> Result<bool, ParseError> {
+    match map.get(Value::String("method".into())) {
+        None => Ok(false),
+        Some(v) => match v.as_str() {
+            Some("type") => Ok(false),
+            Some("setText") => Ok(true),
+            _ => Err(ParseError::InvalidValue {
+                field: "inputText.method".into(),
+                reason: format!(
+                    "expected `type` (through the keyboard, the default) or `setText` \
+                     (put in the field without it), got {v:?}"
+                ),
+            }),
+        },
     }
 }
 

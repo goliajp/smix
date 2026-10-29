@@ -275,6 +275,15 @@ class RunnerWireEncodeTest {
     }
 
     @Test
+    fun inputTextSaysHowTheTextWentIn() {
+        assertEquals("type", JSONObject(RunnerWire.inputTextBody(true, "a", "", "a", masked = false)).getString("method"))
+        assertEquals(
+            "setText",
+            JSONObject(RunnerWire.inputTextBody(true, "a", "", "a", masked = false, method = "setText")).getString("method"),
+        )
+    }
+
+    @Test
     fun inputTextSaysHowManyChunksItTookAndWhatWasTypedAgain() {
         // A long text goes in as chunks, and a chunk whose tail did not
         // land has the missing part typed again. Both are on the wire so

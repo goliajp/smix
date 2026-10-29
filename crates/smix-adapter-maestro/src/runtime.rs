@@ -234,6 +234,9 @@ pub trait AppLike: Send + Sync {
     async fn webview_eval(&self, js: &str) -> Result<serde_json::Value, ExpectationFailure>;
     /// Type text into the matched field. Mirrors [`App::fill`].
     async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure>;
+    /// Put text in the matched field without the keyboard. Mirrors
+    /// [`App::set_text`].
+    async fn set_text(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure>;
     /// Press a hardware / IME key. Mirrors [`App::press_key`].
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure>;
     /// Scroll until selector is reached. Mirrors [`App::scroll`].
@@ -528,6 +531,9 @@ impl AppLike for App {
     }
     async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
         App::fill(self, selector, text).await
+    }
+    async fn set_text(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
+        App::set_text(self, selector, text).await
     }
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure> {
         App::press_key(self, key).await
@@ -952,6 +958,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::LongPressOn { .. } => "longPressOn",
         Step::InputText(_) => "inputText",
         Step::InputTextInto { .. } => "inputText",
+        Step::SetText { .. } => "inputText",
         Step::EraseText(_) => "eraseText",
         Step::ClearState { .. } => "clearState",
         Step::ClearKeychain => "clearKeychain",
@@ -2040,6 +2047,22 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     self.app.fill(&smix_sdk::focused(), &expanded).await?;
                 } else {
                     self.app.fill(&desugared, &expanded).await?;
+                }
+                Ok(RunStepReport::Ok)
+            }
+            Step::SetText { selector, text } => {
+                let expanded = self.expand_template(text)?;
+                let Some(selector) = selector else {
+                    self.app.set_text(&smix_sdk::focused(), &expanded).await?;
+                    return Ok(RunStepReport::Ok);
+                };
+                let desugared = self.desugar_localized_text(selector);
+                if let Some((nx, ny)) = self.point_for_unreadable(&desugared, IMPLICIT_WAIT).await?
+                {
+                    self.app.tap_at_coord(nx, ny).await?;
+                    self.app.set_text(&smix_sdk::focused(), &expanded).await?;
+                } else {
+                    self.app.set_text(&desugared, &expanded).await?;
                 }
                 Ok(RunStepReport::Ok)
             }
