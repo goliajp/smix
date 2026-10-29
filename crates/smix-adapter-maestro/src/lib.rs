@@ -262,11 +262,15 @@ mod parser;
 mod pinch;
 mod runtime;
 pub mod selector_support;
+mod timing;
 mod watch;
 
 pub use emitter::{EmitError, emit_flow_yaml};
 
-pub use entry::{FlowArgs, FlowPlatform, OutputFormat, run_flow, run_flow_code};
+pub use entry::{
+    FlowArgs, FlowOutcome, FlowPlatform, OutputFormat, run_flow, run_flow_code, run_flow_outcome,
+};
+pub use junit::junit_document;
 
 pub use apps_config::{
     AndroidApp, AppEntry, AppsConfig, IosApp, ResolveError, ResolvedApp, resolve_app_into_flow,
@@ -284,6 +288,7 @@ pub use parser::{
     text_to_pattern, visible_to_selector,
 };
 pub use runtime::{Adapter, AppLike, RunError, RunReport, RunStepReport, StepDebugRecord};
+pub use timing::{RunTiming, StepTiming};
 
 /// A maestro YAML command. Each variant corresponds to one or more
 /// `smix-sdk` action calls; the enum itself is a structural
@@ -1446,7 +1451,7 @@ pub enum ParseError {
     },
 }
 
-/// Reading back what `junit::emit_junit` writes.
+/// Reading back what `--format junit` writes.
 ///
 /// Beside the writer on purpose. Three host adapters read this — an XCTest
 /// helper, a JUnit rule, and whatever comes next — and a shape that drifts

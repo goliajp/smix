@@ -1840,9 +1840,14 @@ impl App {
         opts: &LaunchAppOptions,
     ) -> Result<Vec<String>, ExpectationFailure> {
         let udid = self.require_udid()?;
+        let began = std::time::Instant::now();
         for (perm, action) in &opts.permissions {
             self.set_permission(&opts.bundle_id, *perm, *action).await?;
         }
+        if !opts.permissions.is_empty() {
+            smix_driver::phases::mark("permissions", began);
+        }
+        let launching = std::time::Instant::now();
         let mut warnings = if opts.clear_state || opts.clear_keychain {
             self.launch_fresh(
                 &opts.bundle_id,
@@ -1870,6 +1875,8 @@ impl App {
                 .map_err(simctl_to_failure)?;
             Vec::new()
         };
+        smix_driver::phases::mark("launch", launching);
+        let appearing = std::time::Instant::now();
         // The app was launched here, not through the runner, and XCUITest
         // learns of the new process on its own time: on a slow CI machine
         // the app was in front a second before XCUITest saw it, and the
@@ -1888,6 +1895,9 @@ impl App {
                 "{} was launched and after 5 s XCUITest sees it as {seen}, not in front",
                 opts.bundle_id
             ));
+        }
+        if self.device.platform() == smix_driver::Platform::Ios {
+            smix_driver::phases::mark("appear", appearing);
         }
         Ok(warnings)
     }

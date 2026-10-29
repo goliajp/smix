@@ -4,6 +4,37 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- **`smix run` says where the time went.** Every step is timed, whatever
+  the output: stderr ends each step with its time
+  (`STEP 3: tapOn → ok (412 ms)`) and the run with
+  `time: … — setup …, steps …, teardown …`. `--format json` and
+  `--debug-output`'s `run-summary.json` carry a `timing` object: the whole
+  run, the time before the first step and after the last, and each step's
+  time with the phases the driver marked inside it — `find`, `settle` and
+  `touch` for a tap, `launch` and `appear` for `launchApp` — and the steps
+  it ran under it. See "Where the time went" in the CLI guide.
+- `run_flow_outcome`, `FlowOutcome`, `junit_document`, `StepTiming` and
+  `RunTiming` in `smix-adapter-maestro`; `smix_driver::phases`.
+
+### Fixed
+
+- **`--format junit` reports how long each flow took.** Every testcase said
+  `time="0"`, a number that was never measured, and a dashboard showed
+  every flow as instant. It is now the flow's run in seconds.
+- **`--format junit` with several flows is one document.** Each flow
+  printed a whole XML document of its own, end to end, which no XML reader
+  takes; they are now one `<testsuites>`. A flow `--retry` ran more than
+  once appears once, as its last attempt.
+- **`--format json` with `--debug-output` lists the steps.** Its `steps`
+  was empty even then; it now carries the same records as
+  `run-summary.json`. Without `--debug-output`, `timing.steps` has every
+  step.
+- **`smix run --help` describes `--debug-output` as it is.** It said
+  per-step files were still to come; they have been written for a long
+  time.
+
 ## [18.0.0] — 2026-10-29
 
 ### Added

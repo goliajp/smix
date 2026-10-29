@@ -505,6 +505,7 @@ impl IosDriver {
         include: Option<IncludeScope>,
     ) -> Result<Aimed, ExpectationFailure> {
         let budget = poll::Budget::new(Duration::from_millis(TOTAL_TIMEOUT_MS));
+        let began = std::time::Instant::now();
 
         // Before resolving anything: if the point this is about to
         // compute will be read in a different space than it is computed
@@ -563,19 +564,23 @@ impl IosDriver {
                         sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
                         continue;
                     };
+                    phases::mark("find", began);
                     // Aimed only at a target that has stopped moving: this
                     // tree may be a frame of an entrance still under way.
                     // iOS frames are in points.
-                    let (nx, ny, aimed) = settle::until_aim_settles(
-                        first,
-                        || async {
-                            let t = self.perceived_with_retry(include).await?;
-                            *read_by.lock().expect("never poisoned") = t.source;
-                            settle_reading(&t.root, selector)
-                        },
-                        1.0,
-                        settle::POLL,
-                        settle::LIMIT,
+                    let (nx, ny, aimed) = phases::time(
+                        "settle",
+                        settle::until_aim_settles(
+                            first,
+                            || async {
+                                let t = self.perceived_with_retry(include).await?;
+                                *read_by.lock().expect("never poisoned") = t.source;
+                                settle_reading(&t.root, selector)
+                            },
+                            1.0,
+                            settle::POLL,
+                            settle::LIMIT,
+                        ),
                     )
                     .await?;
                     return Ok((
@@ -741,11 +746,12 @@ impl IosDriver {
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
         let (nx, ny, aimed, reader) = self.resolve_aimed(selector, include).await?;
-        let landed = self
-            .runner
-            .double_tap_gesture_aimed(nx, ny, Some(reader))
-            .await
-            .map_err(transport_to_failure)?;
+        let landed = phases::time(
+            "touch",
+            self.runner.double_tap_gesture_aimed(nx, ny, Some(reader)),
+        )
+        .await
+        .map_err(transport_to_failure)?;
         landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())
     }
 
@@ -765,11 +771,13 @@ impl IosDriver {
         let (nx, ny, aimed, reader) = self.resolve_aimed(selector, include).await?;
         let hold_ms = u32::try_from(duration.as_millis()).unwrap_or(u32::MAX);
         let sent_ms = host_now_ms();
-        let landed = self
-            .runner
-            .tap_at_norm_coord_aimed(nx, ny, 1, None, Some(hold_ms), Some(reader))
-            .await
-            .map_err(transport_to_failure)?;
+        let landed = phases::time(
+            "touch",
+            self.runner
+                .tap_at_norm_coord_aimed(nx, ny, 1, None, Some(hold_ms), Some(reader)),
+        )
+        .await
+        .map_err(transport_to_failure)?;
         let received_ms = host_now_ms();
         landing_outcome(selector, (nx, ny, aimed, reader), &landed)?;
         Ok(match landed.press() {
@@ -1966,6 +1974,7 @@ mod android_aim;
 mod android_input;
 mod android_notes;
 mod landing;
+pub mod phases;
 pub mod poll;
 pub(crate) use aim::{aim_in, settle_reading};
 pub use landing::{Aimed, ChainCoverage, landing_outcome, tap_landed_within, verdict_reader};

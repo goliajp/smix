@@ -55,7 +55,12 @@ where
         let look = budget.look();
         let aimed = aim().await?;
         let (nx, ny, target, reader) = &aimed;
-        match touch(*nx, *ny, *reader, target.as_ref().map(tap_target)).await {
+        match crate::phases::time(
+            "touch",
+            touch(*nx, *ny, *reader, target.as_ref().map(tap_target)),
+        )
+        .await
+        {
             Ok(landed) => return Ok((aimed, landed)),
             Err(e) => {
                 let Some(saw) = target_gone_before_touch(&e) else {
