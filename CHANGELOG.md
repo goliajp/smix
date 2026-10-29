@@ -2,7 +2,7 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [20.0.0] — 2026-10-30
 
 ### Added
 
@@ -41,6 +41,18 @@ All notable changes to the `smix` workspace are documented here. The format foll
   one deleted the other's `output-metadata.json` mid-build. The build now
   holds a lock on the runner's directory; the second start waits, finds
   the APK the first built, and builds nothing.
+
+### Breaking
+
+- **Rust API: `smix_adapter_maestro::FlowArgs` has two new public fields,
+  `settle` and `give_up_when_still`.** Code that builds `FlowArgs` with a
+  struct literal adds both; `None` keeps the earlier behaviour.
+- An iOS runner from an earlier release, asked to fill by a host at this
+  release, receives the whole text in one request and types it at its own
+  speed rather than ten keys a second; bring the runner up from this
+  release.
+
+What to change, and nothing else: [docs/migrating-to-20.md](docs/migrating-to-20.md).
 
 ## [19.0.0] — 2026-10-30
 
