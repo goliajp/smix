@@ -41,6 +41,7 @@ pub struct AndroidDriver {
     /// `/input-text` already types into the focused field — so the
     /// mode is honoured here, by not resolving.
     force_key_events: bool,
+    settle: crate::settle::Settle,
 }
 
 impl AndroidDriver {
@@ -65,6 +66,7 @@ impl AndroidDriver {
         AndroidDriver {
             runner,
             force_key_events: false,
+            settle: crate::settle::Settle::default(),
         }
     }
 
@@ -74,6 +76,10 @@ impl AndroidDriver {
 
     pub(crate) fn forces_key_events(&self) -> bool {
         self.force_key_events
+    }
+
+    pub(crate) fn settle(&self) -> crate::settle::Settle {
+        self.settle
     }
 }
 
@@ -301,7 +307,7 @@ impl Driver for AndroidDriver {
                     .with_screen(screen_facts(&tree, 10)),
                 ));
             }
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            tokio::time::sleep(budget.pause()).await;
         }
     }
 
@@ -528,6 +534,10 @@ impl Driver for AndroidDriver {
     /// focused field either way. What the mode changes is whether this
     /// driver resolves and taps the field first — and resolving is
     /// exactly what fails for the callers who ask for this mode.
+    fn set_settle(&mut self, settle: crate::settle::Settle) {
+        self.settle = settle;
+    }
+
     fn set_force_key_events(&mut self, force: bool) {
         self.force_key_events = force;
     }

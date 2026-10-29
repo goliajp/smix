@@ -38,6 +38,8 @@ pub use acts::{TapTarget, target_gone_before_touch};
 mod hide_keyboard;
 mod hittable;
 mod input_text;
+mod paced_fill;
+pub use paced_fill::{FILL_PACE, paced_fill_budget};
 mod pinch;
 pub mod port_owner;
 pub mod route_limits;
@@ -2120,23 +2122,10 @@ impl HttpRunnerClient {
         include: Option<IncludeScope>,
         clear_first: bool,
     ) -> Result<RunnerKeyboardResult, RunnerTransportError> {
-        #[derive(Serialize)]
-        struct Req<'a> {
-            selector: &'a Selector,
-            text: &'a str,
-            #[serde(rename = "clearFirst")]
-            clear_first: bool,
-        }
-        self.json_post(
-            "/fill",
-            &Req {
-                selector,
-                text,
-                clear_first,
-            },
-            include,
-        )
-        .await
+        // the daemon's full speed, which is what the runner types at
+        // when it is told no pace
+        self.fill_paced(selector, text, include, clear_first, 200)
+            .await
     }
 
     /// `POST /clear` — clear focused / matched input.

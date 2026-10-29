@@ -34,6 +34,7 @@ fn args_for(flow: std::path::PathBuf, port: u16, bundle_id: Option<String>) -> F
         expect_log_clean: false,
         fixture_registry: None,
         force_key_events: false,
+        settle: None,
         no_fail_annotate: false,
         auto_ocr_fallback: Some(false),
         ai_assertions: Some(false),

@@ -88,6 +88,11 @@ pub trait Driver: Send + Sync {
     /// header. Default no-op.
     fn set_force_key_events(&mut self, _force: bool) {}
 
+    /// How a tap, double tap or long press waits for its target to stop
+    /// moving before touching it. Default no-op: a driver that does not
+    /// wait has nothing to configure.
+    fn set_settle(&mut self, _settle: crate::settle::Settle) {}
+
     /// Attach a `Session-Id` header to every subsequent
     /// request. Set to `Some(id)` after `POST /session/open`; set to
     /// `None` to revert to the legacy per-request rebind path (which
@@ -192,7 +197,7 @@ pub trait Driver: Send + Sync {
                     ..Default::default()
                 }));
             }
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            tokio::time::sleep(budget.pause()).await;
         }
     }
 
