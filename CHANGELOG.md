@@ -31,6 +31,20 @@ All notable changes to the `smix` workspace are documented here. The format foll
   `text_did_not_land` with a message (whether the node took the action,
   what the field held), where it answered `ok: false` with no reason.
 
+### Breaking
+
+- **Rust API: the `Driver` trait has a new required method, `set_text`.**
+  A `Driver` implemented outside smix must add it, and one with no way
+  around the keyboard refuses rather than typing.
+- **Rust API: the flow adapter's `AppLike` trait has a new required method,
+  `set_text`.** Test doubles that implement it add one that records or
+  ignores the call.
+- A host at this release refuses to set text through an Android runner
+  from an earlier one, which would type it instead; bring the runner up
+  from this release.
+
+What to change, and nothing else: [docs/migrating-to-19.md](docs/migrating-to-19.md).
+
 ## [18.1.0] — 2026-10-29
 
 ### Added

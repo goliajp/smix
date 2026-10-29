@@ -115,14 +115,20 @@ fn input_text_method_names_how_the_text_goes_in() {
     let set = parse_flow_yaml(&flow("- inputText: { text: \"x\", method: setText }\n"))
         .expect("setText without a target goes to the focused field");
     assert!(
-        matches!(set.steps[0], smix_adapter_maestro::Step::SetText { selector: None, .. }),
+        matches!(
+            set.steps[0],
+            smix_adapter_maestro::Step::SetText { selector: None, .. }
+        ),
         "{:?}",
         set.steps
     );
     let typed = parse_flow_yaml(&flow("- inputText: { id: f, text: \"x\", method: type }\n"))
         .expect("method: type is the default spelled out");
     assert!(
-        matches!(typed.steps[0], smix_adapter_maestro::Step::InputTextInto { .. }),
+        matches!(
+            typed.steps[0],
+            smix_adapter_maestro::Step::InputTextInto { .. }
+        ),
         "{:?}",
         typed.steps
     );

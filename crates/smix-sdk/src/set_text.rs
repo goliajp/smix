@@ -11,7 +11,11 @@ impl App {
     /// method that composes typed keys into another script cannot change
     /// it. Replaces a named field and appends to the focused one, as
     /// `fill` does. iOS refuses: XCUITest enters text only by typing.
-    pub async fn set_text(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
+    pub async fn set_text(
+        &self,
+        selector: &Selector,
+        text: &str,
+    ) -> Result<(), ExpectationFailure> {
         self.ledger
             .record_fill(now_ms(), Some(format!("{selector:?}")));
         let names_a_field = !matches!(selector, Selector::Focused { .. });

@@ -1282,7 +1282,10 @@ async fn mock_run_input_text_set_goes_to_set_text_not_fill() {
         }
         other => panic!("expected SetText(Id email), got {other:?}"),
     }
-    assert!(matches!(&calls[2], MockCall::Fill(Selector::Id { .. }, t) if t == "typed"), "{calls:?}");
+    assert!(
+        matches!(&calls[2], MockCall::Fill(Selector::Id { .. }, t) if t == "typed"),
+        "{calls:?}"
+    );
 }
 
 #[tokio::test]

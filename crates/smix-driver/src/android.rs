@@ -26,8 +26,8 @@ use smix_selector::{Selector, describe_selector};
 use smix_selector_resolver::{resolve_selector, resolve_selector_all};
 
 use crate::Orientation;
-use crate::android_input::Entry;
 use crate::android_aim::{resolve_aimed, resolve_rect_with_implicit_wait};
+use crate::android_input::Entry;
 use crate::android_notes::dispatch_unsupported_err;
 use crate::traits::{Driver, Platform};
 
