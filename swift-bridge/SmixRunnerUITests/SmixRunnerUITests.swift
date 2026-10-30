@@ -723,7 +723,7 @@ private func findAndTapSystemPopupButton(
           if bId == buttonId {
             let center = CGPoint(x: bn.frame.midX, y: bn.frame.midY)
             let popupDelivery = smixDelivery(of: center, layout: smixLayout(of: app))
-            guard let record = SmixEventRecord(orientation: popupDelivery.orientation),
+            guard let record = SmixEventRecord(orientation: popupDelivery.orientation, displayID: popupDelivery.displayID),
                   record.addPointerTouchEvent(at: popupDelivery.point) else {
               return .notFound
             }
@@ -1459,7 +1459,7 @@ final class SmixRunnerUITests: XCTestCase {
               y: elementFrame.origin.y + elementFrame.size.height / 2
             )
             let rnDelivery = smixDelivery(of: center, layout: smixLayout(of: app))
-            guard let record = SmixEventRecord(orientation: rnDelivery.orientation),
+            guard let record = SmixEventRecord(orientation: rnDelivery.orientation, displayID: rnDelivery.displayID),
                   record.addPointerTouchEvent(at: rnDelivery.point) else {
               return SmixRunnerServer.TapOutcome.notFound
             }
@@ -2162,7 +2162,7 @@ final class SmixRunnerUITests: XCTestCase {
               y: frame.origin.y + frame.size.height / 2
             )
             let delivery = smixDelivery(of: center, layout: smixLayout(of: app))
-            if let record = SmixEventRecord(orientation: delivery.orientation),
+            if let record = SmixEventRecord(orientation: delivery.orientation, displayID: delivery.displayID),
                record.addPointerTouchEvent(at: delivery.point) {
               let sema = DispatchSemaphore(value: 0)
               var synthesized = false
@@ -2216,7 +2216,7 @@ final class SmixRunnerUITests: XCTestCase {
           // Same mechanism as strategy 1b, one path over: XCUIElement
           // gestures go through Apple's recognizer chain, and a raw
           // IOKit drag does not.
-          if let record = SmixEventRecord(orientation: .portrait) {
+          if let record = SmixEventRecord(orientation: .portrait, displayID: smixLayout(of: app).displayID) {
             let frame = app.frame
             let from = CGPoint(x: frame.origin.x + frame.size.width * 0.01,
                                y: frame.origin.y + frame.size.height * 0.5)
@@ -2334,7 +2334,7 @@ final class SmixRunnerUITests: XCTestCase {
         // on the main thread.
         var px: CGFloat = 0
         var py: CGFloat = 0
-        var tapLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame")
+        var tapLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame", displayID: nil)
         let setupOk = smixGuarded("tap-at-norm-coord-setup") {
           let frame = app.frame
           px = frame.origin.x + frame.size.width * CGFloat(nx)
@@ -2356,7 +2356,7 @@ final class SmixRunnerUITests: XCTestCase {
           ? [0] : TouchTimeline.downOffsets(times: times, intervalMs: intervalMs)
         var records: [SmixEventRecord] = []
         for _ in downs {
-          guard let record = SmixEventRecord(orientation: delivery.orientation) else {
+          guard let record = SmixEventRecord(orientation: delivery.orientation, displayID: delivery.displayID) else {
             FileHandle.standardError.write(
               Data("smix-runner: tap-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
             return (ok: false, chain: [], press: nil, gone: nil)
@@ -2471,7 +2471,7 @@ final class SmixRunnerUITests: XCTestCase {
         // stays nil).
         var cx: CGFloat = 0
         var cy: CGFloat = 0
-        var byIdLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame")
+        var byIdLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame", displayID: nil)
         let setupOk: Bool? = smixGuarded("tap-by-id-setup") {
           // Resolve by a11y identifier. Try button-typed first (fast path),
           // then fall back to descendants-any when the id sits on a non-Button
@@ -2580,7 +2580,7 @@ final class SmixRunnerUITests: XCTestCase {
         }
         guard setupOk == true else { return false }
         let byIdDelivery = smixDelivery(of: CGPoint(x: cx, y: cy), layout: byIdLayout)
-        guard let record = SmixEventRecord(orientation: byIdDelivery.orientation) else {
+        guard let record = SmixEventRecord(orientation: byIdDelivery.orientation, displayID: byIdDelivery.displayID) else {
           FileHandle.standardError.write(
             Data("smix-runner: tap-by-id: XCSynthesizedEventRecord unavailable\n".utf8))
           return false
@@ -2617,7 +2617,7 @@ final class SmixRunnerUITests: XCTestCase {
           // Screenshot via XCUIScreen.main (already wrapped by smixGuarded
           // pattern in /tap-by-id; OCR path doesn't trigger XCTIssue in
           // normal flow but we still wrap defensively below).
-          let xcImage = XCUIScreen.main.screenshot()
+          let xcImage = smixScreen(showing: app).screenshot()
           let uiImage = xcImage.image
           guard let cgImage = uiImage.cgImage else {
             FileHandle.standardError.write(
@@ -2658,22 +2658,23 @@ final class SmixRunnerUITests: XCTestCase {
       },
       // GET /screenshot handler. PNG of the whole screen.
       //
-      // Same call the OCR handler above makes — `XCUIScreen.main
-      // .screenshot()` — differing only in what it hands back: pixels
+      // Same call the OCR handler above makes — the app's screen's
+      // `.screenshot()` — differing only in what it hands back: pixels
       // rather than a verdict about them. That it works on a physical
       // device is the point of the route; simulators have `simctl io
       // screenshot` and phones had nothing.
       //
-      // No `resolveApp()`: this photographs the screen, not the target
-      // app, so there is no bundle to rebind to.
+      // `resolveApp()` only to learn which screen is lit: on a foldable
+      // the main screen is the outer panel, dark while unfolded.
       //
       // Unit-tested up to the envelope (ScreenshotRouteTests) and no
       // further — XCUIScreen exists only in this host, so the pixels
       // themselves are proven by e2e against a real device, not here.
       // Saying so rather than implying coverage that does not exist.
       screenshotHandler: {
-        await Task { @MainActor in
-          XCUIScreen.main.screenshot().image.pngData()
+        let app = await resolveApp()
+        return await Task { @MainActor in
+          smixScreen(showing: app).screenshot().image.pngData()
         }.value
       },
       // POST /swipe-at-norm-coord handler. From-to coordinate swipe
@@ -2688,7 +2689,7 @@ final class SmixRunnerUITests: XCTestCase {
         var fromPy: CGFloat = 0
         var toPx: CGFloat = 0
         var toPy: CGFloat = 0
-        var swipeLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame")
+        var swipeLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame", displayID: nil)
         let setupOk = smixGuarded("swipe-at-norm-coord-setup") {
           let frame = app.frame
           fromPx = frame.origin.x + frame.size.width * CGFloat(fromNx)
@@ -2704,7 +2705,7 @@ final class SmixRunnerUITests: XCTestCase {
           of: CGPoint(x: fromPx, y: fromPy), layout: swipeLayout)
         let swipeTo = smixDelivery(
           of: CGPoint(x: toPx, y: toPy), layout: swipeLayout)
-        guard let record = SmixEventRecord(orientation: swipeFrom.orientation) else {
+        guard let record = SmixEventRecord(orientation: swipeFrom.orientation, displayID: swipeFrom.displayID) else {
           FileHandle.standardError.write(
             Data("smix-runner: swipe-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
           return false
@@ -2733,7 +2734,7 @@ final class SmixRunnerUITests: XCTestCase {
         let app = await resolveApp()
         var size = CGSize.zero
         var origin = CGPoint.zero
-        var layout = SmixLayout(size: .zero, orientation: .portrait, source: "frame")
+        var layout = SmixLayout(size: .zero, orientation: .portrait, source: "frame", displayID: nil)
         let setupOk = smixGuarded("pinch-at-norm-coord-setup") {
           let frame = app.frame
           size = frame.size
@@ -2755,7 +2756,7 @@ final class SmixRunnerUITests: XCTestCase {
           PinchRoute.Fingers(deliver(f.first), deliver(f.second))
         }
         let stamp = smixDelivery(of: CGPoint(x: origin.x, y: origin.y), layout: layout).orientation
-        guard let record = SmixEventRecord(orientation: stamp),
+        guard let record = SmixEventRecord(orientation: stamp, displayID: layout.displayID),
           record.addPointerPinch(
             PinchRoute.PinchPlan(
               down: both(plan.down), start: both(plan.start), pinched: both(plan.pinched),
@@ -3290,7 +3291,7 @@ final class SmixRunnerUITests: XCTestCase {
         var appFrame = CGRect.zero
         var rootFrame = CGRect.zero
         var interface = "unknown"
-        var csLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame")
+        var csLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame", displayID: nil)
         var resolved = CGPoint.zero
         _ = smixGuarded("coordinate-space") {
           let frame = app.frame
