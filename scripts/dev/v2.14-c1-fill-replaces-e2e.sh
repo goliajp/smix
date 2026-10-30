@@ -8,7 +8,7 @@
 # login rejecting a correct password, which is what it cost the
 # consumer who reported it.
 #
-# Unit tests pin the wire (`clearFirst` rides the first chunk alone),
+# Unit tests pin the wire (`clearFirst` is asked once, with the whole text),
 # but the thing that was wrong was what appears in the field, and only
 # a device can say that. The fixture app is the instrument: its result
 # label stays empty until Submit is pressed, so asserting on it
@@ -84,10 +84,10 @@ fi
 log "device $UDID, runner port $PORT"
 
 step "0. the wire rule, which needs no device"
-( cd "$ROOT" && cargo test -p smix-driver --test it driver::clear_first_belongs ) > "$WORK/unit.log" 2>&1 \
-  || { tail -20 "$WORK/unit.log"; fail "the chunking rule's test failed"; }
-grep -qE "test result: ok\. [1-9]" "$WORK/unit.log" || fail "the chunking test did not run"
-log "clearFirst rides the first chunk alone"
+( cd "$ROOT" && cargo test -p smix-driver --test it driver::clear_first_is_asked_once_for_the_whole_text ) > "$WORK/unit.log" 2>&1 \
+  || { tail -20 "$WORK/unit.log"; fail "the clearFirst rule's test failed"; }
+grep -qE "test result: ok\. [1-9]" "$WORK/unit.log" || fail "the clearFirst test did not run"
+log "clearFirst is asked once, with the whole text"
 
 step "1. build and install the fixture app"
 bash "$ROOT/scripts/dev/build-fixture-app.sh" > "$WORK/build.log" 2>&1 \
