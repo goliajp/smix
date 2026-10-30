@@ -2,6 +2,17 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [20.0.1] — 2026-10-31
+
+### Fixed
+
+- **iOS: touches and screenshots reach the screen a foldable's app is on.**
+  On a foldable unfolded, every tap, swipe and pinch the runner synthesised
+  went to the main screen, which is the dark outer panel: the step reported
+  the touch as delivered and nothing on the inner screen moved. The runner
+  now addresses the panel whose size matches the app, and the runner's
+  screenshot and OCR read that panel too. One-screen devices are unchanged.
+
 ## [20.0.0] — 2026-10-30
 
 ### Added
