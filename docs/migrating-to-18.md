@@ -14,7 +14,7 @@ differently** and stop. **Rust API** is for code that calls the crates.
 - **Android: a View an app lays over its Compose screen is in the tree** —
   `smix tree`, `find` and every selector see it, where before only the
   accessibility dump did. This needs the app built against this release's
-  probe: raise `debugImplementation("jp.golia.smix:smix-probe:20.0.0")` and
+  probe: raise `debugImplementation("jp.golia.smix:smix-probe:20.0.1")` and
   rebuild. A flow that read such a View with `ocrText:` to get around it can
   name it by text or label again.
 

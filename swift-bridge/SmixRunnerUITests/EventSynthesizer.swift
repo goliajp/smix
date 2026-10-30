@@ -96,19 +96,28 @@ final class SmixEventRecord {
   let record: NSObject
   static let defaultTapDuration: TimeInterval = 0.1
 
-  init?(orientation: UIInterfaceOrientation) {
+  /// `displayID` is the screen the app is on. Without it the record goes
+  /// to the main screen, which on a foldable unfolded is the dark outer
+  /// panel: every touch was reported as delivered and none arrived.
+  init?(orientation: UIInterfaceOrientation, displayID: UInt64?) {
     guard let alloced = ocAlloc("XCSynthesizedEventRecord") else { return nil }
+    let name = "Single-Finger Touch Action" as NSString
+    let onDisplay = NSSelectorFromString("initWithName:displayID:interfaceOrientation:")
+    if let displayID, alloced.responds(to: onDisplay) {
+      typealias InitFn = @convention(c) (
+        NSObject, Selector, NSString, UInt64, UIInterfaceOrientation
+      ) -> NSObject
+      let initFn = unsafeBitCast(alloced.method(for: onDisplay), to: InitFn.self)
+      self.record = initFn(alloced, onDisplay, name, displayID, orientation)
+      return
+    }
     let selector = NSSelectorFromString("initWithName:interfaceOrientation:")
     let imp = alloced.method(for: selector)
     typealias InitFn = @convention(c) (
       NSObject, Selector, NSString, UIInterfaceOrientation
     ) -> NSObject
     let initFn = unsafeBitCast(imp, to: InitFn.self)
-    self.record = initFn(
-      alloced, selector,
-      "Single-Finger Touch Action" as NSString,
-      orientation
-    )
+    self.record = initFn(alloced, selector, name, orientation)
   }
 
   /// Build a tap event path at `point` (touch-down + liftUp after
@@ -336,6 +345,8 @@ struct SmixLayout {
   let orientation: StampOrientation
   /// Where the orientation came from: "app", "device" or "frame".
   let source: String
+  /// The screen the app is on when it is not the main one; nil means main.
+  let displayID: UInt64?
 }
 
 func smixStamp(_ o: UIInterfaceOrientation) -> StampOrientation? {
@@ -374,7 +385,42 @@ func smixLayout(of app: XCUIApplication) -> SmixLayout {
   let orientation = layoutOrientation(appFrame: size, reported: reported, device: device)
   let source =
     reported != nil ? "app" : (size.width > size.height && device != nil && device != .portrait && device != .portraitUpsideDown ? "device" : "frame")
-  return SmixLayout(size: size, orientation: orientation, source: source)
+  let displayID = smixDisplayID(showing: size)
+  return SmixLayout(size: size, orientation: orientation, source: source, displayID: displayID)
+}
+
+/// The screen an app of this size fills, when it is not the main one.
+///
+/// XCTest resolves every app to the main screen (`displayID` reads 0 and
+/// `_resolvedDisplayIDForSnapshot:` falls back to the main id), and on a
+/// foldable unfolded the main screen is the dark outer panel. The panels
+/// differ in size, so the one whose size in points matches the app's frame, either
+/// way round, is the one the app is on. Nil keeps the main screen: for a
+/// one-screen device, and whenever the match is not exactly one panel.
+func smixDisplayID(showing size: CGSize) -> UInt64? {
+  let screens = XCUIScreen.screens
+  guard screens.count > 1 else { return nil }
+  let fits = screens.filter { screen in
+    // bounds are in pixels, the app's frame in points
+    guard let px = (screen.value(forKey: "bounds") as? NSValue)?.cgRectValue.size,
+      let scale = (screen.value(forKey: "scale") as? NSNumber).map({ CGFloat($0.doubleValue) }),
+      scale > 0
+    else { return false }
+    let pt = CGSize(width: px.width / scale, height: px.height / scale)
+    return pt == size || pt == CGSize(width: size.height, height: size.width)
+  }
+  guard fits.count == 1, fits[0] != XCUIScreen.main else { return nil }
+  return (fits[0].value(forKey: "displayID") as? NSNumber)?.uint64Value
+}
+
+/// The screen the app is drawn on. `XCUIScreen.main` is the main panel
+/// whether or not anything is lit on it, which on a foldable unfolded is
+/// the dark outer one.
+func smixScreen(showing app: XCUIApplication) -> XCUIScreen {
+  guard let id = smixLayout(of: app).displayID else { return XCUIScreen.main }
+  return XCUIScreen.screens.first {
+    ($0.value(forKey: "displayID") as? NSNumber)?.uint64Value == id
+  } ?? XCUIScreen.main
 }
 
 /// The stamp and the point to deliver, for a point in the app's space.
@@ -384,13 +430,14 @@ func smixLayout(of app: XCUIApplication) -> SmixLayout {
 /// of a fix that passes its own test and leaves half the surface broken.
 func smixDelivery(
   of point: CGPoint, layout: SmixLayout
-) -> (orientation: UIInterfaceOrientation, point: CGPoint) {
+) -> (orientation: UIInterfaceOrientation, point: CGPoint, displayID: UInt64?) {
   let stamp = eventStamp(forAppFrame: layout.size, strategy: smixEventStampStrategy)
   guard smixEventStampStrategy == .convertPointToDeviceSpace else {
-    return (smixUIOrientation(stamp), point)
+    return (smixUIOrientation(stamp), point, layout.displayID)
   }
   return (
     smixUIOrientation(stamp),
-    pointInDeviceSpace(point, appFrame: layout.size, interface: layout.orientation)
+    pointInDeviceSpace(point, appFrame: layout.size, interface: layout.orientation),
+    layout.displayID
   )
 }
