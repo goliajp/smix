@@ -19,12 +19,14 @@ use serde::{Deserialize, Serialize};
 use std::io;
 mod binary;
 mod crash;
+mod launch;
 pub mod wait;
 
 pub use binary::{
     AdbSource, adb_path, adb_usable, did_not_start, resolve_adb, sdk_candidates, sdk_root,
     std_command,
 };
+pub use launch::{LAUNCH_DRAWS_WITHIN, Launched};
 pub use crash::{
     CrashLoop, CrashReport, ENDED_AT_SHUTDOWN, crash_loops, crash_loops_at, crash_time,
 };
@@ -702,32 +704,6 @@ impl AdbClient {
     pub async fn uninstall(&self, serial: &str, package: &str) -> Result<(), AdbError> {
         self.run_capture(Some(serial), "uninstall", &[package])
             .await?;
-        Ok(())
-    }
-
-    /// `adb -s <serial> shell am start -n <pkg>/<activity> [args]` — launch
-    /// app's activity. Returns nothing on success.
-    pub async fn start_activity(
-        &self,
-        serial: &str,
-        package: &str,
-        activity: &str,
-        extras: &[(&str, &str)],
-    ) -> Result<(), AdbError> {
-        let component = format!("{package}/{activity}");
-        let mut args = vec![
-            "am".to_string(),
-            "start".to_string(),
-            "-n".to_string(),
-            component,
-        ];
-        for (k, v) in extras {
-            args.push("--es".to_string());
-            args.push((*k).to_string());
-            args.push((*v).to_string());
-        }
-        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        self.run_capture(Some(serial), "shell", &arg_refs).await?;
         Ok(())
     }
 

@@ -38,6 +38,14 @@ All notable changes to the `smix` workspace are documented here. The format foll
   orientation is measured against the lit screen. Folded,
   `PORTRAIT_UPSIDE_DOWN` cannot be reached, and unfolded, `LANDSCAPE_LEFT`
   cannot: either is refused by name rather than ignored.
+- **Android: `launchApp` is done when the app has drawn.** The launch
+  returned as soon as the intent was delivered. On a loaded device the app
+  could take longer than the next step's whole wait to draw its first
+  frame, and that step then failed reading the screen the app was opening
+  over, naming the status bar as what was on screen. The launch now waits
+  for the first frame, up to 20 s. An app that has not drawn by then is
+  left running and the step carries a warning saying so.
+  `AdbClient::start_activity_until_drawn` in Rust.
 
 ## [20.0.1] — 2026-10-31
 
