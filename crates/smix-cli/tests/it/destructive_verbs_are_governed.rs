@@ -55,6 +55,7 @@ const NOT_DESTRUCTIVE: &[(&str, &str)] = &[
         "disruptive, and the device comes back with everything on it",
     ),
     ("Screenshot", "reads"),
+    ("Posture", "folds the device; the next fold unfolds it"),
     ("Launch", "starts an app"),
     ("Terminate", "stops an app; its data stays"),
     (

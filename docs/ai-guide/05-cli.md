@@ -214,7 +214,8 @@ smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is take
 smix sim boot <ALIAS> --cold   # an Android emulator boots from scratch instead of its Quick Boot snapshot, which keeps whatever state the device stopped in (a system UI that died stays dead); refused on anything else, and on an emulator already running
 smix sim shutdown <ALIAS|UDID> # shutdown; for an emulator, returns once adb no longer lists it
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
-smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → devicectl (Xcode 27) or the runner (Xcode <= 26, must be up)
+smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → devicectl (Xcode 27) or the runner (Xcode <= 26, must be up); a foldable simulator is photographed on its lit screen
+smix sim posture <ALIAS|UDID> closed|half-open|open   # foldable iOS simulator only (iPhone Duo); no window, no permission; returns once the posture's screen is lit
 smix sim launch <ALIAS|UDID> <bundle-id>   # every kind; --child-env is a simulator facility and is refused elsewhere
 smix sim terminate <ALIAS|UDID> <bundle-id>   # every kind but a physical iPhone (devicectl stops by pid, not by bundle id)
 smix sim install <ALIAS|UDID> <path/to.app|.apk>   # every kind; reinstalling stops the running copy of the app, and the command says so

@@ -171,6 +171,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         | Step::SetPermissions { .. }
         | Step::AddMedia { .. }
         | Step::SetOrientation { .. }
+        | Step::SetPosture { .. }
         | Step::StartRecording { .. }
         | Step::StopRecording
         | Step::AssertScreenshot { .. }
@@ -438,6 +439,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
         | Step::SetPermissions { .. }
         | Step::AddMedia { .. }
         | Step::SetOrientation { .. }
+        | Step::SetPosture { .. }
         | Step::StartRecording { .. }
         | Step::StopRecording
         | Step::AssertScreenshot { .. }

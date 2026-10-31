@@ -16,7 +16,7 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
     func onScreen() -> Bool {
       let kb = app.keyboards.firstMatch
       return kb.exists
-        && HideKeyboardRoute.keyboardOnScreen(keyboard: kb.frame, app: app.frame)
+        && HideKeyboardRoute.keyboardOnScreen(keyboard: kb.frame, app: smixAppFrame(app))
     }
     func focusedElement() -> XCUIElement {
       app.descendants(matching: .any)
@@ -62,7 +62,7 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
         let kb = app.keyboards.firstMatch
         let sighting: HideKeyboardRoute.KeyboardSighting = !kb.exists
           ? .gone
-          : HideKeyboardRoute.keyboardOnScreen(keyboard: kb.frame, app: app.frame)
+          : HideKeyboardRoute.keyboardOnScreen(keyboard: kb.frame, app: smixAppFrame(app))
             ? .onScreen : .offScreen(kb.frame)
         looks.append((Date().timeIntervalSince(began), sighting))
         verdict = HideKeyboardRoute.offScreenVerdict(looks, hold: hold)
@@ -80,7 +80,7 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
         return .offScreen(
           focus: focusName(),
           seen: "at y=\(Int(f.minY)), \(Int(f.height)) tall, below an app "
-            + "\(Int(app.frame.height)) tall, unmoved for \(hold) s")
+            + "\(Int(smixAppFrame(app).height)) tall, unmoved for \(hold) s")
       case .onScreen?, nil:
         break
       }
@@ -149,7 +149,7 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
         + app.collectionViews.allElementsBoundByIndex).map(\.frame)
       if let plan = KeyboardDismissDrag.plan(
         focused: focusedField.frame, scrollers: scrollers,
-        keyboard: app.keyboards.firstMatch.frame, app: app.frame)
+        keyboard: app.keyboards.firstMatch.frame, app: smixAppFrame(app))
       {
         tried.append("drag-into-keyboard")
         let from = app.coordinate(withNormalizedOffset:
@@ -172,7 +172,7 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
     // (KeyboardOutsideTouch).
     if spent() { return stopped() }
     let kbFrame = app.keyboards.firstMatch.frame
-    let appFrame = app.frame
+    let appFrame = smixAppFrame(app)
     do {
       let snap = try app.snapshot()
       func all(_ s: XCUIElementSnapshot) -> [XCUIElementSnapshot] {
