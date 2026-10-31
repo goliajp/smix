@@ -35,11 +35,15 @@ import SmixDeveloperDir
 
 let argv = CommandLine.arguments
 guard argv.count >= 3 else {
-  fputs("usage: smix-capture-host <UDID> <FPS|serve>\n", stderr)
+  fputs("usage: smix-capture-host <UDID> <FPS|serve> [screen=<display id>]\n", stderr)
   exit(64)
 }
 let udidArg = argv[1].uppercased()
 let modeArg = argv[2]
+// A device with several screens (a foldable) has a framebuffer per screen
+// and only the lit one has a picture; the caller names it.
+let screenArg: UInt64? = argv.count >= 4 && argv[3].hasPrefix("screen=")
+  ? UInt64(argv[3].dropFirst("screen=".count)) : nil
 
 // MARK: - dlopen CoreSimulator
 
@@ -113,11 +117,24 @@ func currentSurface(_ dev: NSObject) -> IOSurface? {
   }
   for port in ports {
     guard let d = call(port, "descriptor") else { continue }
+    if let screen = screenArg, screenID(d) != screen { continue }
     if let s = call(d, "framebufferSurface") {
       return unsafeDowncast(s, to: IOSurface.self)
     }
   }
   return nil
+}
+
+/// The display id of a screen port, the same number `devicectl` reports as
+/// `displayId` and `simctl io screenshot --display=` takes. The descriptor
+/// and its properties are XPC proxies, which answer typed calls but not
+/// key-value coding.
+func screenID(_ descriptor: NSObject) -> UInt64? {
+  guard let props = call(descriptor, "screenProperties") else { return nil }
+  let sel = NSSelectorFromString("screenID")
+  guard props.responds(to: sel) else { return nil }
+  typealias ScreenIDFn = @convention(c) (NSObject, Selector) -> UInt64
+  return unsafeBitCast(props.method(for: sel), to: ScreenIDFn.self)(props, sel)
 }
 
 func resolveSurface(udid: String) -> IOSurface? {
