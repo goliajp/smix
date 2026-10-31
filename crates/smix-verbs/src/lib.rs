@@ -450,7 +450,7 @@ pub static VERB_TABLE: &[VerbEntry] = &[
     ),
     // smix's own: maestro has no hinge to drive.
     v(
-        "set_posture",
+        "setPosture",
         "setPosture",
         VerbCategory::Device,
         ArgShape::BareString,
