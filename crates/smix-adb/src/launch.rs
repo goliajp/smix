@@ -123,7 +123,10 @@ mod tests {
                 total_ms: Some(1146)
             }
         );
-        assert_eq!(parse_wait_status(IN_FRONT), Launched::Drew { total_ms: None });
+        assert_eq!(
+            parse_wait_status(IN_FRONT),
+            Launched::Drew { total_ms: None }
+        );
     }
 
     #[test]
@@ -151,6 +154,9 @@ mod tests {
             start_args(true, "p", ".A", &[("k", "v")]),
             ["am", "start", "-W", "-n", "p/.A", "--es", "k", "v"]
         );
-        assert_eq!(start_args(false, "p", ".A", &[]), ["am", "start", "-n", "p/.A"]);
+        assert_eq!(
+            start_args(false, "p", ".A", &[]),
+            ["am", "start", "-n", "p/.A"]
+        );
     }
 }
