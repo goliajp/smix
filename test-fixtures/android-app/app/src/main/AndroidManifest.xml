@@ -52,6 +52,12 @@
         <activity
             android:name=".WatchActivity"
             android:exported="true" />
+        <!-- Its window is resized by the tests, and a restart would lose the
+             counts they read, so it keeps itself across the change. -->
+        <activity
+            android:name=".DesktopActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:exported="true" />
         <activity
             android:name=".TourActivity"
             android:exported="true" />

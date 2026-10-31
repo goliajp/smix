@@ -321,6 +321,9 @@ class SmixHttpServer(
                 // LONGEST WAIT /pinch-at-norm-coord: from the request — durationMs + panMs and 0.4 s around them (PREROLL_MS, HOLD_MS), then a 0.5 s idle wait
                 uri == "/pinch-at-norm-coord" && session.method == Method.POST ->
                     servePinch(session)
+                // LONGEST WAIT /mouse-at-norm-coord: 800 ms — a drag's 16 events 16 ms apart, then a 0.5 s idle wait
+                uri == "/mouse-at-norm-coord" && session.method == Method.POST ->
+                    serveMouse(session)
                 // LONGEST WAIT /swipe-once: 500 ms — a 0.5 s idle wait
                 uri == "/swipe-once" && session.method == Method.POST ->
                     serveSwipeOnce(session)
@@ -699,6 +702,23 @@ class SmixHttpServer(
         device.waitForIdle(500)
         val body = RunnerWire.swipeAtNormCoordBody(ok, q)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    private fun serveMouse(session: IHTTPSession): Response {
+        // OK MEANS: injected — every mouse event went in; whether the app hovered, opened a menu or scrolled is the caller's next assertion.
+        val gesture = try {
+            MouseGesture.decode(readBodyString(session))
+        } catch (e: IllegalArgumentException) {
+            return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad mouse request")
+        }
+        val (w, h) = displaySize()
+        val ok = MouseInjector.inject(instrumentation.uiAutomation, gesture.timeline(w, h))
+        device.waitForIdle(500)
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            org.json.JSONObject().put("ok", ok).put("kind", gesture.kind.wire).toString(),
+        )
     }
 
     private fun servePinch(session: IHTTPSession): Response {
