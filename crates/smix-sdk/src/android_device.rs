@@ -254,7 +254,8 @@ impl DeviceControl for AndroidDeviceControl {
 
     async fn launch(&self, serial: &str, bundle_id: &str) -> Result<u32, DeviceControlError> {
         let activity = self.entry_point(serial, bundle_id).await;
-        self.launch_until_drawn(serial, bundle_id, &activity, &[]).await
+        self.launch_until_drawn(serial, bundle_id, &activity, &[])
+            .await
     }
 
     async fn launch_with_args(

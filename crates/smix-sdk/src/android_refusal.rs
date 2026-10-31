@@ -11,7 +11,10 @@ use smix_simctl::DeviceControlError;
 /// platform table's first draft had both clipboard cells as `Works` on
 /// Android, taken from a research note rather than from this file, which
 /// has refused them since Android 10 sealed the clipboard.
-pub(crate) fn refused_here(action: &str, kind: smix_simctl::registry::DeviceKind) -> DeviceControlError {
+pub(crate) fn refused_here(
+    action: &str,
+    kind: smix_simctl::registry::DeviceKind,
+) -> DeviceControlError {
     use crate::device_control::{Availability, availability};
 
     match availability(action, kind) {

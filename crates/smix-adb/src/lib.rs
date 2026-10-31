@@ -26,10 +26,10 @@ pub use binary::{
     AdbSource, adb_path, adb_usable, did_not_start, resolve_adb, sdk_candidates, sdk_root,
     std_command,
 };
-pub use launch::{LAUNCH_DRAWS_WITHIN, Launched};
 pub use crash::{
     CrashLoop, CrashReport, ENDED_AT_SHUTDOWN, crash_loops, crash_loops_at, crash_time,
 };
+pub use launch::{LAUNCH_DRAWS_WITHIN, Launched};
 
 use std::path::Path;
 use thiserror::Error;
