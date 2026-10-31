@@ -126,6 +126,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v6.2-c6c-landscape-visible-e2e.sh",
     "v6.2-c6d-attach-on-device-e2e.sh",
     "v6.2-c7-two-platform-flow-e2e.sh",
+    "v20.0-c2-a-foldable-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.

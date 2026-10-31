@@ -7706,6 +7706,13 @@ mod tests {
                 },
             ),
             (
+                "posture",
+                SimAction::Posture {
+                    device: d(),
+                    posture: smix_simctl::posture::Posture::Open,
+                },
+            ),
+            (
                 "launch",
                 SimAction::Launch {
                     device: d(),
