@@ -53,6 +53,7 @@ pub use ios_device::IosDeviceControl;
 // Android DeviceControl impl backed by smix-adb.
 mod android_animations;
 pub mod android_device;
+mod android_refusal;
 pub use android_device::{
     ANDROID_ANIMATION_SCALES, AndroidDeviceControl, android_serial_is_emulator,
     animation_settings_verified, parse_resolved_activity,
@@ -1916,6 +1917,9 @@ impl App {
         }
         if self.device.platform() == smix_driver::Platform::Ios {
             smix_driver::phases::mark("appear", appearing);
+        }
+        if let Some(note) = self.device.take_launch_note(udid).await {
+            warnings.push(note);
         }
         Ok(warnings)
     }

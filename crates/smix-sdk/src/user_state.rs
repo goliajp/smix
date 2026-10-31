@@ -75,6 +75,10 @@ impl DeviceControl for UserStateGuard {
         self.inner.as_ios_simctl()
     }
 
+    async fn take_launch_note(&self, udid: &str) -> Option<String> {
+        self.inner.take_launch_note(udid).await
+    }
+
     async fn launch(&self, udid: &str, bundle_id: &str) -> Result<u32, DeviceControlError> {
         self.inner.launch(udid, bundle_id).await
     }
