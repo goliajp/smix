@@ -15,24 +15,29 @@
 
 use crate::displays::{Screen, read_screens};
 use crate::{DeviceControlError, SimctlClient};
+#[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
 
 /// How long a fold may take to show before it is called failed. Sent once,
 /// folds showed in 0.9–4.7 s, in two clusters, the slow one a first report
 /// that came to nothing; sent again every second, 1.4–2.7 s over 12 folds.
 /// A ceiling, not a wait.
+#[cfg(target_os = "macos")]
 const SHOWS_WITHIN: Duration = Duration::from_secs(15);
+#[cfg(target_os = "macos")]
 const POLL: Duration = Duration::from_millis(100);
 /// How often the report is sent again while the device has not shown it.
 /// A report can be taken and come to nothing — once in a run of dozens a
 /// facing never arrived and the fifteen seconds ran out — and the value is
 /// absolute, so sending it again is harmless.
+#[cfg(target_os = "macos")]
 const RESEND: Duration = Duration::from_secs(1);
 /// How long the connection stays open when the lit panel cannot tell
 /// whether the report took (half-open and open light the same panel). The
 /// simulator drops the services that carry the report when the sender
 /// disconnects: held 0.3 s, 0 of 4 folds took; 0.6 s, 4 of 4; 1.5 s, 14
 /// of 14.
+#[cfg(target_os = "macos")]
 const HOLD_WHEN_UNOBSERVABLE: Duration = Duration::from_millis(1500);
 
 /// How far a foldable is opened.
