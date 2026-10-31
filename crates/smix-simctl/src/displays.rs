@@ -34,11 +34,26 @@ struct Result_ {
 struct Display {
     #[serde(rename = "displayId")]
     display_id: u32,
+    // a one-screen device's entry has no `active` at all (read 2026-10-31
+    // on an iPhone 17 Pro, iOS 27.0); there is nothing to choose between
+    #[serde(default)]
     active: bool,
+    primary: bool,
 }
 
-/// Read `devicectl device info displays --json-output -` for the lit screen.
-pub fn lit_screen(json: &str) -> Result<LitScreen, String> {
+/// One of a simulator's screens as devicectl describes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Screen {
+    /// The display id `simctl io screenshot --display=` takes.
+    pub id: u32,
+    /// Lit: what the device is showing now.
+    pub active: bool,
+    /// The main screen: a foldable's outer panel.
+    pub primary: bool,
+}
+
+/// Read `devicectl device info displays --json-output -` for every screen.
+pub fn screens(json: &str) -> Result<Vec<Screen>, String> {
     let envelope: Envelope =
         serde_json::from_str(json).map_err(|e| format!("devicectl displays output: {e}"))?;
     let Some(result) = envelope.result else {
@@ -47,20 +62,28 @@ pub fn lit_screen(json: &str) -> Result<LitScreen, String> {
             None => "devicectl displays output has neither a result nor an error".into(),
         });
     };
-    if result.displays.len() <= 1 {
+    Ok(result
+        .displays
+        .into_iter()
+        .map(|d| Screen {
+            id: d.display_id,
+            active: d.active,
+            primary: d.primary,
+        })
+        .collect())
+}
+
+/// Which of `screens` a capture should read.
+pub fn lit_of(screens: &[Screen]) -> Result<LitScreen, String> {
+    if screens.len() <= 1 {
         return Ok(LitScreen::Only);
     }
-    let lit: Vec<u32> = result
-        .displays
-        .iter()
-        .filter(|d| d.active)
-        .map(|d| d.display_id)
-        .collect();
+    let lit: Vec<u32> = screens.iter().filter(|d| d.active).map(|d| d.id).collect();
     match lit.as_slice() {
         [id] => Ok(LitScreen::Of(*id)),
         [] => Err(format!(
             "none of the {} screens is lit, so there is nothing to photograph",
-            result.displays.len()
+            screens.len()
         )),
         many => Err(format!(
             "{} screens say they are lit ({many:?}); which one to photograph is not clear",
@@ -69,8 +92,13 @@ pub fn lit_screen(json: &str) -> Result<LitScreen, String> {
     }
 }
 
-/// Ask devicectl which screen of `udid` is lit.
-pub async fn read_lit_screen(udid: &str) -> Result<LitScreen, DeviceControlError> {
+/// Read `devicectl device info displays --json-output -` for the lit screen.
+pub fn lit_screen(json: &str) -> Result<LitScreen, String> {
+    lit_of(&screens(json)?)
+}
+
+/// Ask devicectl for every screen of `udid`.
+pub async fn read_screens(udid: &str) -> Result<Vec<Screen>, DeviceControlError> {
     let out = tokio::process::Command::new("xcrun")
         .args([
             "devicectl",
@@ -85,14 +113,21 @@ pub async fn read_lit_screen(udid: &str) -> Result<LitScreen, DeviceControlError
         .output()
         .await
         .map_err(|e| DeviceControlError::Malformed {
-            subcommand: "screenshot".into(),
-            detail: format!("devicectl device info displays: {e}"),
+            subcommand: "devicectl device info displays".into(),
+            detail: e.to_string(),
         })?;
-    lit_screen(&String::from_utf8_lossy(&out.stdout)).map_err(|detail| {
-        DeviceControlError::Malformed {
-            subcommand: "screenshot".into(),
-            detail,
-        }
+    screens(&String::from_utf8_lossy(&out.stdout)).map_err(|detail| DeviceControlError::Malformed {
+        subcommand: "devicectl device info displays".into(),
+        detail,
+    })
+}
+
+/// Ask devicectl which screen of `udid` is lit.
+pub async fn read_lit_screen(udid: &str) -> Result<LitScreen, DeviceControlError> {
+    let screens = read_screens(udid).await?;
+    lit_of(&screens).map_err(|detail| DeviceControlError::Malformed {
+        subcommand: "screenshot".into(),
+        detail,
     })
 }
 

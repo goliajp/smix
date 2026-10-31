@@ -464,6 +464,22 @@ pub trait AppLike: Send + Sync {
         &self,
         orientation: smix_sdk::MaestroOrientation,
     ) -> Result<(), ExpectationFailure>;
+    /// Fold or unfold a foldable simulator. Mirrors [`App::set_posture`].
+    ///
+    /// The default refuses: a test double that does not model a hinge
+    /// says so rather than passing a fold it never made.
+    ///
+    /// Since smix 20.1.0.
+    async fn set_posture(&self, posture: smix_sdk::Posture) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(smix_sdk::FailureInit {
+            code: Some(smix_sdk::FailureCode::DriverError),
+            message: format!(
+                "setPosture {}: this app driver cannot fold a device",
+                posture.name()
+            ),
+            ..Default::default()
+        }))
+    }
     /// Start sim display recording. Mirrors [`App::start_recording`].
     async fn start_recording(&self, path: &str) -> Result<(), ExpectationFailure>;
     /// Stop active recording. Mirrors [`App::stop_recording`].
@@ -733,6 +749,9 @@ impl AppLike for App {
     ) -> Result<(), ExpectationFailure> {
         App::set_orientation(self, orientation).await
     }
+    async fn set_posture(&self, posture: smix_sdk::Posture) -> Result<(), ExpectationFailure> {
+        App::set_posture(self, posture).await
+    }
     async fn start_recording(&self, path: &str) -> Result<(), ExpectationFailure> {
         App::start_recording(self, path).await
     }
@@ -991,6 +1010,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::ClearLocation => "clearLocation",
         Step::SetPermissions { .. } => "setPermissions",
         Step::SetOrientation { .. } => "setOrientation",
+        Step::SetPosture { .. } => "setPosture",
         Step::AddMedia { .. } => "addMedia",
         Step::StartRecording { .. } => "startRecording",
         Step::StopRecording => "stopRecording",
@@ -2687,6 +2707,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::SetOrientation { orientation } => {
                 self.app.set_orientation(*orientation).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::SetPosture { posture } => {
+                self.app.set_posture(*posture).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::StartRecording { path } => {

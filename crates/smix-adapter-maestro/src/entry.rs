@@ -989,6 +989,7 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         }
         Step::AddMedia { paths } => format!("addMedia ({} paths)", paths.len()),
         Step::SetOrientation { orientation } => format!("setOrientation {orientation:?}"),
+        Step::SetPosture { posture } => format!("setPosture {}", posture.name()),
         Step::StartRecording { path } => format!("startRecording {path}"),
         Step::StopRecording => "stopRecording".into(),
         Step::AssertScreenshot {

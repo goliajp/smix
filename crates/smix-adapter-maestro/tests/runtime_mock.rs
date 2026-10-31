@@ -113,6 +113,7 @@ enum MockCall {
     AddMedia(Vec<String>),
     /// `App::set_orientation(orientation)`.
     SetOrientation(smix_sdk::MaestroOrientation),
+    SetPosture(smix_sdk::Posture),
     /// `App::start_recording(path)`.
     StartRecording(String),
     /// `App::stop_recording()` bare.
@@ -1017,6 +1018,13 @@ impl AppLike for MockApp {
             .lock()
             .unwrap()
             .push(MockCall::SetOrientation(orientation));
+        Ok(())
+    }
+    async fn set_posture(&self, posture: smix_sdk::Posture) -> Result<(), ExpectationFailure> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(MockCall::SetPosture(posture));
         Ok(())
     }
     async fn start_recording(&self, path: &str) -> Result<(), ExpectationFailure> {
@@ -2624,6 +2632,35 @@ async fn mock_run_add_media_scalar_and_array() {
     match &app.calls()[0] {
         MockCall::AddMedia(paths) => assert_eq!(paths.len(), 2),
         other => panic!("expected AddMedia, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn set_posture_reaches_the_app_with_the_posture_named() {
+    let flow = parse_inline(
+        "appId: com.t.o\n---\n- setPosture: halfOpen\n- setPosture: closed\n- setPosture: half-open\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("setPosture dispatch");
+    assert_eq!(
+        app.calls(),
+        vec![
+            MockCall::SetPosture(smix_sdk::Posture::HalfOpen),
+            MockCall::SetPosture(smix_sdk::Posture::Closed),
+            MockCall::SetPosture(smix_sdk::Posture::HalfOpen),
+        ]
+    );
+}
+
+#[test]
+fn an_unknown_posture_is_refused_at_parse_time_by_name() {
+    match parse_flow_yaml("appId: com.t.o\n---\n- setPosture: flat\n") {
+        Err(smix_adapter_maestro::ParseError::InvalidValue { field, reason }) => {
+            assert_eq!(field, "setPosture");
+            assert!(reason.contains("`flat` is not a posture"), "{reason}");
+        }
+        other => panic!("expected InvalidValue, got {other:?}"),
     }
 }
 
