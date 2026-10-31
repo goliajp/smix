@@ -20,9 +20,12 @@ use defaults::did_not_start;
 pub use defaults::{
     DEFAULTS_PROGRAMS, defaults_key_is_absent, parse_defaults_bool, spawn_did_not_start,
 };
+mod capture;
 /// Crash reports macOS wrote for a simulator's processes. See
 /// [`crash_report::for_simulator`].
 pub mod crash_report;
+/// Which of a simulator's screens is lit.
+pub mod displays;
 pub mod registry;
 /// Adaptive `xcrun simctl io screenshot` pacer. See
 /// [`screenshot_pacer::ScreenshotPacer`].
@@ -1257,6 +1260,8 @@ pub struct SimctlClient {
     /// IOSurface capture path. Shared so a cloned client reuses the same
     /// warm surfaces. See [`surface_capture`].
     capture_hosts: Arc<tokio::sync::Mutex<surface_capture::CaptureHostRegistry>>,
+    /// UDIDs found to have a single screen. See [`capture`].
+    one_screen: Arc<tokio::sync::Mutex<std::collections::HashSet<String>>>,
 }
 
 impl Default for SimctlClient {
@@ -1313,6 +1318,7 @@ impl SimctlClient {
             capture_hosts: Arc::new(tokio::sync::Mutex::new(
                 surface_capture::CaptureHostRegistry::default(),
             )),
+            one_screen: Arc::default(),
         }
     }
 
@@ -2244,54 +2250,6 @@ impl SimctlClient {
         self.capture_frame(udid, false).await
     }
 
-    /// Core capture path: try the resident IOSurface host, fall back to
-    /// `simctl`. `want_png` selects an in-host ImageIO PNG encode over a raw
-    /// BGRA frame; the fallback is always a PNG.
-    async fn capture_frame(
-        &self,
-        udid: &str,
-        want_png: bool,
-    ) -> Result<surface_capture::CapturedFrame, DeviceControlError> {
-        // Direct path first. No pacer gate: the direct IOSurface read does not
-        // touch `com.apple.display.captureservice`, so the crash-guard floor
-        // the pacer enforces for `simctl io screenshot` does not apply here.
-        // Surface unavailable, or the host transport failed — both fall
-        // through to the correct-but-slow simctl path below.
-        if let Ok(Some(frame)) = self.try_capture_direct(udid, want_png).await {
-            return Ok(frame);
-        }
-        let png = self.screenshot_via_simctl(udid).await?;
-        Ok(surface_capture::CapturedFrame::Png(png))
-    }
-
-    /// Get-or-spawn the resident host for `udid` and grab one frame. Returns
-    /// `Ok(None)` when the host reports the surface is gone, `Err` on a
-    /// transport failure. In both non-`Some` cases the host is dropped (and
-    /// killed) so the next call re-resolves from scratch.
-    async fn try_capture_direct(
-        &self,
-        udid: &str,
-        want_png: bool,
-    ) -> Result<Option<surface_capture::CapturedFrame>, surface_capture::HostError> {
-        // Take the host out from under the lock so a 12.6 MB grab (or a 5s
-        // spawn) never serializes captures for other sims.
-        let existing = { self.capture_hosts.lock().await.take(udid) };
-        let mut host = match existing {
-            Some(h) => h,
-            None => surface_capture::SurfaceCaptureHost::spawn(udid).await?,
-        };
-        match host.grab(want_png).await {
-            Ok(Some(frame)) => {
-                self.capture_hosts.lock().await.put(udid, host);
-                Ok(Some(frame))
-            }
-            // Host is exiting (surface gone) — drop it, fall back.
-            Ok(None) => Ok(None),
-            // Transport died — drop it, fall back.
-            Err(e) => Err(e),
-        }
-    }
-
     /// Drop the resident capture host for `udid`, if any. Call this whenever a
     /// lifecycle operation may have invalidated the framebuffer surface
     /// (shutdown / erase / reboot) so the next capture re-resolves cleanly.
@@ -2307,7 +2265,11 @@ impl SimctlClient {
     /// `xcrun simctl io <udid> screenshot <tmpfile>` → raw PNG bytes, paced +
     /// circuit-guarded, with the sRGB metadata splice. The correct-but-slow
     /// fallback for [`capture_frame`](Self::capture_frame).
-    async fn screenshot_via_simctl(&self, udid: &str) -> Result<Vec<u8>, DeviceControlError> {
+    async fn screenshot_via_simctl(
+        &self,
+        udid: &str,
+        display: Option<u32>,
+    ) -> Result<Vec<u8>, DeviceControlError> {
         // Pace + circuit-check before invoking simctl.
         let wait = {
             let mut pacer = self
@@ -2326,7 +2288,11 @@ impl SimctlClient {
         let tmp =
             std::env::temp_dir().join(format!("smix-screenshot-{udid}-{}.png", std::process::id()));
         let tmp_str = tmp.display().to_string();
-        let result = simctl_capture(&["io", udid, "screenshot", &tmp_str]).await;
+        let display_arg = display.map(|id| format!("--display={id}"));
+        let mut args = vec!["io", udid, "screenshot"];
+        args.extend(display_arg.as_deref());
+        args.push(&tmp_str);
+        let result = simctl_capture(&args).await;
         let bytes = result.and_then(|_| {
             std::fs::read(&tmp).map_err(|e| DeviceControlError::Malformed {
                 subcommand: "screenshot".into(),

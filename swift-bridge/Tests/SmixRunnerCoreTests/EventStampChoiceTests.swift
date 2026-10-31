@@ -95,6 +95,26 @@ final class EventStampChoiceTests: XCTestCase {
     XCTAssertEqual(origin.y, 0, accuracy: 0.001)
   }
 
+  /// An unfolded foldable reports the app's frame in the inner panel's
+  /// own portrait shape (669 x 951) while the app is laid out landscape
+  /// on it: Safari's Edit button sat at (475, 624) in a space 951 wide.
+  /// Read off the panel's raw framebuffer it was at (622, 475) — the
+  /// landscape space's width less x, not the reported frame's width.
+  func testALandscapeAppOnAPortraitShapedFrameUsesTheLandscapeWidth() {
+    let edit = CGPoint(x: 475, y: 624.2)
+    let measured = pointInDeviceSpace(
+      edit, appFrame: CGSize(width: 669, height: 951), interface: .landscapeLeft)
+    XCTAssertEqual(measured.x, 624.2, accuracy: 0.05)
+    XCTAssertEqual(measured.y, 476, accuracy: 0.05)
+    for interface in [StampOrientation.landscapeLeft, .landscapeRight] {
+      let tall = pointInDeviceSpace(
+        edit, appFrame: CGSize(width: 669, height: 951), interface: interface)
+      let wide = pointInDeviceSpace(
+        edit, appFrame: CGSize(width: 951, height: 669), interface: interface)
+      XCTAssertEqual(tall, wide, "\(interface)")
+    }
+  }
+
   func testPointConversionIsIdentityInPortrait() {
     let p = CGPoint(x: 201, y: 437)
     let converted = pointInDeviceSpace(

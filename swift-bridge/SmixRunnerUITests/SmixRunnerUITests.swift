@@ -931,7 +931,7 @@ final class SmixRunnerUITests: XCTestCase {
     // mid-session via `App-Bundle-Id` header doesn't get the wrong-app frame.
     // The default (boot-time) entry is seeded here; subsequent per-bundle
     // entries are populated lazily inside handlers.
-    var cachedAppFrames: [String: CGRect] = [bundleId: app.frame]
+    var cachedAppFrames: [String: CGRect] = [bundleId: smixAppFrame(app)]
     let cachedAppFramesLock = NSLock()
 
     // Per-request target-app resolver. Reads the task-local
@@ -1568,6 +1568,7 @@ final class SmixRunnerUITests: XCTestCase {
         // request context is the only place to read it from.
         let resolvedBundle = SmixRunnerServer.currentContext.bundleId ?? bundleId
         let root = convertSnapshot(snap, rootIdentifierOverride: resolvedBundle, focusHint: focusHint)
+          .inInterfaceShape(landscape: smixInterfaceIsLandscape(app))
         // Reuse cachedAppFrame (the same invariance the tapHandler
         // optimization relies on). app.frame access internally triggers a
         // light snapshot (~50-150ms); Settings is portrait-only and the
@@ -1855,13 +1856,13 @@ final class SmixRunnerUITests: XCTestCase {
           // which are genuinely visible and assertable.
           if requireOnScreen {
             let frame = el.frame
-            guard frame.intersects(app.frame) else { return false }
+            guard frame.intersects(smixAppFrame(app)) else { return false }
             // The live frame is not the truth for a control inside an
             // off-screen list cell: iOS 27 gives it the list's origin.
             // The cell's own frame is right (see `CellPlacement`).
             let cell = app.cells.containing(predicate).firstMatch
             if cell.exists,
-              CellPlacement.misplaced(control: frame, cell: cell.frame, screen: app.frame)
+              CellPlacement.misplaced(control: frame, cell: cell.frame, screen: smixAppFrame(app))
             {
               return false
             }
@@ -2217,7 +2218,7 @@ final class SmixRunnerUITests: XCTestCase {
           // gestures go through Apple's recognizer chain, and a raw
           // IOKit drag does not.
           if let record = SmixEventRecord(orientation: .portrait, displayID: smixLayout(of: app).displayID) {
-            let frame = app.frame
+            let frame = smixAppFrame(app)
             let from = CGPoint(x: frame.origin.x + frame.size.width * 0.01,
                                y: frame.origin.y + frame.size.height * 0.5)
             let to = CGPoint(x: frame.origin.x + frame.size.width * 0.6,
@@ -2336,7 +2337,7 @@ final class SmixRunnerUITests: XCTestCase {
         var py: CGFloat = 0
         var tapLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame", displayID: nil)
         let setupOk = smixGuarded("tap-at-norm-coord-setup") {
-          let frame = app.frame
+          let frame = smixAppFrame(app)
           px = frame.origin.x + frame.size.width * CGFloat(nx)
           py = frame.origin.y + frame.size.height * CGFloat(ny)
           tapLayout = smixLayout(of: app)
@@ -2400,7 +2401,9 @@ final class SmixRunnerUITests: XCTestCase {
         let readable = smixGuarded("tap-at-norm-coord-chain") { () -> Bool in
           guard let snap = try? app.snapshot() else { return false }
           chain = HitChain.at(
-            point: CGPoint(x: px, y: py), in: convertSnapshot(snap))
+            point: CGPoint(x: px, y: py),
+            in: convertSnapshot(snap)
+              .inInterfaceShape(landscape: smixInterfaceIsLandscape(app)))
           return true
         } == true
         // Gone from the point already: no touch, so nothing under it is
@@ -2691,7 +2694,7 @@ final class SmixRunnerUITests: XCTestCase {
         var toPy: CGFloat = 0
         var swipeLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame", displayID: nil)
         let setupOk = smixGuarded("swipe-at-norm-coord-setup") {
-          let frame = app.frame
+          let frame = smixAppFrame(app)
           fromPx = frame.origin.x + frame.size.width * CGFloat(fromNx)
           fromPy = frame.origin.y + frame.size.height * CGFloat(fromNy)
           toPx = frame.origin.x + frame.size.width * CGFloat(toNx)
@@ -2736,7 +2739,7 @@ final class SmixRunnerUITests: XCTestCase {
         var origin = CGPoint.zero
         var layout = SmixLayout(size: .zero, orientation: .portrait, source: "frame", displayID: nil)
         let setupOk = smixGuarded("pinch-at-norm-coord-setup") {
-          let frame = app.frame
+          let frame = smixAppFrame(app)
           size = frame.size
           origin = frame.origin
           layout = smixLayout(of: app)
@@ -3294,13 +3297,14 @@ final class SmixRunnerUITests: XCTestCase {
         var csLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame", displayID: nil)
         var resolved = CGPoint.zero
         _ = smixGuarded("coordinate-space") {
-          let frame = app.frame
+          let frame = smixAppFrame(app)
           appFrame = frame
           resolved = CGPoint(
             x: frame.origin.x + frame.size.width * CGFloat(nx),
             y: frame.origin.y + frame.size.height * CGFloat(ny))
           if let snapshot = try? app.snapshot() {
-            rootFrame = snapshot.frame
+            rootFrame = convertSnapshot(snapshot)
+              .inInterfaceShape(landscape: smixInterfaceIsLandscape(app)).frame
           }
           interface = describeDeviceOrientation(XCUIDevice.shared.orientation)
           csLayout = smixLayout(of: app)
@@ -3635,7 +3639,9 @@ private func buildAllWindowsSnapshot(
   // an extra child, and guarantees the all-windows tree is a strict
   // superset of the legacy tree).
   if let appSnap = try? app.snapshot() {
-    children.append(convertSnapshot(appSnap, focusHint: FocusedIdentifier.find(in: appSnap)))
+    children.append(
+      convertSnapshot(appSnap, focusHint: FocusedIdentifier.find(in: appSnap))
+        .inInterfaceShape(landscape: smixInterfaceIsLandscape(app)))
   }
 
   let synthetic = TreeRoute.A11ySnapshotData(

@@ -163,12 +163,24 @@ pub struct SurfaceCaptureHost {
     pub width: u32,
     /// Startup-header height (see [`SurfaceCaptureHost::width`]).
     pub height: u32,
+    /// The display id this host reads, on a device with several screens.
+    pub screen: Option<u32>,
 }
 
 impl SurfaceCaptureHost {
     /// Spawn a resident host for `udid` and wait (≤5 s) for its `WxH`
     /// geometry header, which confirms the surface resolved.
     pub async fn spawn(udid: &str) -> Result<SurfaceCaptureHost, HostError> {
+        Self::spawn_on(udid, None).await
+    }
+
+    /// [`spawn`](Self::spawn) for one screen of a device that has several:
+    /// a foldable keeps a framebuffer per panel, and only the lit one has a
+    /// picture. `screen` is the display id `devicectl` reports.
+    pub async fn spawn_on(
+        udid: &str,
+        screen: Option<u32>,
+    ) -> Result<SurfaceCaptureHost, HostError> {
         let bin = capture_host_bin();
         if !bin.exists() {
             return Err(HostError::BinaryMissing(bin));
@@ -176,6 +188,7 @@ impl SurfaceCaptureHost {
         let mut child = Command::new(&bin)
             .arg(udid)
             .arg("serve")
+            .args(screen.map(|id| format!("screen={id}")))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -230,6 +243,7 @@ impl SurfaceCaptureHost {
             stdout: BufReader::new(stdout),
             width,
             height,
+            screen,
         })
     }
 

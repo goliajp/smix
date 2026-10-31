@@ -64,6 +64,13 @@ public enum StampOrientation: String, Sendable {
   case portraitUpsideDown
   case landscapeLeft
   case landscapeRight
+
+  public var isLandscape: Bool {
+    switch self {
+    case .landscapeLeft, .landscapeRight: return true
+    case .portrait, .portraitUpsideDown: return false
+    }
+  }
 }
 
 /// The orientation to stamp, given how the app is laid out.
@@ -112,17 +119,23 @@ public func layoutOrientation(
 /// its diagonal: the centre still lands on the centre, so a smoke test
 /// on one middling target passes and everything near an edge goes to
 /// the wrong side.
+///
+/// A landscape app's space is wider than tall whichever way its frame is
+/// reported: an unfolded foldable gives the frame in the inner panel's own
+/// portrait shape while the app is laid out landscape on it.
 public func pointInDeviceSpace(
   _ point: CGPoint, appFrame: CGSize, interface: StampOrientation
 ) -> CGPoint {
+  let long = max(appFrame.width, appFrame.height)
+  let short = min(appFrame.width, appFrame.height)
   switch interface {
   case .portrait:
     return point
   case .landscapeRight:
     // The app's +x runs down the device, its +y runs left across it.
-    return CGPoint(x: appFrame.height - point.y, y: point.x)
+    return CGPoint(x: short - point.y, y: point.x)
   case .landscapeLeft:
-    return CGPoint(x: point.y, y: appFrame.width - point.x)
+    return CGPoint(x: point.y, y: long - point.x)
   case .portraitUpsideDown:
     return CGPoint(x: appFrame.width - point.x, y: appFrame.height - point.y)
   }
