@@ -928,6 +928,15 @@ pub enum Step {
         /// Orientation literal aligned with maestro yaml.
         orientation: smix_sdk::MaestroOrientation,
     },
+    /// `setPosture: closed | halfOpen | open` — smix's own step, not
+    /// maestro's: fold or unfold a foldable iOS simulator and wait until
+    /// the panel the posture lights is lit.
+    ///
+    /// Since smix 20.1.0.
+    SetPosture {
+        /// How far the device is opened.
+        posture: smix_sdk::Posture,
+    },
     /// maestro `startRecording: <output-path>`. Spawns
     /// `xcrun simctl io recordVideo` as a long-running child via SDK::App.
     /// Pair with `stopRecording` for clean SIGINT-and-wait shutdown.

@@ -1,44 +1,43 @@
 {
   "result": {
-    "backlightState": "unknown",
+    "backlightState": "activeOn",
     "displays": [
       {
-        "active": true,
-        "backlightState": "unknown",
+        "backlightState": "activeOn",
         "bounds": [
           [
             0,
             0
           ],
           [
-            1398,
-            2034
+            1206,
+            2622
           ]
         ],
-        "chromeIdentifier": "com.apple.dt.devicekit.chrome.phone15",
+        "chromeIdentifier": "com.apple.dt.devicekit.chrome.phone11",
         "currentOrientation": "rot0",
         "displayId": 1,
-        "framebufferMaskIdentifier": "1C896A2B-F0D7-405C-8D0F-66E4B80AD044",
+        "framebufferMaskIdentifier": "4E5532ED-1470-47D1-BDF4-7AA90C26957A",
         "name": "LCD",
         "nativeOrientation": "rot0",
         "nativeSize": [
-          1398,
-          2034
+          1206,
+          2622
         ],
         "physicalSize": [
-          3.039130449295044,
-          4.421739101409912
+          2.621739149093628,
+          5.699999809265137
         ],
         "pointScale": 3,
         "primary": true,
         "type": {
           "integrated": {}
         },
-        "uniqueId": "FDC796A8-DDA1-48F3-BF56-204644CAE33C"
+        "uniqueId": "B0FD8E9D-2452-4C68-BBE5-EC179A53E5CC"
       }
     ],
     "orientation": {
-      "currentDeviceNonFlatOrientation": "unknown",
+      "currentDeviceNonFlatOrientation": "portrait",
       "currentDeviceOrientation": "unknown",
       "currentDeviceOrientationLocked": false
     }

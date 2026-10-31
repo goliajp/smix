@@ -26,6 +26,10 @@ mod capture;
 pub mod crash_report;
 /// Which of a simulator's screens is lit.
 pub mod displays;
+/// Folding a foldable simulator.
+pub mod posture;
+#[cfg(target_os = "macos")]
+mod posture_sys;
 pub mod registry;
 /// Adaptive `xcrun simctl io screenshot` pacer. See
 /// [`screenshot_pacer::ScreenshotPacer`].
@@ -118,6 +122,20 @@ pub enum DeviceControlError {
         subcommand: String,
         /// Deadline that was exceeded (milliseconds).
         ms: u64,
+    },
+    /// A fold was refused or did not show: the device cannot fold, the
+    /// simulator's HID service could not be reached, or the panel the
+    /// posture lights did not light.
+    ///
+    /// Since smix 20.1.0.
+    #[error("{udid} could not be put {posture}: {detail}")]
+    Posture {
+        /// The simulator.
+        udid: String,
+        /// The posture asked for, by name.
+        posture: &'static str,
+        /// What went wrong, and what was seen.
+        detail: String,
     },
     /// The screenshot pacer's circuit is open — a recent screenshot
     /// wall time exceeded the circuit threshold, or a screenshot
