@@ -1758,6 +1758,17 @@ enum SimAction {
         /// Which device to wipe, by UDID or registry alias.
         device: String,
     },
+    /// Fold or unfold a foldable simulator (iPhone Duo): `closed`,
+    /// `half-open` or `open`. Returns once the panel the posture lights is
+    /// the lit one. Nothing appears on screen and no permission is needed:
+    /// the hinge angle goes to the simulator the way Device Hub's own hinge
+    /// control sends it.
+    Posture {
+        /// Which simulator to fold, by UDID or registry alias.
+        device: String,
+        /// `closed`, `half-open` or `open`.
+        posture: smix_simctl::posture::Posture,
+    },
     /// Take a screenshot (PNG). Pass `-` to write raw PNG to stdout.
     Screenshot {
         /// Which device to photograph, by UDID or registry alias.
@@ -2419,6 +2430,7 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         | SimAction::Shutdown { device }
         | SimAction::Erase { device }
         | SimAction::Screenshot { device, .. }
+        | SimAction::Posture { device, .. }
         | SimAction::Launch { device, .. }
         | SimAction::Terminate { device, .. }
         | SimAction::Install { device, .. }
@@ -2515,7 +2527,9 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
             SimAction::Erase { .. }
             | SimAction::Appearance { .. }
             | SimAction::Locale { .. }
-            | SimAction::Exec { .. } => SIMCTL,
+            | SimAction::Exec { .. }
+            // A hinge exists on a foldable simulator, through CoreSimulator.
+            | SimAction::Posture { .. } => SIMCTL,
 
             // Answered above, from the table.
             SimAction::Screenshot { .. }
@@ -2571,6 +2585,7 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         // powering a device, erasing it, and the three simulator-only
         // settings. Their refusals are built from their own support
         // list instead, by `refusal_for`.
+        SimAction::Posture { .. } => None,
         SimAction::List { .. }
         | SimAction::Register { .. }
         | SimAction::Resolve { .. }
@@ -3368,6 +3383,11 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     let udid = resolve_device(&device)?;
                     simctl.erase(&udid).await?;
                     println!("erased: {udid}");
+                }
+                SimAction::Posture { device, posture } => {
+                    let udid = resolve_device(&device)?;
+                    simctl.set_posture(&udid, posture).await?;
+                    println!("posture: {udid} is {}", posture.name());
                 }
                 SimAction::Screenshot {
                     device,
@@ -5451,6 +5471,8 @@ fn is_destructive(action: &SimAction) -> bool {
         | SimAction::Boot { .. }
         | SimAction::Shutdown { .. }
         | SimAction::Screenshot { .. }
+        // A fold is undone by the next fold.
+        | SimAction::Posture { .. }
         | SimAction::Launch { .. }
         | SimAction::Terminate { .. }
         | SimAction::Install { .. }
@@ -7681,6 +7703,13 @@ mod tests {
                     device: d(),
                     out: std::path::PathBuf::new(),
                     runner_port: None,
+                },
+            ),
+            (
+                "posture",
+                SimAction::Posture {
+                    device: d(),
+                    posture: smix_simctl::posture::Posture::Open,
                 },
             ),
             (

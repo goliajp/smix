@@ -117,6 +117,7 @@ pub use smix_selector::{
     AnchorBox, IndexModifiers, Modifiers, Pattern, Selector, True, describe_selector, match_text,
     match_text_compiled,
 };
+pub use smix_simctl::posture::Posture;
 pub use smix_simctl::surface_capture::CapturedFrame;
 pub use smix_simctl::{
     Appearance, DeviceControlError, LaunchResult, SimctlClient, SimctlPermission,
@@ -2796,13 +2797,58 @@ impl App {
     /// portraitUpsideDown | landscapeLeft | landscapeRight`.
     /// Walks `driver.set_orientation` → POST /set-orientation → swift
     /// `XCUIDevice.shared.orientation`.
+    ///
+    /// A foldable simulator ignores `XCUIDevice.orientation`, folded or
+    /// not, so on one the turn goes through
+    /// [`SimctlClient::turn_foldable`] instead and is read back from the
+    /// device; a facing its posture cannot reach is refused by name.
     pub async fn set_orientation(
         &self,
         orientation: MaestroOrientation,
     ) -> Result<(), ExpectationFailure> {
+        if let (Some(simctl), Some(udid)) = (self.device.as_ios_simctl(), self.udid.as_deref()) {
+            use smix_simctl::posture::{Facing, Turned};
+            let facing = match orientation {
+                MaestroOrientation::Portrait => Facing::Portrait,
+                MaestroOrientation::PortraitUpsideDown => Facing::PortraitUpsideDown,
+                MaestroOrientation::LandscapeLeft => Facing::LandscapeLeft,
+                MaestroOrientation::LandscapeRight => Facing::LandscapeRight,
+            };
+            match simctl.turn_foldable(udid, facing).await {
+                Ok(Turned::Done) => return Ok(()),
+                Ok(Turned::NotFoldable | Turned::CannotTell) => {}
+                Err(e) => return Err(simctl_to_failure(e)),
+            }
+        }
         self.driving()?
             .set_orientation(orientation.to_driver())
             .await
+    }
+
+    /// Fold or unfold a foldable iOS simulator (iPhone Duo), returning
+    /// once the panel the posture lights is the lit one. Flow step
+    /// `setPosture: closed | halfOpen | open`.
+    ///
+    /// iOS simulators only: an Android emulator or a phone is refused by
+    /// name rather than left unfolded.
+    ///
+    /// Since smix 20.1.0.
+    pub async fn set_posture(&self, posture: Posture) -> Result<(), ExpectationFailure> {
+        let udid = self.require_udid()?;
+        let Some(simctl) = self.device.as_ios_simctl() else {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!(
+                    "setPosture: folding is wired for iOS simulators, and this device is {:?}",
+                    self.device.platform()
+                ),
+                ..Default::default()
+            }));
+        };
+        simctl
+            .set_posture(udid, posture)
+            .await
+            .map_err(simctl_to_failure)
     }
 
     /// Batch permission setter. Maestro `setPermissions: { camera:

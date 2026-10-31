@@ -389,6 +389,32 @@ func smixLayout(of app: XCUIApplication) -> SmixLayout {
   return SmixLayout(size: size, orientation: orientation, source: source, displayID: displayID)
 }
 
+/// `app.frame` in the shape the app is laid out. On an unfolded foldable
+/// the frame comes back in the inner panel's portrait shape while a
+/// landscape app's elements sit in a space as wide as the frame is tall;
+/// converting or bounding against the unturned frame misplaced every
+/// touch and called the right half of the screen off screen.
+func smixAppFrame(_ app: XCUIApplication) -> CGRect {
+  smixShaped(app.frame, landscape: smixInterfaceIsLandscape(app))
+}
+
+/// `frame` turned to the app's layout: wider than tall when `landscape`.
+func smixShaped(_ frame: CGRect, landscape: Bool) -> CGRect {
+  guard landscape == (frame.height > frame.width) else { return frame }
+  return CGRect(x: frame.origin.x, y: frame.origin.y, width: frame.height, height: frame.width)
+}
+
+/// Whether the app says it is laid out landscape. Only the app's own
+/// interface orientation is read: unlike `XCUIDevice.orientation`, it may
+/// be asked off the main thread, where the tree is built.
+func smixInterfaceIsLandscape(_ app: XCUIApplication) -> Bool {
+  guard app.responds(to: NSSelectorFromString("interfaceOrientation")),
+    let raw = app.value(forKey: "interfaceOrientation") as? Int,
+    let o = UIInterfaceOrientation(rawValue: raw)
+  else { return false }
+  return o.isLandscape
+}
+
 /// The screen an app of this size fills, when it is not the main one.
 ///
 /// XCTest resolves every app to the main screen (`displayID` reads 0 and
