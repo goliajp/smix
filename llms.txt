@@ -54,7 +54,7 @@ The canonical yaml verb table (55 entries). Each verb carries the maestro-surfac
 | `clearLocation` | `clearLocation` | Device | None |
 | `setPermissions` | `setPermissions` | Device | Mapping |
 | `setOrientation` | `setOrientation` | Device | BareString |
-| `set_posture` | `setPosture` | Device | BareString |
+| `setPosture` | `setPosture` | Device | BareString |
 | `webview_eval` | `webviewEval` | SmixNative | BareString |
 | `webViewEval` | `webviewEval` | SmixNative | BareString |
 | `webviewEval` | `webviewEval` | SmixNative | BareString |
