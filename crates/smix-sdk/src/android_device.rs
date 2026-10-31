@@ -13,6 +13,10 @@ use smix_driver::Platform;
 use smix_simctl::DeviceControlError;
 
 use crate::PermissionAction;
+use crate::android_refusal::refused_here;
+
+#[path = "android_launch.rs"]
+mod launch;
 use crate::device_control::{CrashReport, DeviceControl, Frontmost, Permission};
 
 /// What `simctl location start` uses when `--speed` is absent, per its own
@@ -73,6 +77,8 @@ pub struct AndroidDeviceControl {
     /// CoreSimulator and forgets it; here nothing on the device walks a
     /// route, so this process does the walking.
     travel: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Per serial, what the last launch left undone, until it is read.
+    launch_notes: Mutex<std::collections::HashMap<String, String>>,
 }
 
 impl Default for AndroidDeviceControl {
@@ -88,6 +94,7 @@ impl AndroidDeviceControl {
             client: AdbClient::new(),
             recording: Mutex::new(None),
             travel: Mutex::new(None),
+            launch_notes: Mutex::default(),
         }
     }
 
@@ -151,6 +158,7 @@ impl AndroidDeviceControl {
             client,
             recording: Mutex::new(None),
             travel: Mutex::new(None),
+            launch_notes: Mutex::default(),
         }
     }
 }
@@ -232,51 +240,21 @@ fn android_kind(serial: &str) -> smix_simctl::registry::DeviceKind {
     }
 }
 
-/// The refusal for something this backend cannot do, read from the one
-/// table that says so.
-///
-/// These sentences used to be written here, and `DevicectlClient` had
-/// seventeen more of its own. Two sets of prose about the same question,
-/// with nothing able to say whether they agreed — and they did not: the
-/// platform table's first draft had both clipboard cells as `Works` on
-/// Android, taken from a research note rather than from this file, which
-/// has refused them since Android 10 sealed the clipboard.
-fn refused_here(action: &str, kind: smix_simctl::registry::DeviceKind) -> DeviceControlError {
-    use crate::device_control::{Availability, availability};
-
-    match availability(action, kind) {
-        Some(Availability::RefusedByName { why, instead }) => DeviceControlError::non_zero_exit(
-            action,
-            -1,
-            format!("{action} is not available on Android: {why}\nInstead: {instead}").as_str(),
-        ),
-        other => DeviceControlError::non_zero_exit(
-            action,
-            -1,
-            format!(
-                "{action} was refused on Android, but the platform table says {other:?}. \
-                 The table and this code disagree; fix one."
-            )
-            .as_str(),
-        ),
-    }
-}
-
 #[async_trait]
 impl DeviceControl for AndroidDeviceControl {
     fn platform(&self) -> Platform {
         Platform::Android
     }
 
+    async fn take_launch_note(&self, serial: &str) -> Option<String> {
+        self.launch_notes.lock().await.remove(serial)
+    }
+
     // === Lifecycle ===
 
     async fn launch(&self, serial: &str, bundle_id: &str) -> Result<u32, DeviceControlError> {
         let activity = self.entry_point(serial, bundle_id).await;
-        self.client
-            .start_activity(serial, bundle_id, &activity, &[])
-            .await
-            .map_err(|e| adb_to_simctl_err(e, "shell am start"))?;
-        Ok(0)
+        self.launch_until_drawn(serial, bundle_id, &activity, &[]).await
     }
 
     async fn launch_with_args(
@@ -304,11 +282,8 @@ impl DeviceControl for AndroidDeviceControl {
             Some(a) => a.to_string(),
             None => self.entry_point(serial, bundle_id).await,
         };
-        self.client
-            .start_activity(serial, bundle_id, &activity, &extra_refs)
+        self.launch_until_drawn(serial, bundle_id, &activity, &extra_refs)
             .await
-            .map_err(|e| adb_to_simctl_err(e, "shell am start"))?;
-        Ok(0)
     }
 
     /// `true` zeroes the scales for this process and records what they

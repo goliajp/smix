@@ -1296,6 +1296,9 @@ mod parity_tests {
         "platform",
         "as_ios_simctl",
         "recording_pid",
+        // answered by the trait's default: a phone's launch cannot be
+        // told apart from a finished one
+        "take_launch_note",
     ];
 
     #[test]

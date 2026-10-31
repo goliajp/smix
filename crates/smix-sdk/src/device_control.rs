@@ -237,6 +237,7 @@ pub const ACTION_LEVELS: &[(&str, ActionLevel)] = &[
     // Metadata about the binding, not an action on the device.
     ("platform", ActionLevel::Observe),
     ("as_ios_simctl", ActionLevel::Observe),
+    ("take_launch_note", ActionLevel::Observe),
     // The app under test.
     ("launch", ActionLevel::App),
     ("launch_with_args", ActionLevel::App),
@@ -402,6 +403,8 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
         // Metadata about the binding, not an action on a device.
         ("platform", [Yes, Yes, Yes, Yes]),
         ("as_ios_simctl", [Yes, Yes, Yes, Yes]),
+        // `None` where a launch cannot be told apart from a finished one.
+        ("take_launch_note", [Yes, Yes, Yes, Yes]),
         // The app under test. This half is what "physical devices are a
         // first-class backend" rests on, and it is whole.
         ("launch", [Yes, Yes, Yes, Yes]),
@@ -803,6 +806,13 @@ pub trait DeviceControl: Send + Sync {
     }
 
     // === Lifecycle ===
+
+    /// What the last launch on `udid` left undone, handed over once: on
+    /// Android, an app that had not drawn when the launch stopped waiting.
+    /// `None` when it finished, and where the platform cannot tell.
+    async fn take_launch_note(&self, _udid: &str) -> Option<String> {
+        None
+    }
 
     async fn launch(&self, udid: &str, bundle_id: &str) -> Result<u32, DeviceControlError>;
     /// Launch with process arguments, and on Android with an explicit
