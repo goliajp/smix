@@ -1,22 +1,3 @@
-- scrollUntilVisible:
-    element:
-      text: "Row #5000"
-    direction: DOWN
-    timeout: 30000              # ms; default 20000
-
-# Stop earlier, or stop with the element near the middle of the screen.
-- scrollUntilVisible:
-    element:
-      id: "row-line_crossing"
-    visibilityPercentage: 60    # 1-100; default 100, the whole element
-    centerElement: true         # default false
-
-# OCR tier — for virtualized lists whose off-screen items are dropped
-# from the a11y tree (RN Fabric LazyColumn/LazyRow etc.). Every look
-# reads the tree first, then each ocrText in the chain's order.
-- scrollUntilVisible:
-    element:
-      fallback:
-        - id: "btn-target"
-        - ocrText: "Target label"
-    direction: DOWN
+- scroll
+- scroll:
+    direction: UP

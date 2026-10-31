@@ -1,2 +1,7 @@
-- eraseText: 5     # backspace 5 times (default 50 if omitted)
-- eraseText        # default depth
+- inputText:
+    id: "form-email-input"
+    text: "probe@example.test"
+    method: setText              # replaces what the field holds
+- inputText:
+    text: "probe@example.test"
+    method: setText              # the focused field, appending

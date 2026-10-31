@@ -2,6 +2,33 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Added
+
+- **`tapOn` presses a button on a system popup.** A permission prompt
+  belongs to the system, so `tapOn: "Allow"` found nothing in the app and
+  failed. When a `text:` or `label:` tap has no match in the app, the
+  system popups on screen are asked for a button with that name; exactly
+  one is pressed, and the run says which popup it answered. A straight
+  apostrophe matches the popup's typographic one (`"Don't Allow"`).
+
+### Fixed
+
+- **iOS: `setPermissions` with `notifications` says why it fails.** iOS 27
+  simulators refuse the grant (`simctl privacy`: "Operation not
+  permitted"). The step now says so and points to answering the prompt
+  with `tapOn`, rather than passing simctl's words through bare.
+- **Reading system popups waits out the runner's pace.** The runner
+  answers a popup read within 500 ms of the last with 429 and how long to
+  wait; the client now waits that long and asks again, where it used to
+  fail the step (an `openLink` that dismissed its own prompt could).
+- **Two smix processes starting a runner at once no longer remove each
+  other's runner sources.** Each checked for the sources, and one that
+  found none went on to clear the path even when the other had just put
+  the right sources there, deleting a tree the other was about to build
+  in. The path is now checked again before anything is cleared.
+
 ## [20.1.0] — 2026-10-31
 
 ### Added

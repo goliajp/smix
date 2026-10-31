@@ -147,6 +147,12 @@ fn holds(dir: &Path, platform: RunnerPlatform) -> bool {
 /// Build the tree beside `dir` and move it in. Returns whether this call's
 /// tree is the one in place (false when a racing caller's got there first).
 fn install(dir: &Path, platform: RunnerPlatform) -> Result<bool, ExtractError> {
+    // Asked again: a racing caller may have moved these very sources in
+    // since our caller looked, and discarding them would pull the tree out
+    // from under that caller, and under any build already running in it.
+    if holds(dir, platform) {
+        return Ok(false);
+    }
     if dir.exists() {
         discard(dir)?;
     }
@@ -262,4 +268,32 @@ fn prune(parent: &Path, current: &Path) -> io::Result<Vec<PathBuf>> {
     }
     pruned.reverse();
     Ok(pruned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The race two_ensures_at_once_leave_one_whole_tree catches only when
+    // the threads interleave just so: a caller found no tree, and before it
+    // reached install another moved these very sources in.
+    #[test]
+    fn a_tree_that_arrived_after_the_look_is_left_in_place() {
+        for p in [RunnerPlatform::Ios, RunnerPlatform::Android] {
+            let root = tempfile::tempdir().expect("tempdir");
+            let dir = tree_dir(root.path(), p);
+            ensure_tree(root.path(), p).expect("first ensure");
+            let in_use = dir.join("a-build-in-progress");
+            std::fs::write(&in_use, "").expect("marker");
+
+            assert!(
+                !install(&dir, p).expect("install"),
+                "{p:?}: replaced a tree that held these sources"
+            );
+            assert!(
+                in_use.exists(),
+                "{p:?}: the tree in use was pulled out from under its user"
+            );
+        }
+    }
 }
