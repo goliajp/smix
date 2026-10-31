@@ -260,6 +260,7 @@ mod junit;
 mod output;
 mod parser;
 mod pinch;
+mod popup_tap;
 mod runtime;
 pub mod selector_support;
 mod timing;
