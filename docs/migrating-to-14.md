@@ -19,7 +19,7 @@ differently** and stop. **Rust API** is for code that calls the crates.
   could see or touch. A flow that skipped `assertNotVisible` on Android for
   this reason can run it on both platforms.
 - **The probe has to be this release to get that.** It is built into the
-  app: raise `debugImplementation("jp.golia.smix:smix-probe:20.0.1")` and
+  app: raise `debugImplementation("jp.golia.smix:smix-probe:20.1.0")` and
   rebuild. Until then a run says once that the app carries another
   release's probe, and windows are judged by their shapes as before.
 - **smix runs the Android SDK's own adb**, from `ANDROID_HOME`,
