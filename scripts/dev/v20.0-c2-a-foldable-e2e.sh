@@ -43,7 +43,11 @@ cannot_judge() { printf '[v20.0-c2] cannot judge: %s\n' "$*" >&2; exit 2; }
 DEVICE="" UP=0 WE_BOOTED=0 FOUND_POSTURE=""
 cleanup() {
   if [ "$UP" = 1 ]; then
-    "$SMIX" runner down --device "$DEVICE" --runner-port "$PORT" >/dev/null 2>&1 || true
+    local said
+    if ! said="$("$SMIX" runner down --device "$DEVICE" --runner-port "$PORT" 2>&1)"; then
+      log "warning: the runner on $PORT was not stopped:"
+      printf '%s\n' "$said" | tail -3 >&2
+    fi
   fi
   if [ "$WE_BOOTED" = 1 ]; then
     "$SMIX" sim shutdown "$DEVICE" >/dev/null 2>&1 || true
@@ -156,6 +160,7 @@ judge_posture() {
   # `smix run` itself, not the judged wrapper: this refusal is the verdict,
   # and the wrapper ends the script on a driver error as not one
   printf 'appId: %s\n---\n- setOrientation: %s\n' "$APP" "$unreachable" >"$WORK/step.yaml"
+  # raw run: the refusal is what is judged, read from its message below
   if "$SMIX" run --device "$DEVICE" --runner-port "$PORT" "$WORK/step.yaml" >"$WORK/step.log" 2>&1; then
     fail "$posture: setOrientation $unreachable passed, and this posture has no such facing"
   fi

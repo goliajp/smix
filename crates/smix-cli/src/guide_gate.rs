@@ -495,6 +495,9 @@ impl AppLike for MockApp {
     ) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn set_posture(&self, _posture: smix_sdk::Posture) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     async fn start_recording(&self, _path: &str) -> Result<(), ExpectationFailure> {
         Ok(())
     }
