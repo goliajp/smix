@@ -240,26 +240,40 @@ fn booted_device(udid: &str) -> Result<Id, String> {
     Err(format!("CoreSimulator lists no simulator {udid}"))
 }
 
-/// The IOKit-serialised report Device Hub's hinge slider sends.
-fn hinge_report(degrees: f64) -> Result<Vec<u8>, String> {
+/// What a Device Hub control reports: the hinge slider a range in
+/// degrees, the orientation picker one of a set of names.
+pub enum Control<'a> {
+    Hinge(f64),
+    Orientation(&'a str),
+}
+
+/// The IOKit-serialised report a Device Hub control sends.
+fn control_report(control: &Control<'_>) -> Result<Vec<u8>, String> {
     let keys = [
         cfstr("provider"),
         cfstr("source"),
         cfstr("type"),
         cfstr("value"),
     ];
-    let number = Owned(unsafe {
-        CFNumberCreate(
-            std::ptr::null(),
-            CF_NUMBER_DOUBLE,
-            (&raw const degrees).cast(),
-        )
-    });
+    let (source, kind, value) = match control {
+        Control::Hinge(degrees) => (
+            "hinge-slider-control",
+            "range",
+            Owned(unsafe {
+                CFNumberCreate(
+                    std::ptr::null(),
+                    CF_NUMBER_DOUBLE,
+                    (degrees as *const f64).cast(),
+                )
+            }),
+        ),
+        Control::Orientation(name) => ("orientation-picker-control", "enum", cfstr(name)),
+    };
     let values = [
         cfstr("com.apple.Virtualization.VirtualMachines"),
-        cfstr("hinge-slider-control"),
-        cfstr("range"),
-        number,
+        cfstr(source),
+        cfstr(kind),
+        value,
     ];
     let key_refs: Vec<CFTypeRef> = keys.iter().map(|k| k.0).collect();
     let value_refs: Vec<CFTypeRef> = values.iter().map(|v| v.0).collect();
@@ -275,7 +289,7 @@ fn hinge_report(degrees: f64) -> Result<Vec<u8>, String> {
     });
     let data = Owned(unsafe { IOCFSerialize(dict.0, IOCF_SERIALIZE_TO_BINARY) });
     if data.0.is_null() {
-        return Err("IOCFSerialize could not encode the hinge report".into());
+        return Err("IOCFSerialize could not encode the control report".into());
     }
     let len = unsafe { CFDataGetLength(data.0) } as usize;
     Ok(unsafe { std::slice::from_raw_parts(CFDataGetBytePtr(data.0), len) }.to_vec())
@@ -318,8 +332,8 @@ impl HidSession {
         Ok(HidSession { conn })
     }
 
-    pub fn send_hinge(&self, degrees: f64) -> Result<(), String> {
-        let report = hinge_report(degrees)?;
+    pub fn send(&self, control: &Control<'_>) -> Result<(), String> {
+        let report = control_report(control)?;
         let key = |k: &str| CString::new(k).expect("no NUL");
         unsafe {
             let payload = xpc_dictionary_create(std::ptr::null(), std::ptr::null(), 0);
