@@ -931,7 +931,10 @@ final class SmixRunnerUITests: XCTestCase {
     // mid-session via `App-Bundle-Id` header doesn't get the wrong-app frame.
     // The default (boot-time) entry is seeded here; subsequent per-bundle
     // entries are populated lazily inside handlers.
-    var cachedAppFrames: [String: CGRect] = [bundleId: smixAppFrame(app)]
+    // The raw frame: turned to the app's layout where it is read, because
+    // asking the app for its orientation here, straight after launch,
+    // brought the runner down ("Current context must not be nil").
+    var cachedAppFrames: [String: CGRect] = [bundleId: app.frame]
     let cachedAppFramesLock = NSLock()
 
     // Per-request target-app resolver. Reads the task-local
@@ -1496,7 +1499,7 @@ final class SmixRunnerUITests: XCTestCase {
             label: label.isEmpty ? req.selector.raw : label,
             stages: stages,
             frame: elementFrame,
-            appFrame: cachedAppFrame
+            appFrame: smixShaped(cachedAppFrame, landscape: smixInterfaceIsLandscape(app))
           )
         }
         return outcome ?? .notFound
@@ -1536,8 +1539,9 @@ final class SmixRunnerUITests: XCTestCase {
         //     `.identifier == bundle` still passes.
         if scope == "all-windows" {
           return smixGuarded("tree-all-windows") {
-            buildAllWindowsSnapshot(app: app, bundleId: bundleId,
-                                    appFrame: cachedAppFrame)
+            buildAllWindowsSnapshot(
+              app: app, bundleId: bundleId,
+              appFrame: smixShaped(cachedAppFrame, landscape: smixInterfaceIsLandscape(app)))
           } ?? nil
         }
         let snap: XCUIElementSnapshot? = smixGuarded("tree") {
@@ -1567,14 +1571,15 @@ final class SmixRunnerUITests: XCTestCase {
         // reason: XCUIApplication does not expose its bundle id, so the
         // request context is the only place to read it from.
         let resolvedBundle = SmixRunnerServer.currentContext.bundleId ?? bundleId
+        let landscape = smixInterfaceIsLandscape(app)
         let root = convertSnapshot(snap, rootIdentifierOverride: resolvedBundle, focusHint: focusHint)
-          .inInterfaceShape(landscape: smixInterfaceIsLandscape(app))
+          .inInterfaceShape(landscape: landscape)
         // Reuse cachedAppFrame (the same invariance the tapHandler
         // optimization relies on). app.frame access internally triggers a
         // light snapshot (~50-150ms); Settings is portrait-only and the
         // window doesn't resize across taps so the value is invariant for
         // this runner's lifetime. Saved ~50-100ms per /tree call.
-        return (root: root, appFrame: cachedAppFrame)
+        return (root: root, appFrame: smixShaped(cachedAppFrame, landscape: landscape))
       },
       // Resolve text-only selectors via the same
       // predicate as tapHandler, then call XCUIElement.typeText /

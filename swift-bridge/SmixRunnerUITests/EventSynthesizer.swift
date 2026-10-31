@@ -395,8 +395,12 @@ func smixLayout(of app: XCUIApplication) -> SmixLayout {
 /// converting or bounding against the unturned frame misplaced every
 /// touch and called the right half of the screen off screen.
 func smixAppFrame(_ app: XCUIApplication) -> CGRect {
-  let frame = app.frame
-  guard smixInterfaceIsLandscape(app) == (frame.height > frame.width) else { return frame }
+  smixShaped(app.frame, landscape: smixInterfaceIsLandscape(app))
+}
+
+/// `frame` turned to the app's layout: wider than tall when `landscape`.
+func smixShaped(_ frame: CGRect, landscape: Bool) -> CGRect {
+  guard landscape == (frame.height > frame.width) else { return frame }
   return CGRect(x: frame.origin.x, y: frame.origin.y, width: frame.height, height: frame.width)
 }
 

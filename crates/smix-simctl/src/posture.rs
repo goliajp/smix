@@ -160,7 +160,7 @@ impl SimctlClient {
         already: bool,
     ) -> Result<(), String> {
         let session = crate::posture_sys::HidSession::open(udid)?;
-        session.send_hinge(posture.degrees())?;
+        session.send(&crate::posture_sys::Control::Hinge(posture.degrees()))?;
         if already {
             tokio::time::sleep(HOLD_WHEN_UNOBSERVABLE).await;
             return Ok(());
@@ -185,6 +185,148 @@ impl SimctlClient {
     #[cfg(not(target_os = "macos"))]
     async fn send_and_hold(&self, _: &str, _: Posture, _: bool) -> Result<(), String> {
         Err("folding a simulator needs macOS".into())
+    }
+}
+
+/// Which way the lit screen faces, in devicectl's names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Facing {
+    /// Upright.
+    Portrait,
+    /// Upside down.
+    PortraitUpsideDown,
+    /// Turned so the device's left edge is down.
+    LandscapeLeft,
+    /// Turned so the device's right edge is down.
+    LandscapeRight,
+}
+
+impl Facing {
+    /// devicectl's `currentDeviceOrientation` for this facing.
+    pub fn devicectl_name(self) -> &'static str {
+        match self {
+            Facing::Portrait => "portrait",
+            Facing::PortraitUpsideDown => "portraitUpsideDown",
+            Facing::LandscapeLeft => "landscapeLeft",
+            Facing::LandscapeRight => "landscapeRight",
+        }
+    }
+}
+
+/// The orientation-picker value that faces the lit screen `facing`.
+///
+/// The picker names the orientation of the whole device, and devicectl
+/// measures against the lit screen, which on an unfolded Duo is the inner
+/// panel, a quarter turn from the body. Read on sim-smix-duo (iOS 27.1)
+/// 2026-10-31: folded, the names hold as they are; unfolded, `portrait`
+/// faces the panel landscape-right, `landscape-left` portrait and
+/// `landscape-right` upside down. `portrait-upside-down` changes nothing
+/// in either posture, so the facing it would give is out of reach: `None`.
+pub fn picker_value(folded: bool, facing: Facing) -> Option<&'static str> {
+    match (folded, facing) {
+        (true, Facing::Portrait) => Some("portrait"),
+        (true, Facing::LandscapeLeft) => Some("landscape-left"),
+        (true, Facing::LandscapeRight) => Some("landscape-right"),
+        (true, Facing::PortraitUpsideDown) => None,
+        (false, Facing::Portrait) => Some("landscape-left"),
+        (false, Facing::PortraitUpsideDown) => Some("landscape-right"),
+        (false, Facing::LandscapeRight) => Some("portrait"),
+        (false, Facing::LandscapeLeft) => None,
+    }
+}
+
+/// What turning a foldable came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Turned {
+    /// The lit screen faces the way asked.
+    Done,
+    /// The device has one screen; turning it is the runner's business.
+    NotFoldable,
+    /// devicectl could not say how many screens the device has (an Xcode
+    /// without `devicectl device info displays`); the device was not
+    /// touched, and turning it is left to the runner as before.
+    CannotTell,
+}
+
+impl SimctlClient {
+    /// Turn a foldable simulator so its lit screen faces `facing`.
+    ///
+    /// On an iPhone Duo `XCUIDevice.orientation` is taken and nothing
+    /// turns, folded or not (measured 2026-10-31: the app's frame and the
+    /// panel's rotation stayed put for all four values). Device Hub's
+    /// orientation picker does turn it, so this sends what the picker
+    /// sends and waits until devicectl reads the facing back.
+    ///
+    /// A device with one screen returns [`Turned::NotFoldable`] without
+    /// touching it, and one devicectl cannot describe [`Turned::CannotTell`].
+    ///
+    /// # Errors
+    ///
+    /// [`DeviceControlError::Posture`] when the facing cannot be reached
+    /// in the current posture, or does not show within fifteen seconds.
+    ///
+    /// Since smix 20.1.0.
+    pub async fn turn_foldable(
+        &self,
+        udid: &str,
+        facing: Facing,
+    ) -> Result<Turned, DeviceControlError> {
+        let Ok(screens) = read_screens(udid).await else {
+            return Ok(Turned::CannotTell);
+        };
+        if screens.len() <= 1 {
+            return Ok(Turned::NotFoldable);
+        }
+        let refuse = |detail: String| DeviceControlError::Posture {
+            udid: udid.to_string(),
+            posture: facing.devicectl_name(),
+            detail,
+        };
+        let folded = screens.iter().any(|s| s.active && s.primary);
+        let Some(value) = picker_value(folded, facing) else {
+            return Err(refuse(format!(
+                "a foldable {} cannot face that way: Device Hub's orientation picker has no setting for it",
+                if folded { "folded" } else { "unfolded" }
+            )));
+        };
+        self.send_orientation_and_wait(udid, value, facing)
+            .await
+            .map_err(refuse)?;
+        Ok(Turned::Done)
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn send_orientation_and_wait(
+        &self,
+        udid: &str,
+        value: &str,
+        facing: Facing,
+    ) -> Result<(), String> {
+        let session = crate::posture_sys::HidSession::open(udid)?;
+        session.send(&crate::posture_sys::Control::Orientation(value))?;
+        let started = Instant::now();
+        loop {
+            let json = crate::displays::read_displays_json(udid)
+                .await
+                .map_err(|e| e.to_string())?;
+            let now = crate::displays::device_orientation(&json);
+            if now.as_deref() == Some(facing.devicectl_name()) {
+                return Ok(());
+            }
+            if started.elapsed() >= SHOWS_WITHIN {
+                return Err(format!(
+                    "the orientation report `{value}` was sent and after {} s devicectl reads {}",
+                    SHOWS_WITHIN.as_secs(),
+                    now.as_deref().unwrap_or("no orientation")
+                ));
+            }
+            tokio::time::sleep(POLL).await;
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    async fn send_orientation_and_wait(&self, _: &str, _: &str, _: Facing) -> Result<(), String> {
+        Err("turning a simulator needs macOS".into())
     }
 }
 
@@ -261,6 +403,21 @@ mod tests {
                 .unwrap_err()
                 .contains("closed, half-open or open")
         );
+    }
+
+    #[test]
+    fn the_picker_value_depends_on_whether_the_device_is_folded() {
+        assert_eq!(picker_value(true, Facing::Portrait), Some("portrait"));
+        assert_eq!(
+            picker_value(false, Facing::Portrait),
+            Some("landscape-left")
+        );
+        assert_eq!(
+            picker_value(false, Facing::LandscapeRight),
+            Some("portrait")
+        );
+        assert_eq!(picker_value(true, Facing::PortraitUpsideDown), None);
+        assert_eq!(picker_value(false, Facing::LandscapeLeft), None);
     }
 
     #[test]

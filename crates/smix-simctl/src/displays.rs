@@ -28,6 +28,13 @@ struct Envelope {
 #[derive(Deserialize)]
 struct Result_ {
     displays: Vec<Display>,
+    orientation: Option<Orientation>,
+}
+
+#[derive(Deserialize)]
+struct Orientation {
+    #[serde(rename = "currentDeviceOrientation")]
+    current: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -50,6 +57,14 @@ pub struct Screen {
     pub active: bool,
     /// The main screen: a foldable's outer panel.
     pub primary: bool,
+}
+
+/// The device's orientation as devicectl names it (`portrait`,
+/// `landscapeLeft`, ...), measured against the lit screen: an unfolded Duo
+/// whose inner panel is upright reads `portrait`.
+pub fn device_orientation(json: &str) -> Option<String> {
+    let envelope: Envelope = serde_json::from_str(json).ok()?;
+    envelope.result?.orientation?.current
 }
 
 /// Read `devicectl device info displays --json-output -` for every screen.
@@ -97,8 +112,8 @@ pub fn lit_screen(json: &str) -> Result<LitScreen, String> {
     lit_of(&screens(json)?)
 }
 
-/// Ask devicectl for every screen of `udid`.
-pub async fn read_screens(udid: &str) -> Result<Vec<Screen>, DeviceControlError> {
+/// `devicectl device info displays --json-output -` for `udid`, as text.
+pub async fn read_displays_json(udid: &str) -> Result<String, DeviceControlError> {
     let out = tokio::process::Command::new("xcrun")
         .args([
             "devicectl",
@@ -116,7 +131,13 @@ pub async fn read_screens(udid: &str) -> Result<Vec<Screen>, DeviceControlError>
             subcommand: "devicectl device info displays".into(),
             detail: e.to_string(),
         })?;
-    screens(&String::from_utf8_lossy(&out.stdout)).map_err(|detail| DeviceControlError::Malformed {
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Ask devicectl for every screen of `udid`.
+pub async fn read_screens(udid: &str) -> Result<Vec<Screen>, DeviceControlError> {
+    let json = read_displays_json(udid).await?;
+    screens(&json).map_err(|detail| DeviceControlError::Malformed {
         subcommand: "devicectl device info displays".into(),
         detail,
     })
@@ -163,6 +184,15 @@ mod tests {
         );
         let err = lit_screen(&dark).unwrap_err();
         assert!(err.contains("none of the 2 screens is lit"), "{err}");
+    }
+
+    #[test]
+    fn the_device_orientation_is_read_against_the_lit_screen() {
+        assert_eq!(device_orientation(FOLDED).as_deref(), Some("unknown"));
+        assert_eq!(
+            device_orientation(UNFOLDED).as_deref(),
+            Some("landscapeRight")
+        );
     }
 
     #[test]
