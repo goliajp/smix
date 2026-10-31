@@ -271,7 +271,7 @@ impl DeviceControl for IosDeviceControl {
             );
             return Ok(());
         };
-        match action {
+        let done = match action {
             PermissionAction::Grant => {
                 self.client
                     .grant_permission(udid, simctl_perm, bundle_id)
@@ -287,7 +287,8 @@ impl DeviceControl for IosDeviceControl {
                     .reset_permission(udid, simctl_perm, bundle_id)
                     .await
             }
-        }
+        };
+        done.map_err(|e| crate::ios_permission::refusal_in_plain_words(simctl_perm, e))
     }
 
     // === Recording (state owned internally) ===

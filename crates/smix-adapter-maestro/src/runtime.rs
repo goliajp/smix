@@ -1924,7 +1924,12 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                             Err(e) => Err(RunError::Sdk(e)),
                         }
                     }
-                    None => self.run_tap(selector, *optional).await,
+                    None => {
+                        let tapped = self.run_tap(selector, *optional).await;
+                        let named = self.desugar_localized_text(selector);
+                        crate::popup_tap::or_a_popup_button(self.app, &named, tapped, warnings)
+                            .await
+                    }
                 }
             }
             Step::TapAtPoint { nx, ny } => {

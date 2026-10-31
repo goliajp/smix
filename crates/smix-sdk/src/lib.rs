@@ -54,6 +54,7 @@ pub use ios_device::IosDeviceControl;
 mod android_animations;
 pub mod android_device;
 mod android_refusal;
+mod ios_permission;
 pub use android_device::{
     ANDROID_ANIMATION_SCALES, AndroidDeviceControl, android_serial_is_emulator,
     animation_settings_verified, parse_resolved_activity,

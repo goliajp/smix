@@ -18,6 +18,7 @@
 // travels.
 import SwiftUI
 import UIKit
+import UserNotifications
 
 // Forty rows, not four.
 //
@@ -459,6 +460,23 @@ struct ContentView: View {
   @State private var iconPauses = 0
   @State private var scrollShown = false
   @State private var signInShown = false
+  // What the system says about this app's notifications, read back after
+  // the prompt is answered: the popup belongs to SpringBoard, so whether a
+  // button on it was pressed is known only from here.
+  @State private var notifications = "unasked"
+
+  private func readNotifications() {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      let said: String
+      switch settings.authorizationStatus {
+      case .authorized: said = "allowed"
+      case .denied: said = "denied"
+      case .notDetermined: said = "unasked"
+      default: said = "other"
+      }
+      DispatchQueue.main.async { notifications = said }
+    }
+  }
 
   var body: some View {
     // NavigationStack, and the back button it provides, rather than a
@@ -543,8 +561,24 @@ struct ContentView: View {
           NavigationLink("Open detail") { DetailView() }
             .accessibilityIdentifier("fixture-detail-link")
 
-          Button("Open landscape") { LandscapeStage.present(landscape: true) }
-            .accessibilityIdentifier("landscape-enter")
+          // In an existing row: one more row moves where the main list's
+          // bottom edge falls under the corpus flows that scroll it.
+          HStack {
+            Button("Open landscape") { LandscapeStage.present(landscape: true) }
+              .buttonStyle(.borderless)
+              .accessibilityIdentifier("landscape-enter")
+            Spacer()
+            Button("Ask notifications") {
+              UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in
+                readNotifications()
+              }
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("fixture-ask-notifications")
+            Text("notifications \(notifications)")
+              .accessibilityIdentifier("fixture-notifications")
+          }
+          .onAppear { readNotifications() }
 
           Button("Open rotating") { RotatingStage.present() }
             .accessibilityIdentifier("rotating-enter")

@@ -41,6 +41,7 @@ mod input_text;
 mod paced_fill;
 pub use paced_fill::{FILL_PACE, paced_fill_budget};
 mod pinch;
+mod popups;
 pub mod port_owner;
 pub mod route_limits;
 mod screen_read;
@@ -1651,19 +1652,6 @@ impl HttpRunnerClient {
         // what the url builder does with `None` anyway.
         let said: ProbeSaid = self.json_get(&format!("/probe?app={app}"), None).await?;
         Ok(said.status())
-    }
-
-    /// `GET /system-popups?include=` — list system popups.
-    pub async fn system_popups(
-        &self,
-        include: Option<IncludeScope>,
-    ) -> Result<Vec<SystemPopup>, RunnerTransportError> {
-        #[derive(Deserialize)]
-        struct Envelope {
-            popups: Vec<SystemPopup>,
-        }
-        let env: Envelope = self.json_get("/system-popups", include).await?;
-        Ok(env.popups)
     }
 
     /// `POST /system-popup-action`. Tap a button
