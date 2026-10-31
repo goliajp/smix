@@ -519,9 +519,21 @@ looking is `keyboard_state_unknown` — see
 - setOrientation: PORTRAIT
 ```
 
-- iOS: `simctl io <udid> orientation <name>`.
+- iOS: the runner sets `XCUIDevice.shared.orientation`.
+- iOS foldable simulator (iPhone Duo): it ignores `XCUIDevice.orientation`, folded or not, so smix turns it the way Device Hub's orientation picker does and waits until the device reads the new orientation back. The orientation is measured against the lit screen. Folded, `PORTRAIT_UPSIDE_DOWN` cannot be reached; unfolded, `LANDSCAPE_LEFT` cannot. Either one is refused by name rather than ignored.
 - Android: `adb shell content insert --uri content://settings/system --bind name:s:user_rotation`.
 - Some apps lock orientation in Info.plist / manifest → setOrientation no-op; assert with `assertVisible` against orientation-dependent label to verify.
+
+## Folding (foldable simulators)
+
+```yaml
+- setPosture: open        # closed / halfOpen / open
+```
+
+- iOS simulators with two screens (iPhone Duo). Folds the device the way Device Hub's hinge control does, with no window on screen and no permission needed, and returns once the screen the posture lights is the lit one: the outer screen when `closed`, the inner one when `halfOpen` or `open`. A fold takes about 1–5 s.
+- A device with one screen is refused ("it has one screen, so it does not fold"); Android emulators and phones are refused by name.
+- Taps, swipes, screenshots and OCR follow the lit screen in either posture, including an app laid out landscape on the inner screen.
+- From the shell: `smix sim posture <device> closed|half-open|open`.
 
 ## System permissions
 

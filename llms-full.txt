@@ -586,6 +586,7 @@ no TV — and `Power` points to `LOCK`.
 
 ```yaml
 - setOrientation: LANDSCAPE_LEFT         # PORTRAIT / LANDSCAPE_LEFT / LANDSCAPE_RIGHT / PORTRAIT_UPSIDE_DOWN
+- setPosture: open                       # closed / halfOpen / open — foldable iOS simulators only
 - setLocation:
     latitude: 35.6812
     longitude: 139.7671
@@ -1905,9 +1906,21 @@ looking is `keyboard_state_unknown` — see
 - setOrientation: PORTRAIT
 ```
 
-- iOS: `simctl io <udid> orientation <name>`.
+- iOS: the runner sets `XCUIDevice.shared.orientation`.
+- iOS foldable simulator (iPhone Duo): it ignores `XCUIDevice.orientation`, folded or not, so smix turns it the way Device Hub's orientation picker does and waits until the device reads the new orientation back. The orientation is measured against the lit screen. Folded, `PORTRAIT_UPSIDE_DOWN` cannot be reached; unfolded, `LANDSCAPE_LEFT` cannot. Either one is refused by name rather than ignored.
 - Android: `adb shell content insert --uri content://settings/system --bind name:s:user_rotation`.
 - Some apps lock orientation in Info.plist / manifest → setOrientation no-op; assert with `assertVisible` against orientation-dependent label to verify.
+
+## Folding (foldable simulators)
+
+```yaml
+- setPosture: open        # closed / halfOpen / open
+```
+
+- iOS simulators with two screens (iPhone Duo). Folds the device the way Device Hub's hinge control does, with no window on screen and no permission needed, and returns once the screen the posture lights is the lit one: the outer screen when `closed`, the inner one when `halfOpen` or `open`. A fold takes about 1–5 s.
+- A device with one screen is refused ("it has one screen, so it does not fold"); Android emulators and phones are refused by name.
+- Taps, swipes, screenshots and OCR follow the lit screen in either posture, including an app laid out landscape on the inner screen.
+- From the shell: `smix sim posture <device> closed|half-open|open`.
 
 ## System permissions
 
@@ -2174,7 +2187,8 @@ smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is take
 smix sim boot <ALIAS> --cold   # an Android emulator boots from scratch instead of its Quick Boot snapshot, which keeps whatever state the device stopped in (a system UI that died stays dead); refused on anything else, and on an emulator already running
 smix sim shutdown <ALIAS|UDID> # shutdown; for an emulator, returns once adb no longer lists it
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
-smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → devicectl (Xcode 27) or the runner (Xcode <= 26, must be up)
+smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → devicectl (Xcode 27) or the runner (Xcode <= 26, must be up); a foldable simulator is photographed on its lit screen
+smix sim posture <ALIAS|UDID> closed|half-open|open   # foldable iOS simulator only (iPhone Duo); no window, no permission; returns once the posture's screen is lit
 smix sim launch <ALIAS|UDID> <bundle-id>   # every kind; --child-env is a simulator facility and is refused elsewhere
 smix sim terminate <ALIAS|UDID> <bundle-id>   # every kind but a physical iPhone (devicectl stops by pid, not by bundle id)
 smix sim install <ALIAS|UDID> <path/to.app|.apk>   # every kind; reinstalling stops the running copy of the app, and the command says so
@@ -5984,7 +5998,8 @@ that is why.
 | `setLocation` | ✅ | ✅ | Android sends `geo fix` on the emulator console. The fix persists and replays when an app starts listening, so setting it early is not a race. On a registered physical iPhone it needs Xcode 27, and the location stays until `xcrun devicectl device simulate location clear --device <UDID>` |
 | `travel` | ✅ | ⚠️ | iOS hands the route to CoreSimulator. Android has no route primitive — the emulator console takes one position at a time — so smix walks it from the host, one `geo fix` a second. Both return immediately and travel in the background. A registered physical iPhone takes the route through `devicectl` (Xcode 27), with the same caveat as `setLocation` |
 | `setPermissions` | ✅ | ✅ | `pm grant` / `pm revoke` per permission on Android; `simctl privacy` on iOS |
-| `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure. Android reads the display's rotation back before answering, so a rotation that does not arrive is a failure rather than a silent no-op |
+| `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure. Android reads the display's rotation back before answering, so a rotation that does not arrive is a failure rather than a silent no-op. A foldable iOS simulator ignores the system call, so it is turned the way Device Hub turns it and read back; a facing its posture cannot reach is refused |
+| `setPosture` | ✅ | ❌ | Foldable iOS simulators (iPhone Duo): `closed` / `halfOpen` / `open`, read back from which screen is lit. A one-screen device is refused, and Android refuses by name: nothing drives an emulator's hinge yet |
 
 ## smix-native extensions
 
