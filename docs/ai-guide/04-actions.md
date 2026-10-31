@@ -126,6 +126,18 @@ The default tap path (host-resolve → IOHID native-event synthesize) fires Swif
 - `dispatch: daemonProxy` is an iOS-runner mechanism; on Android it errors with an explicit unsupported message (native synthesize is already the Android default — the override is never needed there).
 - On Android, `dispatch: xcui` first asks the view for its accessibility click (`ACTION_CLICK`), and touches the view only when, for 1.5 seconds, it offers no such action or refuses it. The runner's answer says which: `"path": "a11y"` or `"path": "touch"`. **`path: a11y` means the view accepted the accessibility action, not that the screen changed.** A view that advertises a click but reacts only in `onTouchEvent` accepts the action and does nothing, and the step still passes. So follow a `dispatch: xcui` tap with the assertion that proves it worked (`assertVisible` on what the tap should bring up), and if a view does nothing on `xcui` but works on a plain `tapOn`, route its click through `performClick()` in the app.
 
+### Tap a button on a system popup
+
+```yaml
+- tapOn: "Ask notifications"
+- tapOn: "Allow"          # SpringBoard's "… Would Like to Send You Notifications"
+```
+
+- A permission prompt belongs to the system (SpringBoard on iOS, the permission controller on Android), so the app's tree has no "Allow" in it. When a `text:` or `label:` tap finds nothing in the app, smix looks at the system popups on screen and presses the button with that name. The run prints which popup it answered: `WARN: tapOn { text="Allow" }: not in the app's tree; pressed "Allow" on com.apple.springboard's popup "…"`.
+- Only a bare `text:` / `label:` is looked up there: an `id:` belongs to the app, and spatial or index modifiers place the target in the app's layout. Matching is as for text in the app (case does not matter for `text:`), and a straight apostrophe matches the popup's typographic one, so `tapOn: "Don't Allow"` finds "Don’t Allow".
+- When two popup buttons answer to the name (a regex matching both "Allow" and "Don’t Allow"), none is pressed and the failure lists them.
+- The app is looked at first, for the tap's usual wait, so a popup button costs that wait plus one popup read. From the shell, `smix system-popups` lists popups and `smix system-popup-action <popup> <button>` presses one.
+
 ### How many times a tap reads the screen
 
 Each read of the screen is a round trip to the runner and a walk of the
@@ -546,6 +558,7 @@ looking is `keyboard_state_unknown` — see
 ```
 
 - iOS: `simctl privacy grant/deny`.
+- iOS `notifications`: iOS 27 simulators refuse it (`simctl privacy` says "Operation not permitted" for grant, revoke and reset, because notification authorization is not a TCC record), and the step fails saying so. Let the app ask and answer the prompt with `tapOn: "Allow"` or `tapOn: "Don't Allow"` (see [Tap a button on a system popup](#tap-a-button-on-a-system-popup)). A reinstall forgets the answer.
 - Android: `adb shell pm grant <pkg> android.permission.<NAME>` or revoke.
 - Available keys: camera / microphone / location / contacts / photos / calendar / notifications / motion / faceid / siri / health.
 

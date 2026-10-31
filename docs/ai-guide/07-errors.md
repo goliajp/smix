@@ -559,7 +559,7 @@ Either:
 
 ### "permission denied" mid-flow
 
-Permission dialog appeared and was not dismissed. smix has `setPermissions` for declarative grant; also see `system-popups` + `system-popup-action` for one-shot dismiss.
+Permission dialog appeared and was not dismissed. Answer it in the flow with `tapOn: "Allow"` (a `text:` tap the app has no match for presses the system popup button of that name), or grant beforehand with `setPermissions` where the platform allows it (not iOS `notifications` on iOS 27 simulators). From the shell: `smix system-popups` + `smix system-popup-action`.
 
 ## Debug recipes
 

@@ -1,7 +1,4 @@
 - inputText:
     id: "form-email-input"
-    text: "probe@example.test"
-    method: setText              # replaces what the field holds
-- inputText:
-    text: "probe@example.test"
-    method: setText              # the focused field, appending
+    text: "alice@example.com"    # replaces what the field holds
+- inputText: "alice@example.com" # types into the focused field, appending

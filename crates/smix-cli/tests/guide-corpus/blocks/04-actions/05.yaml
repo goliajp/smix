@@ -1,2 +1,5 @@
-- doubleTapOn:
-    id: "photo-1"
+- tapOn:
+    fallback:
+      - id: "btn-skip"            # tier 1 — a11y identifier (cheap)
+      - text: "Skip"              # tier 2 — a11y text
+      - ocrText: "Skip"           # tier 3 — Vision (iOS) / ML Kit (Android)
