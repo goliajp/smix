@@ -11,18 +11,23 @@
 //! The simulator creates the HID services that carry the report when the
 //! first message arrives and tears them down when the sender disconnects,
 //! so the connection stays open until the fold shows: the panel the posture
-//! lights reports itself active (measured 0.9–4.7 s).
+//! lights reports itself active (measured 1.4–2.7 s).
 
 use crate::displays::{Screen, read_screens};
 use crate::{DeviceControlError, SimctlClient};
 use std::time::{Duration, Instant};
 
-/// How long a fold may take to show before it is called failed. Measured
-/// from the report going out to devicectl calling the other panel lit:
-/// 0.9 s to 4.7 s over 26 folds, in two clusters (about 1.4 s and about
-/// 4 s), with smix's own part under 0.2 s. A ceiling, not a wait.
+/// How long a fold may take to show before it is called failed. Sent once,
+/// folds showed in 0.9–4.7 s, in two clusters, the slow one a first report
+/// that came to nothing; sent again every second, 1.4–2.7 s over 12 folds.
+/// A ceiling, not a wait.
 const SHOWS_WITHIN: Duration = Duration::from_secs(15);
 const POLL: Duration = Duration::from_millis(100);
+/// How often the report is sent again while the device has not shown it.
+/// A report can be taken and come to nothing — once in a run of dozens a
+/// facing never arrived and the fifteen seconds ran out — and the value is
+/// absolute, so sending it again is harmless.
+const RESEND: Duration = Duration::from_secs(1);
 /// How long the connection stays open when the lit panel cannot tell
 /// whether the report took (half-open and open light the same panel). The
 /// simulator drops the services that carry the report when the sender
@@ -160,12 +165,14 @@ impl SimctlClient {
         already: bool,
     ) -> Result<(), String> {
         let session = crate::posture_sys::HidSession::open(udid)?;
-        session.send(&crate::posture_sys::Control::Hinge(posture.degrees()))?;
+        let report = crate::posture_sys::Control::Hinge(posture.degrees());
+        session.send(&report)?;
         if already {
             tokio::time::sleep(HOLD_WHEN_UNOBSERVABLE).await;
             return Ok(());
         }
         let started = Instant::now();
+        let mut sent = started;
         loop {
             let screens = read_screens(udid).await.map_err(|e| e.to_string())?;
             if read_back(posture, &screens) == Readback::Shown {
@@ -177,6 +184,10 @@ impl SimctlClient {
                     SHOWS_WITHIN.as_secs(),
                     describe(&screens)
                 ));
+            }
+            if sent.elapsed() >= RESEND {
+                session.send(&report)?;
+                sent = Instant::now();
             }
             tokio::time::sleep(POLL).await;
         }
@@ -303,8 +314,10 @@ impl SimctlClient {
         facing: Facing,
     ) -> Result<(), String> {
         let session = crate::posture_sys::HidSession::open(udid)?;
-        session.send(&crate::posture_sys::Control::Orientation(value))?;
+        let report = crate::posture_sys::Control::Orientation(value);
+        session.send(&report)?;
         let started = Instant::now();
+        let mut sent = started;
         loop {
             let json = crate::displays::read_displays_json(udid)
                 .await
@@ -319,6 +332,10 @@ impl SimctlClient {
                     SHOWS_WITHIN.as_secs(),
                     now.as_deref().unwrap_or("no orientation")
                 ));
+            }
+            if sent.elapsed() >= RESEND {
+                session.send(&report)?;
+                sent = Instant::now();
             }
             tokio::time::sleep(POLL).await;
         }

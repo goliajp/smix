@@ -448,6 +448,13 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Device,
         ArgShape::BareString,
     ),
+    // smix's own: maestro has no hinge to drive.
+    v(
+        "set_posture",
+        "setPosture",
+        VerbCategory::Device,
+        ArgShape::BareString,
+    ),
     // ----- smix-native extensions (parity with parser dispatch_step) -----
     v(
         "webview_eval",

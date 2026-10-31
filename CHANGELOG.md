@@ -2,6 +2,43 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Added
+
+- **`smix sim posture <device> closed|half-open|open` and the flow step
+  `setPosture: closed | halfOpen | open`.** Fold or unfold a foldable iOS
+  simulator (iPhone Duo). The hinge angle goes to the simulator the way
+  Xcode's Device Hub sends it from its own hinge control, so nothing
+  appears on screen and no permission is needed. The command returns once
+  the screen the posture lights is the lit one: the outer screen when
+  closed, the inner one when half-open or open. A device with one screen
+  is refused ("it has one screen, so it does not fold"); Android devices
+  are refused by name. `SimctlClient::set_posture` and `App::set_posture`
+  in Rust.
+
+### Fixed
+
+- **iOS: a foldable simulator is photographed on its lit screen.**
+  `smix sim screenshot` on an iPhone Duo returned the inner screen's
+  framebuffer whatever the posture, which is black while folded; plain
+  `simctl io screenshot` refuses to choose between the two screens. The
+  lit screen is now read from `devicectl` and photographed.
+- **iOS: an app laid out landscape on an unfolded foldable is touched
+  where it is drawn.** Unfolding a Duo leaves its inner screen turned a
+  quarter, and XCTest reports the app's frame in the screen's own portrait
+  shape while the app is laid out landscape. Taps landed in the wrong
+  place, and every element right of the portrait width was reported as
+  off screen and refused when asked for by name. The runner now takes the
+  app's space from the way the app says it is laid out.
+- **iOS: `setOrientation` turns a foldable simulator.** An iPhone Duo
+  ignores the system call smix makes, folded or not, so the step passed
+  and nothing turned. On a foldable it is now turned the way Device Hub's
+  orientation picker turns it and read back from the device. The
+  orientation is measured against the lit screen. Folded,
+  `PORTRAIT_UPSIDE_DOWN` cannot be reached, and unfolded, `LANDSCAPE_LEFT`
+  cannot: either is refused by name rather than ignored.
+
 ## [20.0.1] — 2026-10-31
 
 ### Fixed
