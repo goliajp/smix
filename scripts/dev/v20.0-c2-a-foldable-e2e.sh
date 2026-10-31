@@ -19,7 +19,9 @@
 #   4. the facing the posture cannot reach is refused by name
 #
 # SMIX_C2_DUO names the Duo (default sim-smix-duo). Without one this cannot
-# judge and says so (exit 2).
+# judge and says so (exit 2). It is a second smix simulator beside the
+# tier's own, so it runs alone (see `SECOND_SIM` in e2e-lanes.py), and it
+# is shut down afterwards when this script booted it.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -30,7 +32,7 @@ source "$ROOT/scripts/lib/e2e-devices.sh"
 source "$ROOT/scripts/lib/deadline.sh"
 source "$ROOT/scripts/lib/gate-port.sh"
 gate_free_port PORT
-DUO_ALIAS="${SMIX_C2_DUO:-sim-smix-duo}"
+SECOND_SIM="${SMIX_C2_DUO:-sim-smix-duo}"
 APP="jp.golia.smix.fixture"
 FIXTURE="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"
 PROJECT="$ROOT/swift-bridge/SmixRunner.xcodeproj"
@@ -98,11 +100,11 @@ flow() {
   "$SMIX_RUN" --device "$DEVICE" --runner-port "$PORT" "$WORK/step.yaml" >"$WORK/step.log" 2>&1
 }
 
-DEVICE="$("$SMIX" sim resolve "$DUO_ALIAS" 2>/dev/null | tail -1 | tr -d '[:space:]')" || true
-[ -n "$DEVICE" ] || cannot_judge "no simulator resolves '$DUO_ALIAS' (create an iPhone Duo and register it under that name)"
+DEVICE="$("$SMIX" sim resolve "$SECOND_SIM" 2>/dev/null | tail -1 | tr -d '[:space:]')" || true
+[ -n "$DEVICE" ] || cannot_judge "no simulator resolves '$SECOND_SIM' (create an iPhone Duo and register it under that name)"
 case "$(simulator_name "$DEVICE")" in
   sim-smix-*) ;;
-  *) cannot_judge "'$DUO_ALIAS' resolves to $DEVICE, which is not one of smix's own simulators" ;;
+  *) cannot_judge "'$SECOND_SIM' resolves to $DEVICE, which is not one of smix's own simulators" ;;
 esac
 if [ "$(simulator_state "$DEVICE")" != Booted ]; then
   with_deadline 300 "$SMIX" sim boot "$DEVICE" >"$WORK/boot.log" 2>&1 || fail "boot: $(tail -3 "$WORK/boot.log")"
