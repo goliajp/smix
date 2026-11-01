@@ -32,6 +32,8 @@ const MAIN: &str = include_str!("../../src/main.rs");
 /// Each must reach `guard_destructive`.
 const DESTRUCTIVE: &[&str] = &[
     "Erase",
+    // Removes the simulator's PosterBoard store: its wallpaper and clock face.
+    "Repair",
     "Uninstall",
     "KeychainReset",
     // Runs an arbitrary command on the device. Whatever the worst thing

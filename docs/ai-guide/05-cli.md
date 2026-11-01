@@ -214,6 +214,7 @@ smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is take
 smix sim boot <ALIAS> --cold   # an Android emulator boots from scratch instead of its Quick Boot snapshot, which keeps whatever state the device stopped in (a system UI that died stays dead); refused on anything else, and on an emulator already running
 smix sim shutdown <ALIAS|UDID> # shutdown; for an emulator, returns once adb no longer lists it
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
+smix sim repair <ALIAS|UDID>   # rebuild PosterBoard's store when PosterBoard cannot load it; a running simulator is shut down and booted again, refused unless smix booted it and nobody holds it
 smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → devicectl (Xcode 27) or the runner (Xcode <= 26, must be up); a foldable simulator is photographed on its lit screen
 smix sim posture <ALIAS|UDID> closed|half-open|open   # foldable iOS simulator only (iPhone Duo); no window, no permission; returns once the posture's screen is lit
 smix sim launch <ALIAS|UDID> <bundle-id>   # every kind; --child-env is a simulator facility and is refused elsewhere
@@ -323,10 +324,18 @@ Four things worth knowing before you rely on them:
 - **`crashes` names a process that keeps crashing.** When one process crashed
   three times or more inside ten minutes, a line says so with the count and the
   times — a system process that dies as it starts is restarted and dies again,
-  and on a simulator that also puts a crash report dialog on this Mac's desktop
-  each time. Processes the system ended at shutdown for not exiting in time
+  and on a simulator each crash is also reported on this Mac's desktop (a
+  dialog, or a notification where CrashReporter is set to notify). Processes the system ended at shutdown for not exiting in time
   (`SIGTERM_TIMEOUT`) are counted apart; every simulator shutdown leaves a few,
   and they are not crashes.
+- **Booting a simulator first checks PosterBoard's store.** PosterBoard (the
+  lock screen and clock) can be left with a poster configuration it cannot load
+  — a commit of its own fails and is rolled back incompletely — and from then
+  on it crashes at every start. Any boot through smix (`sim boot`, `runner up`,
+  `run`) finds such a store on a simulator that is off, removes it with a line
+  saying which configurations were broken, and PosterBoard writes a new one;
+  only the wallpaper and clock face go back to their defaults. On a simulator
+  already running it is only reported, with `smix sim repair <UDID>`.
 - **`frontmost` reads the resumed activity**, not whichever window holds focus —
   a dialog on top does not change the answer. Nothing resumed (a lock screen, a
   device still booting) prints that and exits 0.

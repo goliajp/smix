@@ -37,6 +37,10 @@ use platform::{DeviceDial, RunPlatform, dial_platform, resolve_run_platform};
 mod departures;
 mod device_for;
 mod device_hub;
+mod device_ownership;
+use device_ownership::{
+    BootClaim, EmulatorState, ShutdownVerdict, boot_claim, ownership_of, shutdown_verdict,
+};
 mod down;
 /// Distributed `smix run --nodes`: roster parsing, cross-node flow
 /// sharding, readiness gate, ssh fan-out and merged reporting.
@@ -51,6 +55,7 @@ mod record_cmd;
 mod runner_down;
 mod runner_list;
 mod sim_list;
+mod sim_repair;
 use device_for::device_control_for;
 
 mod script;
@@ -1758,6 +1763,15 @@ enum SimAction {
         /// Which device to wipe, by UDID or registry alias.
         device: String,
     },
+    /// Rebuild a simulator's PosterBoard store when PosterBoard cannot
+    /// load it (it then crashes at every start). Booting through smix
+    /// already does this for a simulator that is off; a running one is shut
+    /// down first, which is refused unless smix booted it and nobody holds
+    /// it. Only the wallpaper and clock face are lost.
+    Repair {
+        /// Which simulator, by UDID or registry alias.
+        device: String,
+    },
     /// Fold or unfold a foldable simulator (iPhone Duo): `closed`,
     /// `half-open` or `open`. Returns once the panel the posture lights is
     /// the lit one. Nothing appears on screen and no permission is needed:
@@ -2429,6 +2443,7 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         | SimAction::Boot { device, .. }
         | SimAction::Shutdown { device }
         | SimAction::Erase { device }
+        | SimAction::Repair { device }
         | SimAction::Screenshot { device, .. }
         | SimAction::Posture { device, .. }
         | SimAction::Launch { device, .. }
@@ -2525,6 +2540,7 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
             SimAction::Boot { .. } | SimAction::Shutdown { .. } => POWERABLE,
 
             SimAction::Erase { .. }
+            | SimAction::Repair { .. }
             | SimAction::Appearance { .. }
             | SimAction::Locale { .. }
             | SimAction::Exec { .. }
@@ -2595,6 +2611,7 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         | SimAction::Boot { .. }
         | SimAction::Shutdown { .. }
         | SimAction::Erase { .. }
+        | SimAction::Repair { .. }
         | SimAction::Appearance { .. }
         | SimAction::Locale { .. }
         | SimAction::Exec { .. } => None,
@@ -3383,6 +3400,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     let udid = resolve_device(&device)?;
                     simctl.erase(&udid).await?;
                     println!("erased: {udid}");
+                }
+                SimAction::Repair { device } => {
+                    let udid = resolve_device(&device)?;
+                    return sim_repair::repair(&simctl, &udid).await;
                 }
                 SimAction::Posture { device, posture } => {
                     let udid = resolve_device(&device)?;
@@ -5458,6 +5479,8 @@ fn is_destructive(action: &SimAction) -> bool {
     // update, which is the same as not having it.
     match action {
         SimAction::Erase { .. }
+        // takes the simulator's wallpaper and clock face
+        | SimAction::Repair { .. }
         | SimAction::Uninstall { .. }
         | SimAction::KeychainReset { .. }
         | SimAction::Exec { .. } => true,
@@ -6951,183 +6974,6 @@ fn reject_ios_only_up_flags(runner_project: bool, supervise: bool) -> Result<(),
 
 // ---- tests --------------------------------------------------------------
 
-/// Whether this process is the one that turned an emulator on.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum EmulatorState {
-    WasOff,
-    AlreadyRunning,
-}
-
-/// What to write to the ledger after a boot.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum BootClaim {
-    ClaimAsOurs,
-    LeaveUnclaimed,
-}
-
-/// What the ledger says about who holds a device.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Ownership {
-    BootedByUs,
-    HeldByOther { pid: u32 },
-    NoLedgerRow,
-}
-
-/// Whether this process may stop a device.
-#[derive(Clone, Debug, PartialEq)]
-enum ShutdownVerdict {
-    Proceed,
-    Refuse { message: String },
-}
-
-/// A device that was already up was turned on by somebody else, and
-/// claiming it is how a later teardown comes to stop their work.
-fn boot_claim(state: EmulatorState) -> BootClaim {
-    match state {
-        EmulatorState::WasOff => BootClaim::ClaimAsOurs,
-        EmulatorState::AlreadyRunning => BootClaim::LeaveUnclaimed,
-    }
-}
-
-/// What this machine's ledger says about a device, in the shape the
-/// verdict below takes.
-///
-/// A translation of `smix_lease::assess`, not a second opinion. The
-/// first draft asked only "is there a row", which cannot tell a device
-/// somebody is using from one whose holder died hours ago — and a
-/// stale row would then have locked the device out of smix's hands
-/// permanently. The ledger already draws that line (`Admission`), and
-/// drawing it twice is how the two answers start disagreeing.
-fn ownership_of(serial: &str) -> Ownership {
-    let Ok(leases) = smix_capsule::runner::machine_leases() else {
-        return Ownership::NoLedgerRow;
-    };
-    let Ok(facts) = smix_lease::store::collect_facts(&leases, serial) else {
-        return Ownership::NoLedgerRow;
-    };
-    // Booted-by-us is read off the resources rather than the admission,
-    // because `Booted` is a device state and not a process: `assess`
-    // deliberately does not treat it as something to probe for
-    // liveness. Whether this device is ours and whether somebody's
-    // session is alive on it are two questions.
-    let booted_by_us = facts.existing.as_ref().is_some_and(|h| {
-        h.lease
-            .known_resources()
-            .any(|r| matches!(r, smix_lease::Resource::Booted { by_us: true }))
-    });
-    match smix_lease::assess(&facts) {
-        smix_lease::Admission::Denied(c) if c.holder_alive => {
-            Ownership::HeldByOther { pid: c.holder.pid }
-        }
-        _ if booted_by_us => Ownership::BootedByUs,
-        _ => Ownership::NoLedgerRow,
-    }
-}
-
-/// Whoever booted it stops it.
-///
-/// The two refusals are kept apart because they send a reader somewhere
-/// different: no ledger row means nothing here started the device and
-/// there is nobody to ask; a row held by another process means
-/// something did start it and may still be using it, and names who.
-fn shutdown_verdict(owner: Ownership, serial: &str) -> ShutdownVerdict {
-    match owner {
-        Ownership::BootedByUs => ShutdownVerdict::Proceed,
-        Ownership::NoLedgerRow => ShutdownVerdict::Refuse {
-            message: format!(
-                "{serial} is running and this machine's ledger has no record of smix \
-                 booting it — whoever booted it stops it.\n\
-                 \x20 if it is yours and you started it by hand, stop it the same way\n\
-                 \x20 if it should be smix's, start it with `smix sim boot {serial}` \
-                 and the ledger will say so"
-            ),
-        },
-        Ownership::HeldByOther { pid } => ShutdownVerdict::Refuse {
-            message: format!(
-                "{serial} is held by pid {pid}, which is still alive — stopping it now \
-                 takes a device out from under work that is running.\n\
-                 \x20 `smix lease status {serial}` says what it has open\n\
-                 \x20 `smix lease reconcile {serial}` closes it gracefully once that \
-                 process is gone"
-            ),
-        },
-    }
-}
-
-#[cfg(test)]
-mod emulator_ownership {
-    use super::*;
-
-    // Who turned this device on, and may this process turn it off.
-    //
-    // The iOS path has answered both since the ledger moved to the
-    // machine: `record_boot(.., !was_up)` declines to claim a device
-    // that was already running, and teardown reads that claim back.
-    // Android had neither, and the day this was written another
-    // person's smix stopped this machine's emulator a dozen times
-    // while a release was using it — nobody was doing anything wrong,
-    // because nothing could be asked.
-
-    #[test]
-    fn a_device_already_running_is_not_claimed() {
-        assert_eq!(
-            boot_claim(EmulatorState::AlreadyRunning),
-            BootClaim::LeaveUnclaimed,
-            "smix did not turn this one on, and saying otherwise is how a \
-             teardown later stops somebody else's work"
-        );
-    }
-
-    #[test]
-    fn a_device_this_process_started_is_claimed() {
-        assert_eq!(boot_claim(EmulatorState::WasOff), BootClaim::ClaimAsOurs);
-    }
-
-    /// The seed of the whole version. Everything else in v6.1 is this
-    /// sentence applied in another place.
-    #[test]
-    fn an_emulator_we_did_not_boot_is_not_ours_to_stop() {
-        match shutdown_verdict(Ownership::NoLedgerRow, "emulator-5560") {
-            ShutdownVerdict::Refuse { message } => {
-                assert!(
-                    message.contains("emulator-5560"),
-                    "a refusal that does not name the device cannot be acted on: {message}"
-                );
-                assert!(
-                    message.to_lowercase().contains("boot"),
-                    "the refusal must say the rule it is applying — whoever booted it \
-                     stops it: {message}"
-                );
-            }
-            other => panic!("stopping a device smix never started was allowed: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn an_emulator_we_booted_is_ours_to_stop() {
-        assert!(matches!(
-            shutdown_verdict(Ownership::BootedByUs, "emulator-5560"),
-            ShutdownVerdict::Proceed
-        ));
-    }
-
-    /// Held by another live process, with a ledger row that is not ours.
-    /// Distinct from "no row" because the two send a reader somewhere
-    /// different: no row means nothing here started it, and a row means
-    /// something did and may still be using it.
-    #[test]
-    fn an_emulator_held_by_someone_else_names_the_holder() {
-        match shutdown_verdict(Ownership::HeldByOther { pid: 4242 }, "emulator-5560") {
-            ShutdownVerdict::Refuse { message } => assert!(
-                message.contains("4242"),
-                "the refusal must name who is holding it, or the reader has nothing \
-                 to go and ask: {message}"
-            ),
-            other => panic!("stopping a device another process holds was allowed: {other:?}"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod platform_from_device {
     use super::*;
@@ -7697,6 +7543,7 @@ mod tests {
             ),
             ("shutdown", SimAction::Shutdown { device: d() }),
             ("erase", SimAction::Erase { device: d() }),
+            ("repair", SimAction::Repair { device: d() }),
             (
                 "screenshot",
                 SimAction::Screenshot {

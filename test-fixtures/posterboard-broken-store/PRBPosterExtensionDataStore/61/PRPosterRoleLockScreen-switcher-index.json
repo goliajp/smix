@@ -1,0 +1,35 @@
+{
+  "experience" : "switcher",
+  "entries" : {
+    "10fc5d7ef2d8f1a47650993c30284743983d3d0e60da56096c71893909074f32" : {
+      "bundleURL" : "file:\/\/\/var\/empty\/data\/Library\/Application%20Support\/PRBPosterExtensionDataStore\/61\/Extensions\/com.apple.MercuryPoster\/configurations\/26E31395-9844-4BAE-8556-DA0A6B1B7888\/versions\/0\/scratch\/SnapshotCache.cachedb\/PosterSnapshotCache.bundle\/SnapshotBundles\/B2D7E5F2-B044-47C0-8EB3-32AE1219D806\/Snapshot.pks\/",
+      "dateCreated" : 1793453603.2686391,
+      "supplement" : 0,
+      "posterUUID" : "26E31395-9844-4BAE-8556-DA0A6B1B7888",
+      "version" : 0
+    },
+    "887635bfd9f57cb355587d1f6f0b1047b777d12644e6bdffc84a2959b4d8d4bd" : {
+      "bundleURL" : "file:\/\/\/var\/empty\/data\/Library\/Application%20Support\/PRBPosterExtensionDataStore\/61\/Extensions\/com.apple.MercuryPoster\/configurations\/26E31395-9844-4BAE-8556-DA0A6B1B7888\/versions\/0\/scratch\/SnapshotCache.cachedb\/PosterSnapshotCache.bundle\/SnapshotBundles\/22825235-68AA-4DBE-B990-EFDBF184CED4\/Snapshot.pks\/",
+      "dateCreated" : 1793453603.331408,
+      "supplement" : 0,
+      "posterUUID" : "26E31395-9844-4BAE-8556-DA0A6B1B7888",
+      "version" : 0
+    },
+    "80f9f106290130a3903fa7d3c520302e963dd1e036c9889969d590293e4b3baa" : {
+      "bundleURL" : "file:\/\/\/var\/empty\/data\/Library\/Application%20Support\/PRBPosterExtensionDataStore\/61\/Extensions\/com.apple.MercuryPoster\/configurations\/26E31395-9844-4BAE-8556-DA0A6B1B7888\/versions\/0\/scratch\/SnapshotCache.cachedb\/PosterSnapshotCache.bundle\/SnapshotBundles\/CA8AB40D-ACAC-4FCC-BC4A-5FF1C1BD8D7C\/Snapshot.pks\/",
+      "dateCreated" : 1793453604.017602,
+      "supplement" : 0,
+      "posterUUID" : "26E31395-9844-4BAE-8556-DA0A6B1B7888",
+      "version" : 0
+    },
+    "f7b02d1f9c8436206c013082a88f6d50a290a3278916230d0e81c074eea3bf3d" : {
+      "bundleURL" : "file:\/\/\/var\/empty\/data\/Library\/Application%20Support\/PRBPosterExtensionDataStore\/61\/Extensions\/com.apple.MercuryPoster\/configurations\/26E31395-9844-4BAE-8556-DA0A6B1B7888\/versions\/0\/scratch\/SnapshotCache.cachedb\/PosterSnapshotCache.bundle\/SnapshotBundles\/5BFDBA03-C0AF-4890-877C-5A747A025667\/Snapshot.pks\/",
+      "dateCreated" : 1793453603.268837,
+      "supplement" : 0,
+      "posterUUID" : "26E31395-9844-4BAE-8556-DA0A6B1B7888",
+      "version" : 0
+    }
+  },
+  "codexVersion" : 3,
+  "role" : "PRPosterRoleLockScreen"
+}
