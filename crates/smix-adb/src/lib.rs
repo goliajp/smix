@@ -855,6 +855,20 @@ impl AdbClient {
         self.spawn_emulator(avd, Some(port), Some(console), boot)
     }
 
+    /// [`Self::start_emulator_on_with`] with no emulator window on the
+    /// desktop: the device runs and is driven as usual, and the person at
+    /// the machine keeps their screen.
+    pub fn start_emulator_on_without_window(
+        &self,
+        avd: &str,
+        serial: &str,
+        console: &std::path::Path,
+        boot: BootFrom,
+    ) -> Result<(), AdbError> {
+        let port = console_port(serial)?;
+        self.spawn(avd, Some(port), Some(console), boot, false)
+    }
+
     pub fn start_emulator(&self, avd: &str) -> Result<(), AdbError> {
         self.spawn_emulator(avd, None, None, BootFrom::Snapshot)
     }
@@ -866,9 +880,23 @@ impl AdbClient {
         console: Option<&std::path::Path>,
         boot: BootFrom,
     ) -> Result<(), AdbError> {
+        self.spawn(avd, port, console, boot, true)
+    }
+
+    fn spawn(
+        &self,
+        avd: &str,
+        port: Option<u16>,
+        console: Option<&std::path::Path>,
+        boot: BootFrom,
+        window: bool,
+    ) -> Result<(), AdbError> {
         let home = sdk_root().ok_or(AdbError::NoSdk)?;
         let mut cmd = std::process::Command::new(home.join("emulator").join("emulator"));
         cmd.args(emulator_args(avd, port, boot));
+        if !window {
+            cmd.arg("-no-window");
+        }
         let (out, err) = match console {
             Some(path) => {
                 if let Some(dir) = path.parent() {
