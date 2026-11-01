@@ -35,4 +35,12 @@
     <item name="fixture_text_echo" type="id" />
     <item name="fixture_text_composing" type="id" />
     <item name="fixture_text_composed_echo" type="id" />
+    <item name="desk_hover_row" type="id" />
+    <item name="desk_hover_state" type="id" />
+    <item name="desk_button" type="id" />
+    <item name="desk_context" type="id" />
+    <item name="desk_scroll" type="id" />
+    <item name="desk_drag" type="id" />
+    <item name="desk_window" type="id" />
+    <item name="desk_keys" type="id" />
 </resources>

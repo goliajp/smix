@@ -20,10 +20,20 @@ object ShellLimit {
     /// `limitMs` for that; past it, `close` the command's output and throw
     /// [Overrun].
     fun drain(command: String, output: InputStream, limitMs: Long = LIMIT_MS, close: () -> Unit) {
+        read(command, output, limitMs, close)
+    }
+
+    /// [drain], keeping what the command printed.
+    fun read(command: String, output: InputStream, limitMs: Long = LIMIT_MS, close: () -> Unit): String {
+        val printed = java.io.ByteArrayOutputStream()
         val reader = Thread {
-            val buf = ByteArray(256)
+            val buf = ByteArray(4096)
             try {
-                while (output.read(buf) >= 0) { /* drain */ }
+                while (true) {
+                    val n = output.read(buf)
+                    if (n < 0) break
+                    printed.write(buf, 0, n)
+                }
             } catch (_: java.io.IOException) {
                 // closed under it, below
             }
@@ -35,5 +45,6 @@ object ShellLimit {
             close()
             throw Overrun(command, limitMs)
         }
+        return printed.toString(Charsets.UTF_8.name())
     }
 }

@@ -904,6 +904,11 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         }
         Step::Scroll => "scroll".into(),
         Step::HideKeyboard => "hideKeyboard".into(),
+        Step::HoverOn { selector } => {
+            format!("hoverOn {}", smix_sdk::describe_selector(selector))
+        }
+        Step::HoverAway => "hoverAway".into(),
+        Step::SetWindowSize { size } => format!("setWindowSize {size}"),
         Step::AssertNotVisible { .. } => "assertNotVisible".into(),
         Step::Back(_) => "back".to_string(),
         Step::KillApp { app_id } => match app_id {

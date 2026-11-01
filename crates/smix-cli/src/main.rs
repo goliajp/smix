@@ -29,10 +29,13 @@ mod boot_avd;
 mod boot_cold;
 mod boot_record;
 mod capsule;
+mod hover_cmd;
 mod pinch_cmd;
 mod platform;
 mod sim_crashes;
+mod swipe_cmd;
 mod tree_cmd;
+mod window_cmd;
 use platform::{DeviceDial, RunPlatform, dial_platform, resolve_run_platform};
 mod departures;
 mod device_for;
@@ -427,35 +430,7 @@ enum Cmd {
     /// Mirrors `smix_swipe`, which the MCP server has had since it
     /// existed while the CLI had nothing. Use `scroll` when you want to
     /// stop at an element; this is the one-gesture form.
-    Swipe {
-        /// `up` / `down` / `left` / `right`. Leave it out when giving
-        /// `--from` and `--to`.
-        direction: Option<String>,
-        /// Where the finger starts, as `X%,Y%` or `X,Y` in 0..1 —
-        /// the authorised coordinate escape hatch (§9 #3), for screens
-        /// with nothing nameable to swipe between. Requires `--to`.
-        #[arg(long = "from")]
-        from_point: Option<String>,
-        /// Where the finger ends, same form as `--from`.
-        #[arg(long = "to")]
-        to_point: Option<String>,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        /// `--runner-port` is accepted too — `smix run` spells it that way.
-        #[arg(long, alias = "runner-port")]
-        port: Option<u16>,
-        /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. It finds the runner port that device is
-        /// registered on, and — where a verb behaves differently by
-        /// platform (fill, find, tap and the rest of the act surface) —
-        /// reads the driver from the device's registered kind, so an
-        /// Android device is driven through its own runner, not simctl.
-        #[arg(long)]
-        device: Option<String>,
-        /// Which platform the device is, for a device this machine has not
-        /// registered. A registered device's own kind is read otherwise.
-        #[arg(long, value_enum)]
-        platform: Option<RunPlatform>,
-    },
+    Swipe(swipe_cmd::SwipeArgs),
     /// Pinch with two fingers about an element's centre or a point.
     ///
     /// `smix pinch id:player --from 1 --to 3` zooms in threefold;
@@ -463,53 +438,21 @@ enum Cmd {
     /// point, for a screen with nothing nameable there. `--pan 0,-0.2`
     /// drags both fingers a fifth of the screen up before they lift. A
     /// finger that would leave the screen is refused, never clipped.
-    Pinch {
-        /// The element whose centre the fingers meet at, in `<kind>:<value>`
-        /// shorthand, or `point:X%,Y%`.
-        selector: String,
-        /// Zoom factor at the start. Pairs with `--to`.
-        #[arg(long)]
-        from: Option<f64>,
-        /// Zoom factor at the end. The larger of the two puts the fingers
-        /// 0.6 of the screen's shorter side apart.
-        #[arg(long)]
-        to: Option<f64>,
-        /// Finger distance at the start, as a share of the screen's shorter
-        /// side. Pairs with `--to-span`; instead of `--from`/`--to`.
-        #[arg(long)]
-        from_span: Option<f64>,
-        /// Finger distance at the end, same unit as `--from-span`.
-        #[arg(long)]
-        to_span: Option<f64>,
-        /// Length of the pinch, in milliseconds (50..=10000).
-        #[arg(long, default_value_t = smix_input::PINCH_DEFAULT_DURATION_MS)]
-        duration_ms: u64,
-        /// Drag both fingers this far after the pinch, before lifting:
-        /// `DX,DY` as shares of the screen (`0,-0.2` or `0%,-20%`).
-        #[arg(long, allow_hyphen_values = true)]
-        pan: Option<String>,
-        /// Length of the drag, in milliseconds.
-        #[arg(long, default_value_t = smix_input::PINCH_DEFAULT_PAN_MS)]
-        pan_ms: u64,
-        /// How the fingers reach the start before the counted pinch:
-        /// `spread` (the default) comes down a few points inside the start
-        /// and opens to it, which UIKit's recognizers and Android's
-        /// ScaleGestureDetector need; `slide` comes down at the start's span
-        /// and slides to it, for a recognizer that counts from the touch;
-        /// `none` starts at once.
-        #[arg(long, default_value = "spread")]
-        run_up: String,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long, alias = "runner-port")]
-        port: Option<u16>,
-        /// Device UDID, or an alias in this machine's registry.
-        #[arg(long)]
-        device: Option<String>,
-        /// Which platform the device is, for a device this machine has not
-        /// registered.
-        #[arg(long, value_enum)]
-        platform: Option<RunPlatform>,
-    },
+    Pinch(pinch_cmd::PinchArgs),
+    /// Rest a mouse pointer on an element, or take it off the app.
+    ///
+    /// `smix hover id:row_settings` moves the pointer onto the element's
+    /// centre with mouse events, which a desktop window's hover styles
+    /// answer and a tap does not; `smix hover --away` takes it off the app,
+    /// so nothing stays hovered. Android only: iOS refuses by name.
+    Hover(hover_cmd::HoverArgs),
+    /// Resize the app's desktop window, then read its size back.
+    ///
+    /// `smix window-size 839x768` sets the window in front (or `--app`'s)
+    /// to 839 by 768 dp, caption bar included, and fails naming the size it
+    /// reads back at when the app or the system keeps another. Android
+    /// only: iOS refuses by name.
+    WindowSize(window_cmd::WindowSizeArgs),
     /// Swipe until the selector's target is wholly in view — the same
     /// loop `scrollUntilVisible` runs, with its defaults (100% visible,
     /// 20 s). Direction: `up` / `down` / `left` / `right`.
@@ -4169,74 +4112,29 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::Pinch {
-            selector,
-            from,
-            to,
-            from_span,
-            to_span,
-            duration_ms,
-            pan,
-            pan_ms,
-            run_up,
-            port,
-            device,
-            platform,
-        } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
-            let args = pinch_cmd::PinchArgs {
-                selector,
-                from,
-                to,
-                from_span,
-                to_span,
-                duration_ms,
-                pan,
-                pan_ms,
-                run_up,
-            };
+        Cmd::Pinch(args) => {
+            let (p, plat) = runner_dial_target(args.port, args.device.as_deref(), args.platform)?;
             pinch_cmd::cmd_pinch(args, p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::Swipe {
-            direction,
-            from_point,
-            to_point,
-            port,
-            device,
-            platform,
-        } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
-            // Two ways in, and saying which was meant is the caller's
-            // job: a swipe given both a direction and a pair of points
-            // has two answers, and picking one silently is how a flow
-            // ends up doing something nobody asked for.
-            match (direction, from_point, to_point) {
-                (Some(d), None, None) => act::cmd_swipe(d, p, plat)
-                    .await
-                    .map_err(|e| CliError::Other(e.to_string()))?,
-                (None, Some(from), Some(to)) => act::cmd_swipe_between(&from, &to, p, plat)
-                    .await
-                    .map_err(|e| CliError::Other(e.to_string()))?,
-                (None, None, None) => {
-                    return Err(CliError::Other(
-                        "swipe needs either a direction (`up` / `down` / `left` / \
-                         `right`) or both `--from` and `--to`"
-                            .to_string(),
-                    ));
-                }
-                (None, Some(_), None) | (None, None, Some(_)) => {
-                    return Err(CliError::Other(
-                        "a coordinate swipe needs both ends: give `--from` and `--to`".to_string(),
-                    ));
-                }
-                (Some(_), _, _) => {
-                    return Err(CliError::Other(
-                        "swipe takes a direction or a `--from`/`--to` pair, not both".to_string(),
-                    ));
-                }
-            }
+        Cmd::Hover(args) => {
+            let (p, plat) = runner_dial_target(args.port, args.device.as_deref(), args.platform)?;
+            hover_cmd::cmd_hover(args, p, plat)
+                .await
+                .map_err(|e| CliError::Other(e.to_string()))?;
+        }
+        Cmd::WindowSize(args) => {
+            let (p, plat) = runner_dial_target(args.port, args.device.as_deref(), args.platform)?;
+            window_cmd::cmd_window_size(args, p, plat)
+                .await
+                .map_err(CliError::Other)?;
+        }
+        Cmd::Swipe(args) => {
+            let (p, plat) = runner_dial_target(args.port, args.device.as_deref(), args.platform)?;
+            swipe_cmd::cmd_swipe(args, p, plat)
+                .await
+                .map_err(CliError::Other)?;
         }
         Cmd::HideKeyboard {
             port,

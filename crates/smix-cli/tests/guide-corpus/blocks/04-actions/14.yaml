@@ -1,3 +1,2 @@
-- scroll
-- scroll:
-    direction: UP
+- hoverOn: { id: "settings_row" }
+- hoverAway

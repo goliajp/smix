@@ -2403,6 +2403,46 @@ impl App {
         self.driving()?.pinch(pinch).await
     }
 
+    /// A mouse pointer resting over a point or leaving the app. Mouse
+    /// events, not touches: they reach a desktop window's hover styles,
+    /// which a tap does not. iOS refuses by name.
+    pub async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
+        if let Err(why) = mouse.check() {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("mouse: {why}"),
+                ..Default::default()
+            }));
+        }
+        self.driving()?.mouse(mouse).await
+    }
+
+    /// Resize the desktop window of `app_id` (the app in front when
+    /// `None`) to `size` and read it back: a window the app or the system
+    /// keeps at another size is a failure naming both. Android only; iOS
+    /// refuses by name.
+    pub async fn set_window_size(
+        &self,
+        app_id: Option<&str>,
+        size: smix_input::WindowSize,
+    ) -> Result<(), ExpectationFailure> {
+        if let Err(why) = size.check() {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("setWindowSize: {why}"),
+                ..Default::default()
+            }));
+        }
+        let got = self.driving()?.set_window_size(app_id, size).await?;
+        size.read_back(got).map_err(|why| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::AssertionFailed),
+                message: format!("setWindowSize: {why}"),
+                ..Default::default()
+            })
+        })
+    }
+
     /// Swipe one gesture anchored at an element: the gesture starts from
     /// the selector's resolved centroid instead of the viewport centre.
     ///

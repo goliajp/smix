@@ -385,6 +385,56 @@ gesture.
 - Pinching and then a separate `swipe` also drags the zoomed content: the
   zoom stays in the app once the fingers lift.
 
+### Hover (a mouse pointer)
+
+```yaml
+# The pointer comes to rest on the element's centre: mouse events, so the
+# app's hover style shows, as it does under a Chromebook's pointer.
+- hoverOn: { id: "settings_row" }
+- assertVisible: { id: "settings_row_hovered" }
+# The pointer leaves the app; nothing in it stays hovered.
+- hoverAway
+```
+
+- Android only (a Chromebook or Android desktop window, or any Android
+  device: a mouse reaches a phone's views too). iOS refuses both steps by
+  name: XCUITest on iOS has no pointer.
+- `hoverOn` waits up to 5 s for the element, then reads its centre from the
+  accessibility tree; `ocrText:` and `anchorRelative:` are refused there.
+- Hovering something else moves the pointer there: the element it left sees
+  the pointer leave. `hoverAway` is not a move to an empty spot, which is
+  still inside some row or container whose hover would stay on. With
+  nothing hovered it does nothing and passes.
+- A `tapOn` after a hover is an ordinary touch and lands as usual; the hover
+  ends with it, as it does when a person taps a touchscreen.
+
+### Window size (a desktop window)
+
+```yaml
+# Width by height in dp, the caption bar included; the window is read back
+# after each, and a size it does not take fails naming the one it has.
+- setWindowSize: { width: 1024, height: 768 }
+- assertVisible: { id: "two_pane_layout" }
+- setWindowSize: 839x768
+- assertVisible: { id: "one_pane_layout" }
+- setWindowSize: compact            # or medium, expanded
+```
+
+- Android only, and only for an app in a desktop window (a Chromebook, or
+  Android's desktop mode). An app that fills the display has no window size
+  to set and is refused by name; so is iOS.
+- The window keeps its top-left corner unless the new size would leave the
+  display's app area (the display less its taskbar); then it moves just far
+  enough to fit. A size larger than that area, or below the system's
+  smallest window (220 dp a side on the Android desktop image), is refused
+  naming the limit, and the window keeps its size.
+- The app resized is the one the flow last launched, its `appId` before any
+  launch.
+- Named sizes, one inside each width class an adaptive layout switches at
+  (below 600 dp, below 840 dp, from 840 dp): `compact` is 412x800,
+  `medium` 700x800, `expanded` 1024x768. These are smix's sizes, not the
+  system's; write dp to land beside a breakpoint.
+
 ### Keyboard / hardware keys
 
 ```yaml

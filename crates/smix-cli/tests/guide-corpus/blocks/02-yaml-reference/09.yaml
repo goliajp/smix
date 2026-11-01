@@ -1,16 +1,7 @@
-- setOrientation: LANDSCAPE_LEFT         # PORTRAIT / LANDSCAPE_LEFT / LANDSCAPE_RIGHT / PORTRAIT_UPSIDE_DOWN
-- setPosture: open                       # closed / halfOpen / open — foldable iOS simulators only
-- setLocation:
-    latitude: 35.6812
-    longitude: 139.7671
-- travel:
-    points:
-      - { latitude: 35.0, longitude: 139.0 }
-      - { latitude: 36.0, longitude: 140.0 }
-    speedMps: 50
-- clearLocation                          # stop simulating; the way back from the two above
-- setPermissions:                        # iOS / Android permission grants
-    camera: allow
-    location: allow
-    notifications: allow
-    storage: allow                       # Android's WRITE_EXTERNAL_STORAGE; a no-op on iOS
+# Width by height in dp, the caption bar included; the window is read back
+# after each, and a size it does not take fails naming the one it has.
+- setWindowSize: { width: 1024, height: 768 }
+- assertVisible: { id: "two_pane_layout" }
+- setWindowSize: 839x768
+- assertVisible: { id: "one_pane_layout" }
+- setWindowSize: compact            # or medium, expanded

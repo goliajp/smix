@@ -69,6 +69,9 @@ enum MockCall {
     SwipeAtCoord((f64, f64), (f64, f64)),
     /// `App::pinch(pinch)`.
     Pinch(smix_input::Pinch),
+    /// `App::mouse(mouse)`.
+    Mouse(smix_input::Mouse),
+    WindowSize(Option<String>, smix_input::WindowSize),
     /// `App::scroll_screen(direction)`.
     ScrollScreen(SwipeDirection),
     /// `App::assert_not_visible(selector)`. Adapter only records
@@ -731,6 +734,21 @@ impl AppLike for MockApp {
             .unwrap()
             .push(MockCall::LaunchAppWithOptions(opts.clone()));
         Ok(Vec::new())
+    }
+    async fn set_window_size(
+        &self,
+        app_id: Option<&str>,
+        size: smix_input::WindowSize,
+    ) -> Result<(), ExpectationFailure> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(MockCall::WindowSize(app_id.map(str::to_string), size));
+        Ok(())
+    }
+    async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
+        self.calls.lock().unwrap().push(MockCall::Mouse(*mouse));
+        Ok(())
     }
     async fn pinch(&self, pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::Pinch(*pinch));
@@ -4535,6 +4553,65 @@ async fn pinch_over_a_missing_element_sends_nothing() {
     );
 }
 
+// --- hover ---------------------------------------------------------------
+
+fn mice(app: &MockApp) -> Vec<smix_input::Mouse> {
+    app.calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            MockCall::Mouse(m) => Some(*m),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn hover_on_rests_on_the_element_centre_and_away_leaves() {
+    let app = MockApp::new();
+    let flow =
+        parse_flow_yaml("appId: com.t\n---\n- hoverOn: { id: \"fixture-input\" }\n- hoverAway\n")
+            .unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect("run ok");
+    let sent = mice(&app);
+    assert_eq!(sent.len(), 2, "{:?}", app.calls.lock().unwrap());
+    let Some(at) = sent[0].at() else {
+        panic!("not a hover: {:?}", sent[0])
+    };
+    let tree = app.tree().await.unwrap();
+    let selector = Selector::Id {
+        id: "fixture-input".into(),
+        modifiers: Default::default(),
+    };
+    let centre =
+        smix_host_coord_resolver::resolve_to_norm_point_in_box(&tree, &selector, (0.5, 0.5))
+            .unwrap();
+    assert_eq!(at, centre, "the element's centre");
+    assert_ne!(at, (0.5, 0.5), "not the screen's");
+    assert_eq!(sent[1], smix_input::Mouse::Away);
+    assert!(
+        app.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| matches!(c, MockCall::WaitFor(s, _) if *s == selector)),
+        "waits for the element before reading where it is"
+    );
+}
+
+#[tokio::test]
+async fn hover_on_a_missing_element_moves_nothing() {
+    let app = MockApp::new();
+    let flow =
+        parse_flow_yaml("appId: com.t\n---\n- hoverOn: { id: \"no-such-thing\" }\n").unwrap();
+    assert!(Adapter::new(&app, fixtures_dir()).run(&flow).await.is_err());
+    assert!(mice(&app).is_empty(), "no hover somewhere else instead");
+}
+
 // --- step timings --------------------------------------------------------
 
 #[tokio::test]
@@ -4583,5 +4660,41 @@ async fn a_failed_run_keeps_the_times_up_to_the_step_that_failed() {
     assert_eq!(
         t.iter().map(|s| s.verdict).collect::<Vec<_>>(),
         ["ok", "failed"]
+    );
+}
+
+fn window_sizes(app: &MockApp) -> Vec<(Option<String>, smix_input::WindowSize)> {
+    app.calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            MockCall::WindowSize(a, s) => Some((a.clone(), *s)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn set_window_size_resizes_the_window_of_the_app_last_launched() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- setWindowSize: 1024x768\n- launchApp: { appId: com.u }\n- setWindowSize: { width: 839, height: 768 }\n",
+    )
+    .unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect("run ok");
+    let size = |w, h| smix_input::WindowSize {
+        width_dp: w,
+        height_dp: h,
+    };
+    assert_eq!(
+        window_sizes(&app),
+        vec![
+            (Some("com.t".into()), size(1024, 768)),
+            (Some("com.u".into()), size(839, 768))
+        ]
     );
 }
