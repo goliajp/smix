@@ -1,7 +1,8 @@
-//! `POST /window-size` — an app's desktop window set to a size in dp.
+//! `POST /window-size` — an app's desktop window set to a size in dp;
+//! `POST /window-bounds` — where that window sits on the display.
 
 use serde::{Deserialize, Serialize};
-use smix_input::WindowSize;
+use smix_input::{WindowBounds, WindowSize};
 
 use crate::{HttpRunnerClient, RunnerTransportError};
 
@@ -21,7 +22,34 @@ struct Answer {
     height_dp: u32,
 }
 
+#[derive(Serialize)]
+struct Which<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    package: Option<&'a str>,
+}
+
 impl HttpRunnerClient {
+    /// `POST /window-bounds` — where the desktop window of `app` (the app
+    /// in front when `None`) sits, in px, and the display's size. Only the
+    /// Android runner serves it; an app with no window, or one that fills
+    /// the display, is refused with the runner's reason.
+    pub async fn window_bounds(
+        &self,
+        app: Option<&str>,
+    ) -> Result<WindowBounds, RunnerTransportError> {
+        self.json_post_within(
+            "/window-bounds",
+            &Which { package: app },
+            None,
+            crate::route_limits::wait_for_request(
+                "/window-bounds",
+                std::time::Duration::ZERO,
+                self.auto_activate,
+            )?,
+        )
+        .await
+    }
+
     /// `POST /window-size` — resize the window of `app` (the app in front
     /// when `None`) and read back the size it then has. Only the Android
     /// runner serves it. A window that reads back at another size is an
@@ -79,6 +107,29 @@ mod tests {
         })
         .unwrap();
         assert_eq!(v, serde_json::json!({"widthDp": 1, "heightDp": 2}));
+    }
+
+    #[test]
+    fn the_bounds_are_read_from_the_android_runners_answer() {
+        let b: WindowBounds = serde_json::from_str(
+            r#"{"ok":true,"package":"a.b","left":1000,"top":464,"right":2678,"bottom":2000,"displayWidth":3840,"displayHeight":2160}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            b,
+            WindowBounds {
+                left: 1000,
+                top: 464,
+                right: 2678,
+                bottom: 2000,
+                display_width: 3840,
+                display_height: 2160,
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(Which { package: None }).unwrap(),
+            serde_json::json!({})
+        );
     }
 
     #[test]

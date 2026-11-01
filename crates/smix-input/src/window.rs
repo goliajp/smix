@@ -16,6 +16,26 @@ pub struct WindowSize {
     pub height_dp: u32,
 }
 
+/// Where an app's desktop window sits on its display, in px, its caption
+/// bar included, with the display's size as it is turned now: the region
+/// of a screenshot that is the window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowBounds {
+    /// Left edge, px from the display's left.
+    pub left: i32,
+    /// Top edge (the caption bar's), px from the display's top.
+    pub top: i32,
+    /// Right edge, px.
+    pub right: i32,
+    /// Bottom edge, px.
+    pub bottom: i32,
+    /// The display's width in px.
+    pub display_width: u32,
+    /// The display's height in px.
+    pub display_height: u32,
+}
+
 /// Named sizes, one inside each width class adaptive layouts switch at
 /// (compact below 600 dp, medium below 840 dp, expanded from 840 dp). The
 /// sizes are smix's choice, not the system's: a phone's width, a small

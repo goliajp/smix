@@ -19,7 +19,7 @@ pub use pinch::{
     DURATION_RANGE as PINCH_DURATION_RANGE, Pan, Pinch, PinchSpans, RunUp,
     SCALE_SPAN as PINCH_SCALE_SPAN,
 };
-pub use window::{PRESETS as WINDOW_PRESETS, WindowSize};
+pub use window::{PRESETS as WINDOW_PRESETS, WindowBounds, WindowSize};
 
 /// Maestro yaml `direction:` semantic: the direction names what
 /// content the caller wants to **see** (navigation through content),

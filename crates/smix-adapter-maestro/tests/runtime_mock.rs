@@ -72,6 +72,7 @@ enum MockCall {
     /// `App::mouse(mouse)`.
     Mouse(smix_input::Mouse),
     WindowSize(Option<String>, smix_input::WindowSize),
+    WindowBounds(Option<String>),
     /// `App::scroll_screen(direction)`.
     ScrollScreen(SwipeDirection),
     /// `App::assert_not_visible(selector)`. Adapter only records
@@ -745,6 +746,24 @@ impl AppLike for MockApp {
             .unwrap()
             .push(MockCall::WindowSize(app_id.map(str::to_string), size));
         Ok(())
+    }
+    /// A window a quarter of the mock's 64×64 capture in from each side.
+    async fn window_bounds(
+        &self,
+        app_id: Option<&str>,
+    ) -> Result<smix_input::WindowBounds, ExpectationFailure> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(MockCall::WindowBounds(app_id.map(str::to_string)));
+        Ok(smix_input::WindowBounds {
+            left: 1000,
+            top: 500,
+            right: 3000,
+            bottom: 1500,
+            display_width: 4000,
+            display_height: 2000,
+        })
     }
     async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::Mouse(*mouse));
@@ -4320,6 +4339,44 @@ async fn take_screenshot_with_crop_on_writes_only_the_element() {
         .read_info()
         .unwrap();
     assert_eq!((reader.info().width, reader.info().height), (52, 27));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `takeScreenshot` with `window: true` writes only the app's window, cut
+/// where the window sits on the display: the mock's window spans the
+/// middle half of a 4000×2000 display, so 32×32 of the 64×64 capture.
+/// The window asked for is the app last launched.
+#[tokio::test]
+async fn take_screenshot_of_the_window_writes_only_the_window_of_the_app_last_launched() {
+    let dir = std::env::temp_dir().join(format!("smix-v21-window-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join("window.png");
+    let flow = parse_inline(&format!(
+        "appId: com.t\n---\n- launchApp: {{ appId: com.u }}\n- takeScreenshot:\n    path: {}\n    window: true\n",
+        out.display()
+    ));
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter
+        .run(&flow)
+        .await
+        .expect("takeScreenshot of the window");
+    let bytes = std::fs::read(&out).expect("nothing written");
+    let reader = png::Decoder::new(std::io::Cursor::new(bytes.as_slice()))
+        .read_info()
+        .unwrap();
+    assert_eq!((reader.info().width, reader.info().height), (32, 32));
+    let asked: Vec<_> = app
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            MockCall::WindowBounds(a) => Some(a.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(asked, vec![Some("com.u".to_string())]);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

@@ -761,6 +761,7 @@ pub enum Step {
     ///       - text: { at: { x: 20, y: 20 }, content: "step 1", color: green, size: 20 }
     ///       - arrow: { from: { x: 100, y: 100 }, to: { x: 200, y: 200 }, color: blue }
     /// ```
+    #[non_exhaustive]
     TakeScreenshot {
         /// Optional output file name relative to cwd. None = discard bytes.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -774,6 +775,10 @@ pub enum Step {
         /// the baseline a cropped `assertScreenshot` compares against.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         crop_on: Option<Selector>,
+        /// `window: true`: keep only the app's desktop window, its caption
+        /// bar included (Android desktop windows; refused elsewhere).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        window: bool,
     },
     /// Write a literal to the device pasteboard. maestro yaml
     /// `setClipboard: "literal"`.

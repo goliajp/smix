@@ -333,6 +333,8 @@ class SmixHttpServer(
                     serveMouse(session)
                 // LONGEST WAIT /window-size: 6000 ms — RESIZE_ARRIVES_MS and one look past it; the shell commands before it start only while the route's limit lasts
                 uri == "/window-size" && session.method == Method.POST -> serveWindowSize(session)
+                // LONGEST WAIT /window-bounds: 2000 ms — two shell commands, each within the route's limit
+                uri == "/window-bounds" && session.method == Method.POST -> serveWindowBounds(session)
                 // LONGEST WAIT /swipe-once: 500 ms — a 0.5 s idle wait
                 uri == "/swipe-once" && session.method == Method.POST ->
                     serveSwipeOnce(session)
@@ -780,6 +782,39 @@ class SmixHttpServer(
             heightDp = dp(seen.bounds.height),
             pkg = seen.pkg,
         )
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    private fun serveWindowBounds(session: IHTTPSession): Response {
+        // OK MEANS: outcome — the window manager places the app's desktop window at these px bounds on a display of this px size.
+        val req = try {
+            WindowResize.Which.decode(readBodyString(session))
+        } catch (e: IllegalArgumentException) {
+            return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad window-bounds request")
+        }
+        val clock = routeClock("/window-bounds")
+        val display = clock.stage("display") {
+            WindowResize.readDisplaySize(shellOutput("dumpsys window displays", clock.leftMs()))
+        } ?: return errorJson(
+            Response.Status.INTERNAL_ERROR,
+            "display_unread",
+            if (clock.spent) clock.saw() else "`dumpsys window displays` did not give the display's size",
+        )
+        val task = clock.stage("task") {
+            WindowResize.findTask(shellOutput("am stack list", clock.leftMs()), req.pkg)
+        } ?: return errorJson(
+            Response.Status.NOT_FOUND,
+            "no_window",
+            if (clock.spent) clock.saw() else "${req.pkg ?: "no app"} has no visible window",
+        )
+        if (!task.freeform) {
+            return errorJson(
+                Response.Status.CONFLICT,
+                "not_a_desktop_window",
+                "${task.pkg} fills the display rather than sitting in a desktop window, so it has no window of its own to show",
+            )
+        }
+        val body = RunnerWire.windowBoundsBody(task.pkg, task.bounds, display)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 

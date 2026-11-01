@@ -23,6 +23,21 @@ object WindowResize {
     data class Display(val appArea: Box, val minSideDp: Int)
 
     /// `pkg` null means the app in front.
+    data class Which(val pkg: String?) {
+        companion object {
+            fun decode(body: String): Which {
+                if (body.isBlank()) return Which(null)
+                val o = try {
+                    JSONObject(body)
+                } catch (e: org.json.JSONException) {
+                    throw IllegalArgumentException("body is not JSON: ${e.message}")
+                }
+                return Which(if (o.isNull("package")) null else o.getString("package"))
+            }
+        }
+    }
+
+    /// `pkg` null means the app in front.
     data class Request(val pkg: String?, val widthDp: Int, val heightDp: Int) {
         companion object {
             fun decode(body: String): Request {
@@ -91,6 +106,16 @@ object WindowResize {
             ?: return null
         val (_, l, t, r, b) = frame.destructured
         return Display(Box(l.toInt(), t.toInt(), r.toInt(), b.toInt()), minSide)
+    }
+
+    private val CUR = Regex("""\bcur=(\d+)x(\d+)""")
+
+    /// The first display's size in px as it is turned now, from
+    /// `dumpsys window displays`: what a screenshot of it measures.
+    fun readDisplaySize(dump: String): Box? {
+        val first = dump.split(Regex("""(?m)^\s*Display: mDisplayId=""")).getOrNull(1) ?: return null
+        val (w, h) = CUR.find(first)?.destructured ?: return null
+        return Box(0, 0, w.toInt(), h.toInt())
     }
 
     /// Where a window `w` × `h` px goes: where it is, moved only as far as

@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_host_coord_resolver::{HostResolveError, resolve_to_norm_coord};
-use smix_input::{KeyName, Mouse, Pinch, SwipeDirection, WindowSize};
+use smix_input::{KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
 use smix_runner_client::{HttpRunnerClient, IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::{A11yNode, DEFAULT_VISIBLE_LIMIT, collect_visible_summaries, screen_facts};
 use smix_selector::{Selector, describe_selector};
@@ -698,6 +698,16 @@ impl Driver for AndroidDriver {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
                 message: format!("AndroidDriver::set_window_size {size}: {e}"),
+                ..Default::default()
+            })
+        })
+    }
+
+    async fn window_bounds(&self, app: Option<&str>) -> Result<WindowBounds, ExpectationFailure> {
+        self.runner.window_bounds(app).await.map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("AndroidDriver::window_bounds: {e}"),
                 ..Default::default()
             })
         })

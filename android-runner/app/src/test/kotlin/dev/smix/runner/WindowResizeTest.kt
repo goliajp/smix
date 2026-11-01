@@ -94,4 +94,19 @@ class WindowResizeTest {
             WindowResize.Request.decode("""{"widthDp":0,"heightDp":2}""")
         }
     }
+
+    @Test
+    fun theDisplaySizeIsWhatItMeasuresTurnedAsItIsNow() {
+        assertEquals(Box(0, 0, 3840, 2160), WindowResize.readDisplaySize(displays))
+        assertNull(WindowResize.readDisplaySize(displays.replace("cur=3840x2160", "")))
+        assertNull(WindowResize.readDisplaySize("no display here"))
+    }
+
+    @Test
+    fun aWindowIsNamedByPackageOrIsTheAppInFront() {
+        assertEquals(WindowResize.Which("a.b"), WindowResize.Which.decode("""{"package":"a.b"}"""))
+        assertEquals(WindowResize.Which(null), WindowResize.Which.decode("{}"))
+        assertEquals(WindowResize.Which(null), WindowResize.Which.decode(""))
+        assertThrows(IllegalArgumentException::class.java) { WindowResize.Which.decode("nope") }
+    }
 }

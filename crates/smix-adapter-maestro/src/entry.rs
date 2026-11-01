@@ -924,6 +924,7 @@ pub(crate) fn summarize_step(step: &Step) -> String {
             path,
             annotations,
             crop_on,
+            window,
         } => {
             let mut s = match path {
                 Some(p) => format!("takeScreenshot {p}"),
@@ -937,6 +938,9 @@ pub(crate) fn summarize_step(step: &Step) -> String {
                     " cropOn={}",
                     smix_selector::describe_selector(sel)
                 ));
+            }
+            if *window {
+                s.push_str(" window");
             }
             s
         }
