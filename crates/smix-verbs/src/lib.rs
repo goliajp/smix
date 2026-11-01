@@ -410,6 +410,19 @@ pub static VERB_TABLE: &[VerbEntry] = &[
     ),
     v("swipe", "swipe", VerbCategory::Gesture, ArgShape::Mapping),
     v("pinch", "pinch", VerbCategory::Gesture, ArgShape::Mapping),
+    // smix-native: a mouse pointer, which maestro does not have.
+    v(
+        "hoverOn",
+        "hover",
+        VerbCategory::Gesture,
+        ArgShape::Selector,
+    ),
+    v(
+        "hoverAway",
+        "hoverAway",
+        VerbCategory::Gesture,
+        ArgShape::None,
+    ),
     v(
         "hideKeyboard",
         "hideKeyboard",
@@ -454,6 +467,13 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         "setPosture",
         VerbCategory::Device,
         ArgShape::BareString,
+    ),
+    // smix's own: maestro has no desktop window to resize.
+    v(
+        "setWindowSize",
+        "setWindowSize",
+        VerbCategory::Device,
+        ArgShape::Mapping,
     ),
     // ----- smix-native extensions (parity with parser dispatch_step) -----
     v(
@@ -680,7 +700,14 @@ mod tests {
 
     #[test]
     fn table_covers_smix_native_verbs() {
-        for name in ["fixture", "webviewEval", "pinch"] {
+        for name in [
+            "fixture",
+            "webviewEval",
+            "pinch",
+            "hoverOn",
+            "hoverAway",
+            "setWindowSize",
+        ] {
             assert!(
                 find_by_smix(name).is_some() || find_by_maestro(name).is_some(),
                 "smix-native verb {name:?} missing from VERB_TABLE"

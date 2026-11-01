@@ -234,6 +234,13 @@ class SmixHttpServer(
     /// for.
     private val ROTATION_ARRIVES_MS = 3000L
 
+    /// How long to wait for a resized window to read back at its new
+    /// bounds.
+    private val RESIZE_ARRIVES_MS = 2000L
+
+    /// The limit of one `am stack list` while waiting for it.
+    private val LOOK_SHELL_MS = 1000L
+
     /// How long to wait for the named package to own the foreground.
     private val FOREGROUND_ARRIVES_MS = 3000L
 
@@ -321,6 +328,11 @@ class SmixHttpServer(
                 // LONGEST WAIT /pinch-at-norm-coord: from the request — durationMs + panMs and 0.4 s around them (PREROLL_MS, HOLD_MS), then a 0.5 s idle wait
                 uri == "/pinch-at-norm-coord" && session.method == Method.POST ->
                     servePinch(session)
+                // LONGEST WAIT /mouse-at-norm-coord: 800 ms — a drag's 16 events 16 ms apart, then a 0.5 s idle wait
+                uri == "/mouse-at-norm-coord" && session.method == Method.POST ->
+                    serveMouse(session)
+                // LONGEST WAIT /window-size: 6000 ms — RESIZE_ARRIVES_MS and one look past it; the shell commands before it start only while the route's limit lasts
+                uri == "/window-size" && session.method == Method.POST -> serveWindowSize(session)
                 // LONGEST WAIT /swipe-once: 500 ms — a 0.5 s idle wait
                 uri == "/swipe-once" && session.method == Method.POST ->
                     serveSwipeOnce(session)
@@ -699,6 +711,94 @@ class SmixHttpServer(
         device.waitForIdle(500)
         val body = RunnerWire.swipeAtNormCoordBody(ok, q)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    private fun serveWindowSize(session: IHTTPSession): Response {
+        // OK MEANS: outcome — the app's window reads back from the window manager at the size asked for; otherwise the body names the size it reads back at (the app or the system kept another).
+        val req = try {
+            WindowResize.Request.decode(readBodyString(session))
+        } catch (e: IllegalArgumentException) {
+            return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad window-size request")
+        }
+        val clock = routeClock("/window-size")
+        val density = instrumentation.targetContext.resources.displayMetrics.density
+        val dp = { px: Int -> WindowResize.dp(px, density) }
+        val display = clock.stage("display") {
+            WindowResize.readDisplay(shellOutput("dumpsys window displays", clock.leftMs()))
+        } ?: return errorJson(
+            Response.Status.INTERNAL_ERROR,
+            "display_unread",
+            if (clock.spent) clock.saw() else "`dumpsys window displays` did not give the display's app area and smallest window",
+        )
+        val min = display.minSideDp
+        if (req.widthDp < min || req.heightDp < min) {
+            return errorJson(
+                Response.Status.CONFLICT,
+                "below_minimum",
+                "${req.widthDp}x${req.heightDp} dp is smaller than this display lets a window be: $min dp a side",
+            )
+        }
+        val list = { left: Long -> WindowResize.findTask(shellOutput("am stack list", left), req.pkg) }
+        val task = clock.stage("task") { list(clock.leftMs()) } ?: return errorJson(
+            Response.Status.NOT_FOUND,
+            "no_window",
+            if (clock.spent) clock.saw() else "${req.pkg ?: "no app"} has no visible window to resize",
+        )
+        if (!task.freeform) {
+            return errorJson(
+                Response.Status.CONFLICT,
+                "not_a_desktop_window",
+                "${task.pkg} fills the display rather than sitting in a desktop window, so it has no window size to set",
+            )
+        }
+        val area = display.appArea
+        val to = WindowResize.place(
+            task.bounds,
+            WindowResize.px(req.widthDp, density),
+            WindowResize.px(req.heightDp, density),
+            area,
+        ) ?: return errorJson(
+            Response.Status.CONFLICT,
+            "larger_than_display",
+            "${req.widthDp}x${req.heightDp} dp does not fit this display's app area of ${dp(area.width)}x${dp(area.height)} dp",
+        )
+        clock.stage("resize") { runShellCommand(WindowResize.resizeCommand(task, to)) }
+        val seen = clock.stage("readback") {
+            // a look's own limit is not what is left of the poll: a limit of 0 would wait without end
+            Poll.until(clock.budget(RESIZE_ARRIVES_MS), 100, { list(LOOK_SHELL_MS) }, { it?.bounds == to })
+        }
+        if (seen == null) {
+            return errorJson(
+                Response.Status.INTERNAL_ERROR,
+                "window_gone",
+                if (clock.spent) clock.saw() else "${task.pkg}'s window was not there to read back after the resize",
+            )
+        }
+        val body = RunnerWire.windowSizeBody(
+            ok = seen.bounds == to,
+            widthDp = dp(seen.bounds.width),
+            heightDp = dp(seen.bounds.height),
+            pkg = seen.pkg,
+        )
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    private fun serveMouse(session: IHTTPSession): Response {
+        // OK MEANS: injected — every mouse event went in, or for `away` the system dropped the exit because its pointer hovered no window (nothing was hovered); whether the app hovered, opened a menu or scrolled is the caller's next assertion.
+        val gesture = try {
+            MouseGesture.decode(readBodyString(session))
+        } catch (e: IllegalArgumentException) {
+            return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad mouse request")
+        }
+        val (w, h) = displaySize()
+        val injected = MouseInjector.inject(instrumentation.uiAutomation, gesture.timeline(w, h))
+        device.waitForIdle(500)
+        val ok = gesture.done(injected)
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            RunnerWire.mouseBody(ok, gesture.kind, injected),
+        )
     }
 
     private fun servePinch(session: IHTTPSession): Response {
@@ -2182,6 +2282,15 @@ class SmixHttpServer(
             name.removePrefix(bundleId)
         } else {
             name
+        }
+    }
+
+    private fun shellOutput(cmd: String, limitMs: Long): String {
+        val pfd = instrumentation.uiAutomation.executeShellCommand(cmd)
+        try {
+            return ShellLimit.read(cmd, java.io.FileInputStream(pfd.fileDescriptor), limitMs) { pfd.close() }
+        } finally {
+            pfd.close()
         }
     }
 

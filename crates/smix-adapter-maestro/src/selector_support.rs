@@ -96,6 +96,8 @@ pub enum Slot {
     /// `pinch: { over: <selector> }` — the element whose centre the two
     /// fingers meet at.
     PinchTarget,
+    /// `hoverOn: <selector>` — the element the mouse pointer rests on.
+    HoverTarget,
     /// `rememberBounds:` / `assertBoundsUnchanged:` — the element whose
     /// box is measured.
     BoundsTarget,
@@ -138,7 +140,10 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         Step::TakeScreenshot { .. } => &[Slot::AnnotationAnchor],
         Step::SwipeOver { .. } => &[Slot::SwipeOverTarget],
         Step::Pinch { .. } => &[Slot::PinchTarget],
+        Step::HoverOn { .. } => &[Slot::HoverTarget],
         Step::TapAtPoint { .. }
+        | Step::HoverAway
+        | Step::SetWindowSize { .. }
         | Step::WebViewEval { .. }
         | Step::WaitForAnimationToEnd { .. }
         | Step::InputText { .. }
@@ -191,7 +196,7 @@ impl Slot {
     /// this list against the `Slot::` names `slots()` actually hands
     /// out, because a list written by hand beside a list derived from
     /// the code is two truths waiting to disagree.
-    pub const ALL: [Slot; 17] = [
+    pub const ALL: [Slot; 18] = [
         Slot::TapOnTarget,
         Slot::RepeatTapTarget,
         Slot::DoubleTapTarget,
@@ -207,6 +212,7 @@ impl Slot {
         Slot::AnnotationAnchor,
         Slot::SwipeOverTarget,
         Slot::PinchTarget,
+        Slot::HoverTarget,
         Slot::BoundsTarget,
         Slot::NeverVisibleTarget,
     ];
@@ -263,6 +269,17 @@ pub fn support(slot: Slot, form: UnreadableForm) -> Support {
         (S::PinchTarget, F::AnchorRelative) => Support::Refused(
             "an anchor plus a shift is already a point; give that point as \
              `at: \"X%,Y%\"`, or name the element to pinch over",
+        ),
+
+        // The pointer rests on the element's centre, taken from its box in
+        // the accessibility tree.
+        (S::HoverTarget, F::OcrText) => Support::Refused(
+            "hoverOn finds the element's centre in the accessibility tree and does \
+             not look for text in the pixels. Name the element by id, text, label or role",
+        ),
+        (S::HoverTarget, F::AnchorRelative) => Support::Refused(
+            "an anchor plus a shift is a point, and hoverOn rests the pointer on an \
+             element; name the element to hover",
         ),
 
         // Tapping is where a coordinate is enough. OCR gives a box and
@@ -363,6 +380,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
             at: crate::PinchAt::Over(selector),
             ..
         } => vec![(Slot::PinchTarget, selector)],
+        Step::HoverOn { selector } => vec![(Slot::HoverTarget, selector)],
         Step::RepeatTap { selector, .. } => vec![(Slot::RepeatTapTarget, selector)],
         Step::DoubleTapOn { selector, .. } => vec![(Slot::DoubleTapTarget, selector)],
         Step::LongPressOn { selector, .. } => vec![(Slot::LongPressTarget, selector)],
@@ -407,6 +425,8 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
             })
             .collect(),
         Step::TapAtPoint { .. }
+        | Step::HoverAway
+        | Step::SetWindowSize { .. }
         | Step::WebViewEval { .. }
         | Step::WaitForAnimationToEnd { .. }
         | Step::InputText { .. }

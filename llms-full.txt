@@ -557,6 +557,56 @@ gesture.
 - Pinching and then a separate `swipe` also drags the zoomed content: the
   zoom stays in the app once the fingers lift.
 
+### Hover (a mouse pointer)
+
+```yaml
+# The pointer comes to rest on the element's centre: mouse events, so the
+# app's hover style shows, as it does under a Chromebook's pointer.
+- hoverOn: { id: "settings_row" }
+- assertVisible: { id: "settings_row_hovered" }
+# The pointer leaves the app; nothing in it stays hovered.
+- hoverAway
+```
+
+- Android only (a Chromebook or Android desktop window, or any Android
+  device: a mouse reaches a phone's views too). iOS refuses both steps by
+  name: XCUITest on iOS has no pointer.
+- `hoverOn` waits up to 5 s for the element, then reads its centre from the
+  accessibility tree; `ocrText:` and `anchorRelative:` are refused there.
+- Hovering something else moves the pointer there: the element it left sees
+  the pointer leave. `hoverAway` is not a move to an empty spot, which is
+  still inside some row or container whose hover would stay on. With
+  nothing hovered it does nothing and passes.
+- A `tapOn` after a hover is an ordinary touch and lands as usual; the hover
+  ends with it, as it does when a person taps a touchscreen.
+
+### Window size (a desktop window)
+
+```yaml
+# Width by height in dp, the caption bar included; the window is read back
+# after each, and a size it does not take fails naming the one it has.
+- setWindowSize: { width: 1024, height: 768 }
+- assertVisible: { id: "two_pane_layout" }
+- setWindowSize: 839x768
+- assertVisible: { id: "one_pane_layout" }
+- setWindowSize: compact            # or medium, expanded
+```
+
+- Android only, and only for an app in a desktop window (a Chromebook, or
+  Android's desktop mode). An app that fills the display has no window size
+  to set and is refused by name; so is iOS.
+- The window keeps its top-left corner unless the new size would leave the
+  display's app area (the display less its taskbar); then it moves just far
+  enough to fit. A size larger than that area, or below the system's
+  smallest window (220 dp a side on the Android desktop image), is refused
+  naming the limit, and the window keeps its size.
+- The app resized is the one the flow last launched, its `appId` before any
+  launch.
+- Named sizes, one inside each width class an adaptive layout switches at
+  (below 600 dp, below 840 dp, from 840 dp): `compact` is 412x800,
+  `medium` 700x800, `expanded` 1024x768. These are smix's sizes, not the
+  system's; write dp to land beside a breakpoint.
+
 ### Keyboard / hardware keys
 
 ```yaml
@@ -1782,6 +1832,37 @@ looking is `keyboard_state_unknown` — see
   zoom reveals).
 - Full shape and limits: [02 — YAML reference](02-yaml-reference.md#pinch-two-fingers).
 
+## Hover
+
+```yaml
+- hoverOn: { id: "settings_row" }
+- hoverAway
+```
+
+- Android: mouse motion events (`SOURCE_MOUSE`, `ACTION_HOVER_MOVE`, then
+  `ACTION_HOVER_EXIT` to leave) injected through UiAutomation, the events a
+  Chromebook's pointer sends. `adb shell input` has no hover, which is why a
+  desktop window's hover styles could not be reached before.
+- iOS: refused by name.
+- `ok` means every mouse event went in; whether the app drew its hover state
+  is the next step's question.
+- Full shape: [02 — YAML reference](02-yaml-reference.md#hover-a-mouse-pointer).
+
+## Window size
+
+```yaml
+- setWindowSize: { width: 1024, height: 768 }
+- setWindowSize: 839x768
+```
+
+- Android: the app's task is found with `am stack list` and resized with
+  `am task resize`, in pixels at the display's density; the size is then
+  read back from the window manager. That command takes any bounds and
+  answers as if it worked, so the reading back is what the step's `ok`
+  means.
+- iOS: refused by name.
+- Full shape: [02 — YAML reference](02-yaml-reference.md#window-size-a-desktop-window).
+
 ## Scroll
 
 ### One-shot scroll
@@ -2961,6 +3042,10 @@ smix pinch id:player --from 1 --to 3       # two fingers about the element's cen
 smix pinch point:50%,50% --from-span 0.6 --to-span 0.2   # zoom out about a point
 smix pinch id:player --from 1 --to 3 --pan 0,-0.2        # then drag up a fifth of the screen before lifting
 smix pinch id:player --from 1 --to 3 --run-up slide      # for a recognizer that counts from the touch
+smix hover id:settings_row                 # Android: a mouse pointer rests on the element (hover style shows)
+smix hover --away                          # …and leaves the app
+smix window-size 839x768 --app com.example # Android desktop window: resize to 839x768 dp, read it back
+smix window-size compact                   # …or a named size: compact / medium / expanded
 smix hide-keyboard
 
 smix tree --json | jq .                    # full a11y tree
@@ -6010,6 +6095,8 @@ that is why.
 | `scrollUntilVisible` | ✅ | ✅ | One host-side loop on both: swipe, look (tree, then each `ocrText`), stop when the element is wholly on screen and has stopped moving. `visibilityPercentage` / `centerElement` / `timeout` / `label` / `optional` read; `speed` / `waitToSettleTimeoutMs` refused by name |
 | `swipe` (`direction:` or `start:`/`end:` or `from:`/`to:`) | ✅ | ✅ | Absolute + relative coord shapes |
 | `pinch` (`over:` or `at:`, `from`/`to` or `fromSpan`/`toSpan`, optional `pan:`) | ✅ | ✅ | smix's own verb (maestro has none). Two fingers in one gesture about an element's centre or a point; the iOS runner synthesises two touch paths in one event record, the Android runner injects two-pointer motion events. A finger that would leave the screen is refused by name, never clipped |
+| `hoverOn` / `hover` | ❌ | ✅ | smix's own verb. A mouse pointer comes to rest on the element's centre: mouse events, not a touch, so a desktop window's hover styles answer it (Chromebook, Android's desktop mode). The element is waited for up to 5 s. iOS refuses by name: XCUITest on iOS has no pointer |
+| `hoverAway` | ❌ | ✅ | The pointer leaves the app, so nothing in it stays hovered. Not a move to an empty spot, which is still inside some row or container. iOS refuses by name |
 | `hideKeyboard` | ✅ | ✅ | |
 
 ## Device
@@ -6021,6 +6108,7 @@ that is why.
 | `travel` | ✅ | ⚠️ | iOS hands the route to CoreSimulator. Android has no route primitive — the emulator console takes one position at a time — so smix walks it from the host, one `geo fix` a second. Both return immediately and travel in the background. A registered physical iPhone takes the route through `devicectl` (Xcode 27), with the same caveat as `setLocation` |
 | `setPermissions` | ✅ | ✅ | `pm grant` / `pm revoke` per permission on Android; `simctl privacy` on iOS |
 | `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure. Android reads the display's rotation back before answering, so a rotation that does not arrive is a failure rather than a silent no-op. A foldable iOS simulator ignores the system call, so it is turned the way Device Hub turns it and read back; a facing its posture cannot reach is refused |
+| `setWindowSize` | ❌ | ✅ | smix's own verb. An app's desktop window (Chromebook, Android's desktop mode) resized to a width and height in dp, caption bar included, then read back; another size read back fails naming it. A fullscreen app, a size below the system's smallest window or larger than the display are refused by name, and so is iOS |
 | `setPosture` | ✅ | ❌ | Foldable iOS simulators (iPhone Duo): `closed` / `halfOpen` / `open`, read back from which screen is lit. A one-screen device is refused, and Android refuses by name: nothing drives an emulator's hinge yet |
 
 ## smix-native extensions

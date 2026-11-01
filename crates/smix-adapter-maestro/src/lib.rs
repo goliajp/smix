@@ -256,6 +256,7 @@ mod apps_config;
 mod emitter;
 mod entry;
 mod expr;
+mod hover;
 mod junit;
 mod output;
 mod parser;
@@ -265,6 +266,7 @@ mod runtime;
 pub mod selector_support;
 mod timing;
 mod watch;
+mod window_size;
 
 pub use emitter::{EmitError, emit_flow_yaml};
 
@@ -582,6 +584,21 @@ pub enum Step {
         /// How the fingers reach the start before the counted pinch.
         #[serde(default)]
         run_up: smix_input::RunUp,
+    },
+    /// A mouse pointer comes to rest on the element's centre — smix's own
+    /// verb. Mouse events, not a touch: a desktop window's hover styles
+    /// answer it. Android only; iOS refuses by name.
+    HoverOn {
+        /// The element to rest the pointer on.
+        selector: Selector,
+    },
+    /// The mouse pointer leaves the app, so nothing in it stays hovered.
+    HoverAway,
+    /// The app's desktop window resized, then read back — smix's own
+    /// verb. Android only; iOS refuses by name.
+    SetWindowSize {
+        /// Width and height in dp, the caption bar included.
+        size: smix_input::WindowSize,
     },
     /// Launch / relaunch the app under test. Supports the full maestro
     /// yaml sub-parameter set: appId / clearState / clearKeychain /

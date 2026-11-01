@@ -99,6 +99,8 @@ that is why.
 | `scrollUntilVisible` | ✅ | ✅ | One host-side loop on both: swipe, look (tree, then each `ocrText`), stop when the element is wholly on screen and has stopped moving. `visibilityPercentage` / `centerElement` / `timeout` / `label` / `optional` read; `speed` / `waitToSettleTimeoutMs` refused by name |
 | `swipe` (`direction:` or `start:`/`end:` or `from:`/`to:`) | ✅ | ✅ | Absolute + relative coord shapes |
 | `pinch` (`over:` or `at:`, `from`/`to` or `fromSpan`/`toSpan`, optional `pan:`) | ✅ | ✅ | smix's own verb (maestro has none). Two fingers in one gesture about an element's centre or a point; the iOS runner synthesises two touch paths in one event record, the Android runner injects two-pointer motion events. A finger that would leave the screen is refused by name, never clipped |
+| `hoverOn` / `hover` | ❌ | ✅ | smix's own verb. A mouse pointer comes to rest on the element's centre: mouse events, not a touch, so a desktop window's hover styles answer it (Chromebook, Android's desktop mode). The element is waited for up to 5 s. iOS refuses by name: XCUITest on iOS has no pointer |
+| `hoverAway` | ❌ | ✅ | The pointer leaves the app, so nothing in it stays hovered. Not a move to an empty spot, which is still inside some row or container. iOS refuses by name |
 | `hideKeyboard` | ✅ | ✅ | |
 
 ## Device
@@ -110,6 +112,7 @@ that is why.
 | `travel` | ✅ | ⚠️ | iOS hands the route to CoreSimulator. Android has no route primitive — the emulator console takes one position at a time — so smix walks it from the host, one `geo fix` a second. Both return immediately and travel in the background. A registered physical iPhone takes the route through `devicectl` (Xcode 27), with the same caveat as `setLocation` |
 | `setPermissions` | ✅ | ✅ | `pm grant` / `pm revoke` per permission on Android; `simctl privacy` on iOS |
 | `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure. Android reads the display's rotation back before answering, so a rotation that does not arrive is a failure rather than a silent no-op. A foldable iOS simulator ignores the system call, so it is turned the way Device Hub turns it and read back; a facing its posture cannot reach is refused |
+| `setWindowSize` | ❌ | ✅ | smix's own verb. An app's desktop window (Chromebook, Android's desktop mode) resized to a width and height in dp, caption bar included, then read back; another size read back fails naming it. A fullscreen app, a size below the system's smallest window or larger than the display are refused by name, and so is iOS |
 | `setPosture` | ✅ | ❌ | Foldable iOS simulators (iPhone Duo): `closed` / `halfOpen` / `open`, read back from which screen is lit. A one-screen device is refused, and Android refuses by name: nothing drives an emulator's hinge yet |
 
 ## smix-native extensions

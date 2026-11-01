@@ -395,6 +395,37 @@ looking is `keyboard_state_unknown` — see
   zoom reveals).
 - Full shape and limits: [02 — YAML reference](02-yaml-reference.md#pinch-two-fingers).
 
+## Hover
+
+```yaml
+- hoverOn: { id: "settings_row" }
+- hoverAway
+```
+
+- Android: mouse motion events (`SOURCE_MOUSE`, `ACTION_HOVER_MOVE`, then
+  `ACTION_HOVER_EXIT` to leave) injected through UiAutomation, the events a
+  Chromebook's pointer sends. `adb shell input` has no hover, which is why a
+  desktop window's hover styles could not be reached before.
+- iOS: refused by name.
+- `ok` means every mouse event went in; whether the app drew its hover state
+  is the next step's question.
+- Full shape: [02 — YAML reference](02-yaml-reference.md#hover-a-mouse-pointer).
+
+## Window size
+
+```yaml
+- setWindowSize: { width: 1024, height: 768 }
+- setWindowSize: 839x768
+```
+
+- Android: the app's task is found with `am stack list` and resized with
+  `am task resize`, in pixels at the display's density; the size is then
+  read back from the window manager. That command takes any bounds and
+  answers as if it worked, so the reading back is what the step's `ok`
+  means.
+- iOS: refused by name.
+- Full shape: [02 — YAML reference](02-yaml-reference.md#window-size-a-desktop-window).
+
 ## Scroll
 
 ### One-shot scroll

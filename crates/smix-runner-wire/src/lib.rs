@@ -32,6 +32,8 @@
 //! - `POST /press-key` `{key}` → [`RunnerKeyboardResult`]
 //! - `POST /swipe-once` `{direction}` → `{ok}`
 //! - `POST /pinch-at-norm-coord` `{cx, cy, fromSpan, toSpan, durationMs, panDx?, panDy?, panMs?, runUp?}` → `{ok, fingers}`
+//! - `POST /mouse-at-norm-coord` `{kind, nx?, ny?}` → `{ok, kind, injected}` (Android)
+//! - `POST /window-size` `{package?, widthDp, heightDp}` → `{ok, widthDp, heightDp, package}` (Android)
 //! - `POST /foreground` `{bundleId}` → `{ok}`
 //! - `POST /hide-keyboard` → `{ok}`
 //! - `POST /back` → `{ok}`

@@ -16,6 +16,7 @@ object RouteLimits {
         "/tap-by-id" to 8_075L,
         "/clear-text" to 19_000L,
         "/foreground" to 7_500L,
+        "/window-size" to 6_000L,
     )
 
     fun of(path: String): Long =
