@@ -826,7 +826,8 @@ class SmixHttpServer(
             return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad mouse request")
         }
         val (w, h) = displaySize()
-        val injected = MouseInjector.inject(instrumentation.uiAutomation, gesture.timeline(w, h))
+        val density = instrumentation.targetContext.resources.displayMetrics.density
+        val injected = MouseInjector.inject(instrumentation.uiAutomation, gesture.timeline(w, h, density))
         device.waitForIdle(500)
         val ok = gesture.done(injected)
         return newFixedLengthResponse(

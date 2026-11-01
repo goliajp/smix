@@ -258,6 +258,7 @@ mod entry;
 mod expr;
 mod hover;
 mod junit;
+mod mouse;
 mod output;
 mod parser;
 mod pinch;
@@ -338,6 +339,17 @@ pub enum TapDispatch {
     Xcui,
     /// XCTRunnerDaemonSession touch synthesize.
     DaemonProxy,
+}
+
+/// Where a `mouseDrag` ends.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub enum MouseDragTo {
+    /// On this element's centre.
+    Element(Selector),
+    /// This far from where it started, in dp: x right, y down.
+    ByDp((f64, f64)),
 }
 
 /// One parsed yaml step. See the maestro-compat command table in the
@@ -594,6 +606,33 @@ pub enum Step {
     },
     /// The mouse pointer leaves the app, so nothing in it stays hovered.
     HoverAway,
+    /// A secondary-button (right) click on the element's centre — smix's
+    /// own verb, what opens a context menu. Android only.
+    RightClickOn {
+        /// The element to right-click.
+        selector: Selector,
+    },
+    /// The mouse wheel turned over the element's centre — smix's own verb.
+    /// Android only.
+    MouseWheel {
+        /// The element the pointer is over.
+        selector: Selector,
+        /// Away from the user (content scrolls toward its start) when
+        /// true; toward the user when false.
+        up: bool,
+        /// Notches turned, 1 to 100.
+        notches: u32,
+        /// Ctrl held, which apps read as zoom.
+        ctrl: bool,
+    },
+    /// The primary mouse button pressed on an element, moved, released —
+    /// smix's own verb. Android only.
+    MouseDrag {
+        /// The element the button goes down on.
+        from: Selector,
+        /// Where it comes up.
+        to: MouseDragTo,
+    },
     /// The app's desktop window resized, then read back — smix's own
     /// verb. Android only; iOS refuses by name.
     SetWindowSize {
