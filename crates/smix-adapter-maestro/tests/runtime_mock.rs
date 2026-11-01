@@ -4669,6 +4669,58 @@ async fn hover_on_a_missing_element_moves_nothing() {
     assert!(mice(&app).is_empty(), "no hover somewhere else instead");
 }
 
+/// The mock's `fixture-input` (100, 200, 800×400 of 1000) is centred at
+/// (0.5, 0.4): each mouse step acts there, with its own button, wheel or
+/// drag end.
+#[tokio::test]
+async fn mouse_steps_act_at_the_element_centre_with_their_own_button_wheel_and_end() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- rightClickOn: { id: \"fixture-input\" }\n\
+         - mouseWheel: { on: { id: \"fixture-input\" }, direction: down, notches: 3, ctrl: true }\n\
+         - mouseWheel: { on: { id: \"fixture-input\" }, direction: up }\n\
+         - mouseDrag: { from: { id: \"fixture-input\" }, by: { x: 96, y: -8 } }\n\
+         - mouseDrag: { from: { id: \"fixture-input\" }, to: { id: \"fixture-input\" } }\n",
+    )
+    .unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect("run ok");
+    use smix_input::Mouse;
+    let c = (0.5, 0.4);
+    assert_eq!(
+        mice(&app),
+        vec![
+            Mouse::SecondaryClick { at: c },
+            Mouse::Wheel {
+                at: c,
+                notches: -3.0,
+                ctrl: true
+            },
+            Mouse::Wheel {
+                at: c,
+                notches: 1.0,
+                ctrl: false
+            },
+            Mouse::DragBy {
+                from: c,
+                by_dp: (96.0, -8.0)
+            },
+            Mouse::Drag { from: c, to: c },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_mouse_step_on_a_missing_element_sends_nothing() {
+    let app = MockApp::new();
+    let flow =
+        parse_flow_yaml("appId: com.t\n---\n- rightClickOn: { id: \"no-such-thing\" }\n").unwrap();
+    assert!(Adapter::new(&app, fixtures_dir()).run(&flow).await.is_err());
+    assert!(mice(&app).is_empty(), "no click somewhere else instead");
+}
+
 // --- step timings --------------------------------------------------------
 
 #[tokio::test]

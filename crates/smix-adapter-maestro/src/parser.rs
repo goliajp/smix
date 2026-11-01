@@ -645,7 +645,7 @@ pub(crate) fn reject_unknown_keys(
 
 /// A selector nested under `field`, its errors naming where it sits
 /// (`assertScreenshot.cropOn.id` rather than `id`).
-fn selector_under(v: &Value, field: &str) -> Result<Selector, ParseError> {
+pub(crate) fn selector_under(v: &Value, field: &str) -> Result<Selector, ParseError> {
     visible_to_selector(v).map_err(|e| match e {
         ParseError::InvalidValue {
             field: inner,
@@ -3366,6 +3366,9 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "swipe" => parse_swipe(value),
         "pinch" => crate::pinch::parse(value),
         "hoverOn" => crate::hover::parse_on(value),
+        "rightClickOn" => crate::mouse::parse_right_click(value),
+        "mouseWheel" => crate::mouse::parse_wheel(value),
+        "mouseDrag" => crate::mouse::parse_drag(value),
         "hoverAway" => crate::hover::parse_away(value),
         "setWindowSize" => crate::window_size::parse(value),
         "launchApp" => parse_launch_app(value),

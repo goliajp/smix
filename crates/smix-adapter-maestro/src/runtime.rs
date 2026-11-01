@@ -1014,6 +1014,9 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::Pinch { .. } => "pinch",
         Step::HoverOn { .. } => "hoverOn",
         Step::HoverAway => "hoverAway",
+        Step::RightClickOn { .. } => "rightClickOn",
+        Step::MouseWheel { .. } => "mouseWheel",
+        Step::MouseDrag { .. } => "mouseDrag",
         Step::SetWindowSize { .. } => "setWindowSize",
         Step::LaunchApp { .. } => "launchApp",
         Step::StopApp => "stopApp",
@@ -2251,6 +2254,32 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::HoverAway => {
                 self.app.mouse(&smix_input::Mouse::Away).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::RightClickOn { selector } => {
+                let selector = self.desugar_localized_text(selector);
+                crate::mouse::run_right_click(self.app, &selector).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::MouseWheel {
+                selector,
+                up,
+                notches,
+                ctrl,
+            } => {
+                let selector = self.desugar_localized_text(selector);
+                crate::mouse::run_wheel(self.app, &selector, *up, *notches, *ctrl).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::MouseDrag { from, to } => {
+                let from = self.desugar_localized_text(from).into_owned();
+                let to = match to {
+                    crate::MouseDragTo::Element(sel) => {
+                        crate::MouseDragTo::Element(self.desugar_localized_text(sel).into_owned())
+                    }
+                    by => by.clone(),
+                };
+                crate::mouse::run_drag(self.app, &from, &to).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::SetWindowSize { size } => {
