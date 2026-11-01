@@ -789,7 +789,7 @@ class SmixHttpServer(
     }
 
     private fun serveWindowBounds(session: IHTTPSession): Response {
-        // OK MEANS: outcome — the window manager places the app's desktop window at these px bounds on a display of this px size.
+        // OK MEANS: reading — the window manager's own bounds for the app's desktop window, in px, and the display's size; nothing is changed.
         val req = try {
             WindowResize.Which.decode(readBodyString(session))
         } catch (e: IllegalArgumentException) {

@@ -1,1 +1,10 @@
-- setPosture: open        # closed / halfOpen / open
+- launchApp:
+    appId: com.example.app
+    clearState: true
+    clearKeychain: true
+    arguments: ["--debug-mode"]
+
+- killApp                  # current
+- killApp: com.acme.other  # named
+
+- stopApp                  # graceful

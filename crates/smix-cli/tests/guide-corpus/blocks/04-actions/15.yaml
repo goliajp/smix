@@ -1,2 +1,4 @@
-- setWindowSize: { width: 1024, height: 768 }
-- setWindowSize: 839x768
+- rightClickOn: { id: "file_row" }
+- mouseWheel: { on: { id: "file_list" }, direction: down, notches: 3, ctrl: false }
+- mouseDrag: { from: { id: "card_3" }, to: { id: "done_column" } }
+- mouseDrag: { from: { id: "split_divider" }, by: { x: 96, y: 0 } }

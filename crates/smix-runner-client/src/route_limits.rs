@@ -203,8 +203,9 @@ pub const ROUTES: &[Route] = &[
     r("/mouse-at-norm-coord", NONE, ms(800), false),
     // Android: 2 s for the resized window to read back at its new bounds.
     r("/window-size", NONE, ms(2_000), false).looks(1),
-    // Android: two reads, the display's size and the app's task.
-    r("/window-bounds", NONE, ms(0), false).looks(2),
+    // Android: two reads, the display's size and the app's task, within
+    // the route's 2 s.
+    r("/window-bounds", NONE, ms(2_000), false),
     r("/press-key", ms(0), ms(500), false),
     // Android: a 0.5 s idle wait after the key.
     r("/press-key-combo", NONE, ms(500), false),
