@@ -32,6 +32,7 @@ mod capsule;
 mod hover_cmd;
 mod pinch_cmd;
 mod platform;
+mod runner_target;
 mod sim_crashes;
 mod swipe_cmd;
 mod tree_cmd;
@@ -483,24 +484,7 @@ enum Cmd {
         platform: Option<RunPlatform>,
     },
     /// Dismiss the soft keyboard if visible.
-    HideKeyboard {
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        /// `--runner-port` is accepted too — `smix run` spells it that way.
-        #[arg(long, alias = "runner-port")]
-        port: Option<u16>,
-        /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. It finds the runner port that device is
-        /// registered on, and — where a verb behaves differently by
-        /// platform (fill, find, tap and the rest of the act surface) —
-        /// reads the driver from the device's registered kind, so an
-        /// Android device is driven through its own runner, not simctl.
-        #[arg(long)]
-        device: Option<String>,
-        /// Which platform the device is, for a device this machine has not
-        /// registered. A registered device's own kind is read otherwise.
-        #[arg(long, value_enum)]
-        platform: Option<RunPlatform>,
-    },
+    HideKeyboard(runner_target::RunnerTarget),
     /// Print the runner's current a11y tree. `--json` emits
     /// wire JSON; default emits an indented text outline.
     Tree {
@@ -1695,6 +1679,9 @@ enum SimAction {
         /// snapshot, which keeps whatever state the device stopped in.
         #[arg(long)]
         cold: bool,
+        /// Run an Android emulator with no window on the desktop.
+        #[arg(long)]
+        no_window: bool,
     },
     /// Shutdown a simulator.
     Shutdown {
@@ -3082,7 +3069,11 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         smix_simctl::registry::store_dir(&path).display()
                     );
                 }
-                SimAction::Boot { device, cold } => {
+                SimAction::Boot {
+                    device,
+                    cold,
+                    no_window,
+                } => {
                     // Booting asks a different question than driving does:
                     // "where should this start" rather than "where is it".
                     // `resolve_device` refuses an emulator alias whose AVD
@@ -3135,9 +3126,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     let kind = device_kind_of(&device);
                     let running =
                         kind == smix_simctl::registry::DeviceKind::Emulator && adb_knows(&udid);
-                    if let Some(why) = cold
-                        .then(|| boot_cold::cold_boot_refusal(&device, kind, running))
-                        .flatten()
+                    if let Some(why) =
+                        boot_cold::boot_refusal(&device, kind, running, cold, no_window)
                     {
                         return Err(CliError::Other(why));
                     }
@@ -3167,8 +3157,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             } else {
                                 smix_adb::BootFrom::Snapshot
                             };
-                            adb.start_emulator_on_with(&avd, &udid, &console, from)
-                                .map_err(|e| CliError::Other(format!("{e}")))?;
+                            let started = if no_window {
+                                adb.start_emulator_on_without_window(&avd, &udid, &console, from)
+                            } else {
+                                adb.start_emulator_on_with(&avd, &udid, &console, from)
+                            };
+                            started.map_err(|e| CliError::Other(format!("{e}")))?;
                             // Recorded as soon as the process is started,
                             // before the wait. The emulator has a process
                             // group of its own and outlives this command, so
@@ -4136,12 +4130,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 .await
                 .map_err(CliError::Other)?;
         }
-        Cmd::HideKeyboard {
-            port,
-            device,
-            platform,
-        } => {
-            let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
+        Cmd::HideKeyboard(t) => {
+            let (p, plat) = runner_dial_target(t.port, t.device.as_deref(), t.platform)?;
             act::cmd_hide_keyboard(p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -7102,6 +7092,7 @@ mod device_power {
         SimAction::Boot {
             device: String::new(),
             cold: false,
+            no_window: false,
         }
     }
 
@@ -7437,6 +7428,7 @@ mod tests {
                 SimAction::Boot {
                     device: d(),
                     cold: false,
+                    no_window: false,
                 },
             ),
             ("shutdown", SimAction::Shutdown { device: d() }),

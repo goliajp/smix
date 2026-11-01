@@ -2,7 +2,7 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [21.0.0] — 2026-11-02
 
 ### Added
 
@@ -27,6 +27,10 @@ All notable changes to the `smix` workspace are documented here. The format foll
   line. A fullscreen app and iOS are refused by name. Underneath,
   `Driver::set_window_size`, `App::set_window_size` and
   `smix_input::WindowSize`; the Android runner serves `POST /window-size`.
+- **`smix sim boot <emulator> --no-window`** runs an Android emulator with
+  no window on the desktop, so a test run does not take the screen of the
+  person at the machine. Refused on an emulator already running, which
+  keeps the window it was started with, and on a phone.
 - **`tapOn` presses a button on a system popup.** A permission prompt
   belongs to the system, so `tapOn: "Allow"` found nothing in the app and
   failed. When a `text:` or `label:` tap has no match in the app, the
@@ -38,6 +42,15 @@ All notable changes to the `smix` workspace are documented here. The format foll
   booted again, which is refused unless smix booted it and nobody holds it.
 - `DeviceControlError::PosterStore`, for a broken store that could not be
   removed before a boot.
+
+### Breaking
+
+- **Rust API: `smix_adapter_maestro::selector_support::Slot` and
+  `UnreadableForm` are `#[non_exhaustive]`.** `hoverOn` added a slot (`HoverTarget`) to an
+  enum a caller could match exhaustively, which is what makes this release
+  a major. A `match` on either outside the crate now needs a `_` arm; the
+  next verb that adds a slot will not be a breaking change. `Support`
+  stays exhaustive: it is the two-way answer callers match on.
 
 ### Fixed
 

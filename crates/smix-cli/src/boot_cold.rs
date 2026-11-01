@@ -6,6 +6,24 @@
 
 use smix_simctl::registry::DeviceKind;
 
+/// Why the flags given cannot be honoured, or `None` when they can.
+pub(crate) fn boot_refusal(
+    device: &str,
+    kind: DeviceKind,
+    running: bool,
+    cold: bool,
+    no_window: bool,
+) -> Option<String> {
+    let cold = cold
+        .then(|| cold_boot_refusal(device, kind, running))
+        .flatten();
+    cold.or_else(|| {
+        no_window
+            .then(|| no_window_refusal(device, kind, running))
+            .flatten()
+    })
+}
+
 /// Why `--cold` cannot be honoured, or `None` when it can.
 pub(crate) fn cold_boot_refusal(device: &str, kind: DeviceKind, running: bool) -> Option<String> {
     match kind {
@@ -25,9 +43,36 @@ pub(crate) fn cold_boot_refusal(device: &str, kind: DeviceKind, running: bool) -
     }
 }
 
+/// Why `--no-window` cannot be honoured, or `None` when it can. A
+/// simulator `simctl` boots has no window to begin with.
+pub(crate) fn no_window_refusal(device: &str, kind: DeviceKind, running: bool) -> Option<String> {
+    match kind {
+        DeviceKind::Emulator if running => Some(format!(
+            "{device} is already running, with whatever window it was started with. Stop \
+             it first — `smix sim shutdown {device}` — then `smix sim boot {device} --no-window`."
+        )),
+        DeviceKind::Emulator | DeviceKind::Simulator => None,
+        DeviceKind::PhysicalIos | DeviceKind::PhysicalAndroid => Some(format!(
+            "{device} is a physical device; smix does not boot phones, so there is \
+             no window for --no-window to leave out."
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn no_window_is_refused_where_it_would_change_nothing() {
+        assert_eq!(no_window_refusal("e", DeviceKind::Emulator, false), None);
+        assert_eq!(no_window_refusal("s", DeviceKind::Simulator, false), None);
+        let why = no_window_refusal("e", DeviceKind::Emulator, true).expect("refused");
+        assert!(why.contains("smix sim shutdown e"), "{why}");
+        for kind in [DeviceKind::PhysicalIos, DeviceKind::PhysicalAndroid] {
+            assert!(no_window_refusal("d", kind, false).is_some(), "{kind:?}");
+        }
+    }
 
     #[test]
     fn an_emulator_that_is_off_boots_cold() {

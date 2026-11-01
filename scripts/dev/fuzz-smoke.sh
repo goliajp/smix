@@ -15,10 +15,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SECONDS_PER_TARGET="${FUZZ_SECONDS:-20}"
 
+# A dated nightly, not the moving one. nightly-2026-11-01 (rustc
+# f9ceb4a4d) fails to compile smix-selector's `Modifiers` with "cycle
+# detected when computing when it needs async drop", in four fuzz crates
+# whose source had not changed since the day before, when
+# nightly-2026-10-30 (rustc 92b5b8c87) built them. Move the date forward
+# once a newer nightly builds every target.
+NIGHTLY="${FUZZ_NIGHTLY:-nightly-2026-10-30}"
+
 command -v cargo-fuzz >/dev/null 2>&1 \
   || { echo "fuzz-smoke: cargo-fuzz not installed — cargo install cargo-fuzz" >&2; exit 1; }
-rustup toolchain list | grep -q nightly \
-  || { echo "fuzz-smoke: no nightly toolchain — rustup toolchain install nightly" >&2; exit 1; }
+rustup toolchain list | grep -q "^$NIGHTLY" \
+  || { echo "fuzz-smoke: no $NIGHTLY toolchain — rustup toolchain install $NIGHTLY --profile minimal" >&2; exit 1; }
 
 # cargo-fuzz's default target on macOS is x86_64-apple-darwin, which on
 # an arm64 host with no cross std fails at `can't find crate for std`.
@@ -39,7 +47,7 @@ for crate in "${CRATES[@]}"; do
     target="$(basename "$target_file" .rs)"
     name="$(basename "$crate")/$target"
     echo "fuzz-smoke: $name (${SECONDS_PER_TARGET}s)"
-    if ! (cd "$crate" && cargo +nightly fuzz run "$target" \
+    if ! (cd "$crate" && cargo "+$NIGHTLY" fuzz run "$target" \
         --target "$HOST_TRIPLE" -- \
         -max_total_time="$SECONDS_PER_TARGET" -print_final_stats=0) \
         > "/tmp/smix-fuzz-$target.log" 2>&1; then
@@ -59,7 +67,7 @@ for crate in "${CRATES[@]}"; do
       if grep -q "Rust version string does not start with" \
            "/tmp/smix-fuzz-$target.log" 2>/dev/null; then
         echo "fuzz-smoke: $name — rustc was unreadable (rustup mid-update?); retrying once"
-        if (cd "$crate" && cargo +nightly fuzz run "$target" \
+        if (cd "$crate" && cargo "+$NIGHTLY" fuzz run "$target" \
             --target "$HOST_TRIPLE" -- \
             -max_total_time="$SECONDS_PER_TARGET" -print_final_stats=0) \
             > "/tmp/smix-fuzz-$target.log" 2>&1; then
