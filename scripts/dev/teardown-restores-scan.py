@@ -128,6 +128,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v6.2-c7-two-platform-flow-e2e.sh",
     "v20.0-c2-a-foldable-e2e.sh",
     "v20.0-c3-a-system-popup-tap-e2e.sh",
+    "v20.0-posterboard-store-repair-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.

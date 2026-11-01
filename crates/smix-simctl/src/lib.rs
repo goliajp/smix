@@ -20,12 +20,14 @@ use defaults::did_not_start;
 pub use defaults::{
     DEFAULTS_PROGRAMS, defaults_key_is_absent, parse_defaults_bool, spawn_did_not_start,
 };
-mod capture;
 /// Crash reports macOS wrote for a simulator's processes. See
 /// [`crash_report::for_simulator`].
+mod boot;
+mod capture;
 pub mod crash_report;
 /// Which of a simulator's screens is lit.
 pub mod displays;
+pub mod poster_store;
 /// Folding a foldable simulator.
 pub mod posture;
 #[cfg(target_os = "macos")]
@@ -136,6 +138,22 @@ pub enum DeviceControlError {
         posture: &'static str,
         /// What went wrong, and what was seen.
         detail: String,
+    },
+    /// PosterBoard's store on the simulator could not be loaded and could
+    /// not be removed for PosterBoard to write a new one, so booting would
+    /// start PosterBoard crashing at every start.
+    ///
+    /// Since smix 20.2.0.
+    #[error(
+        "PosterBoard on {udid} cannot load its store ({broken}), and removing it failed: {source}"
+    )]
+    PosterStore {
+        /// The simulator.
+        udid: String,
+        /// The configurations PosterBoard cannot load.
+        broken: String,
+        /// Why the removal failed.
+        source: io::Error,
     },
     /// The screenshot pacer's circuit is open — a recent screenshot
     /// wall time exceeded the circuit threshold, or a screenshot
@@ -1445,12 +1463,6 @@ impl SimctlClient {
 
     // ---- lifecycle ------------------------------------------------------
 
-    /// `xcrun simctl boot <udid>` — fire-and-forget boot request.
-    pub async fn boot(&self, udid: &str) -> Result<(), DeviceControlError> {
-        simctl_run(&["boot", udid]).await?;
-        Ok(())
-    }
-
     /// `xcrun simctl shutdown <udid>`.
     pub async fn shutdown(&self, udid: &str) -> Result<(), DeviceControlError> {
         simctl_run(&["shutdown", udid]).await?;
@@ -1600,61 +1612,6 @@ impl SimctlClient {
         let locale_underscore = locale.replace('-', "_");
         self.spawn_defaults(udid, &["write", "-g", "AppleLocale", &locale_underscore])
             .await?;
-        Ok(())
-    }
-
-    /// Boot the device and return once it has finished booting, within
-    /// `timeout`. A device that is already booted and ready returns at
-    /// once (about 0.1 s).
-    ///
-    /// "Booted" in the device list is not "finished": it is listed so
-    /// while SpringBoard is still coming up — measured 8.9 s before
-    /// `simctl bootstatus` said it was done — and an XCUITest runner
-    /// started in that gap cannot launch its app and exits with status
-    /// 65 having run no test. So the wait is `bootstatus`, which also
-    /// covers a device someone else booted a moment ago.
-    pub async fn boot_and_wait(
-        &self,
-        udid: &str,
-        timeout: Duration,
-    ) -> Result<(), DeviceControlError> {
-        let started = std::time::Instant::now();
-        let mut cmd = Command::new("xcrun");
-        cmd.args(["simctl", "bootstatus", udid, "-b"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true);
-        let output = match tokio::time::timeout(timeout, cmd.output()).await {
-            Ok(output) => output?,
-            Err(_) => {
-                return Err(DeviceControlError::Timeout {
-                    subcommand: format!("bootstatus {udid} -b"),
-                    ms: timeout.as_millis() as u64,
-                });
-            }
-        };
-        let argv: Vec<String> = ["xcrun", "simctl", "bootstatus", udid, "-b"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-        let wall_ms = started.elapsed().as_millis() as u64;
-        subprocess_ring::record(SubprocessRecord {
-            argv: argv.clone(),
-            exit_code: output.status.code(),
-            wall_ms,
-            stderr_head: stderr.chars().take(256).collect(),
-            timestamp: std::time::SystemTime::now(),
-        });
-        if !output.status.success() {
-            return Err(DeviceControlError::NonZeroExit {
-                subcommand: "bootstatus".to_string(),
-                argv,
-                code: output.status.code().unwrap_or(-1),
-                stderr,
-                wall_ms,
-            });
-        }
         Ok(())
     }
 
