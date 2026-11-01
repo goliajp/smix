@@ -27,6 +27,10 @@ All notable changes to the `smix` workspace are documented here. The format foll
   line. A fullscreen app and iOS are refused by name. Underneath,
   `Driver::set_window_size`, `App::set_window_size` and
   `smix_input::WindowSize`; the Android runner serves `POST /window-size`.
+- **`smix sim boot <emulator> --no-window`** runs an Android emulator with
+  no window on the desktop, so a test run does not take the screen of the
+  person at the machine. Refused on an emulator already running, which
+  keeps the window it was started with, and on a phone.
 - **`tapOn` presses a button on a system popup.** A permission prompt
   belongs to the system, so `tapOn: "Allow"` found nothing in the app and
   failed. When a `text:` or `label:` tap has no match in the app, the

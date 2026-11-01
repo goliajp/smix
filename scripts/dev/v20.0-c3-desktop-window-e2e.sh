@@ -25,8 +25,8 @@
 #   9. `smix window-size` does the same from the command line; iOS refuses
 #      it by name
 #
-# Runs on smix's own desktop emulator (E2E_ANDROID_DESKTOP), booted without
-# a window when it is off.
+# Runs on smix's own desktop emulator (E2E_ANDROID_DESKTOP), booted with no
+# window (--no-window) when it is off.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -97,7 +97,7 @@ command -v adb >/dev/null 2>&1 || cannot_judge "no adb"
 python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
   || fail "the fixture apk on disk is not the one this tree builds"
 if ! DEVICE="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)" || [ -z "$DEVICE" ]; then
-  with_deadline 300 "$SMIX" sim boot "$ALIAS" >"$WORK/boot.log" 2>&1 || fail "boot: $(tail -3 "$WORK/boot.log")"
+  with_deadline 300 "$SMIX" sim boot "$ALIAS" --no-window >"$WORK/boot.log" 2>&1 || fail "boot: $(tail -3 "$WORK/boot.log")"
   DEVICE="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)" || fail "$ALIAS was booted and does not resolve"
   WE_BOOTED=1
 fi
