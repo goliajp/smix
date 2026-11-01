@@ -1,10 +1,4 @@
-- launchApp:
-    appId: com.example.app
-    clearState: true
-    clearKeychain: true
-    arguments: ["--debug-mode"]
-
-- killApp                  # current
-- killApp: com.acme.other  # named
-
-- stopApp                  # graceful
+- swipe:
+    start: "10%,50%"
+    end: "90%,50%"
+    duration: 400

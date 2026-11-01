@@ -411,6 +411,38 @@ looking is `keyboard_state_unknown` — see
   is the next step's question.
 - Full shape: [02 — YAML reference](02-yaml-reference.md#hover-a-mouse-pointer).
 
+## Mouse buttons and wheel
+
+```yaml
+- rightClickOn: { id: "file_row" }
+- mouseWheel: { on: { id: "file_list" }, direction: down, notches: 3, ctrl: false }
+- mouseDrag: { from: { id: "card_3" }, to: { id: "done_column" } }
+- mouseDrag: { from: { id: "split_divider" }, by: { x: 96, y: 0 } }
+```
+
+- Android: `SOURCE_MOUSE` events through UiAutomation — a secondary-button
+  press and release, an `ACTION_SCROLL` on the vertical axis (Ctrl in the
+  meta state), or a primary-button drag moved in small steps. A drag
+  `by:` dp is turned into pixels at the display's density on the device.
+- iOS: refused by name.
+- `ok` means every event went in; whether the app opened its menu,
+  scrolled or moved is the next step's question.
+- The Android 14 desktop emulator image sends wheel turns and button
+  presses to the view at the wrong height (see
+  [02 — YAML reference](02-yaml-reference.md#mouse-buttons-and-wheel)).
+
+## Key combinations
+
+```yaml
+- pressKey: ctrl+s
+- pressKey: ctrl+shift+z
+```
+
+- Android: the key's down and up through UiAutomation with the modifiers'
+  meta state, which is what `KeyEvent.isCtrlPressed()` and an app's
+  shortcut handling read.
+- iOS: refused by name.
+
 ## Window size
 
 ```yaml
@@ -424,6 +456,8 @@ looking is `keyboard_state_unknown` — see
   answers as if it worked, so the reading back is what the step's `ok`
   means.
 - iOS: refused by name.
+- `takeScreenshot: { window: true }` reads the window's bounds the same way
+  and cuts the screenshot to them.
 - Full shape: [02 — YAML reference](02-yaml-reference.md#window-size-a-desktop-window).
 
 ## Scroll

@@ -1,6 +1,3 @@
-- startRecording: "trace.mp4"
-- stopRecording                          # writes path passed to start
-- takeScreenshot: "step5.png"
-- takeScreenshot:
-    path: "card.png"
-    cropOn: { id: "summary-card" }       # only this element — a cropOn baseline
+- openLink: "myapp://home/details/42"
+- openLink:
+    link: "https://example.com"

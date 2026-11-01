@@ -408,7 +408,41 @@ gesture.
 - A `tapOn` after a hover is an ordinary touch and lands as usual; the hover
   ends with it, as it does when a person taps a touchscreen.
 
+### Mouse buttons and wheel
+
+```yaml
+# A secondary (right) click on the element's centre: what opens a context menu.
+- rightClickOn: { id: "file_row" }
+# The wheel turned over the element; `ctrl: true` holds Ctrl, which apps read as zoom.
+- mouseWheel: { on: { id: "file_list" }, direction: down, notches: 3 }
+- mouseWheel: { on: { id: "map" }, direction: up, ctrl: true }
+# The primary button pressed on one element and released on another, or a
+# distance away in dp (x right, y down).
+- mouseDrag: { from: { id: "card_3" }, to: { id: "done_column" } }
+- mouseDrag: { from: { id: "split_divider" }, by: { x: 96, y: 0 } }
+```
+
+- Android only; iOS refuses each step by name. Mouse events, not touches:
+  `rightClickOn` sends the secondary button, so a long press menu is not
+  what opens.
+- Each element is waited for up to 5 s and its centre read from the
+  accessibility tree; `ocrText:` and `anchorRelative:` are refused there.
+- `direction` is `up` (away from you: the content moves toward its start)
+  or `down`; `notches` is 1 to 100 and defaults to 1.
+- The Android desktop emulator image (Android 14, API 34) routes a wheel
+  turn and a mouse button press to the view at the wrong height: its
+  `ViewGroup` takes the event's y from its x. The events smix sends are the
+  same as a mouse's, so the app sees what it would see from a real mouse on
+  that build; Android 14 QPR3 and later route them correctly. Check these
+  steps on an Android 15 or 16 device with desktop or freeform windows.
+
 ### Window size (a desktop window)
+
+`takeScreenshot: { window: true }` keeps only the app's desktop window,
+its caption bar included, cut where the window manager says the window
+sits; it and `cropOn` are not given together. An app that fills the
+display has no window of its own and is refused by name; so is iOS.
+
 
 ```yaml
 # Width by height in dp, the caption bar included; the window is read back
@@ -442,6 +476,8 @@ gesture.
 - pressKey: HOME                         # iOS home button
 - pressKey: VOLUME_UP                    # Android; iOS fails the step by name
 - pressKey: Back                         # the same as `- back`
+- pressKey: ctrl+s                       # a key with modifiers held (Android)
+- pressKey: ctrl+shift+z
 - back                                   # navigation back
 - back:
     optional: true                       # skipped, not failed, if the screen never moved
@@ -459,6 +495,13 @@ the flow, `smix press-key` and the MCP tool alike: maestro's spellings
 `volumeUp`), and shorthands (`esc`, `up`). Case, spaces, `_` and `-` do
 not matter. maestro's TV remote keys are refused by name — smix drives
 no TV — and `Power` points to `LOCK`.
+
+A key written with `+` is a combination: modifiers first (`ctrl`, `shift`,
+`alt`, `meta`; `control`, `option`, `cmd` and `search` are read as those),
+then one key — a letter, a digit, `enter`, `tab`, `space`, `escape`,
+`backspace`, `delete`, an arrow (`up`, `down`, `left`, `right`) or `f1`–`f12`.
+Case does not matter. Android sends the key's down and up with the
+modifiers' meta state; iOS refuses a combination by name.
 
 ### System / device controls
 
@@ -508,6 +551,9 @@ the device in front of you is a no-op there, not an error.
 - takeScreenshot:
     path: "card.png"
     cropOn: { id: "summary-card" }       # only this element — a cropOn baseline
+- takeScreenshot:
+    path: "window.png"
+    window: true                         # only the app's desktop window, caption bar included (Android)
 ```
 
 ### Control flow
