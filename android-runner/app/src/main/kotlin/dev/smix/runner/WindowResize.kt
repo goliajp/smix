@@ -90,7 +90,8 @@ object WindowResize {
 
     private val MIN_SIDE = Regex("""mMinSizeOfResizeableTaskDp=(\d+)""")
     private val ROTATION = Regex("""^\s*mRotation=(\d)""")
-    private val FRAME = Regex("""ROTATION_(\d+)=\{.*\bconfigFrame=\[(\d+),(\d+)]\[(\d+),(\d+)]""")
+    // Android 14 names the app area `configFrame`; 16 `overrideConfigFrame`
+    private val FRAME = Regex("""ROTATION_(\d+)=\{.*\b(?:configFrame|overrideConfigFrame)=\[(\d+),(\d+)]\[(\d+),(\d+)]""")
 
     /// The first display's app area and smallest window side, from
     /// `dumpsys window displays`; null when either is missing from it.
