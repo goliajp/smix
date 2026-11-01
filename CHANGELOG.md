@@ -12,8 +12,26 @@ All notable changes to the `smix` workspace are documented here. The format foll
   system popups on screen are asked for a button with that name; exactly
   one is pressed, and the run says which popup it answered. A straight
   apostrophe matches the popup's typographic one (`"Don't Allow"`).
+- **`smix sim repair <device>`** rebuilds a simulator's PosterBoard store
+  when PosterBoard cannot load it. A running simulator is shut down and
+  booted again, which is refused unless smix booted it and nobody holds it.
+- `DeviceControlError::PosterStore`, for a broken store that could not be
+  removed before a boot.
 
 ### Fixed
+
+- **A simulator whose PosterBoard crashes at every start is mended at its
+  next boot.** PosterBoard can leave a poster configuration it cannot load
+  (a commit of its own fails and is rolled back incompletely), and from
+  then on it dies in `-[PRPosterDescriptor _initWithPath:]` each time it
+  starts, with a crash report on the Mac's desktop each time; erasing the
+  simulator only bought a couple of weeks. Every boot through smix now
+  checks the store first and, on a simulator that is off, removes a broken
+  one so PosterBoard writes a new one. Only the wallpaper and clock face
+  return to their defaults. A broken store on a running simulator is
+  reported with the command that mends it.
+- The warning about a process crashing in a loop no longer says each crash
+  shows a dialog; where CrashReporter is set to notify, it is a notification.
 
 - **iOS: `setPermissions` with `notifications` says why it fails.** iOS 27
   simulators refuse the grant (`simctl privacy`: "Operation not

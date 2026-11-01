@@ -24,7 +24,7 @@ pub(crate) fn settle(target: RunnerTarget<'_>, udid: &str) {
 }
 
 /// A system process that dies as it starts is restarted and dies again,
-/// each time with a crash report dialog on this Mac's desktop: PosterBoard
+/// each time reported on this Mac's desktop: PosterBoard
 /// on 2026-10-14, 36 times, on a clock configuration it could not load.
 /// Nothing in the runner's answers shows it, so it is said here — only
 /// while it is still going, since one that ended days ago is history that
@@ -45,7 +45,7 @@ fn crash_loop_warnings(dir: &Path, udid: &str, now: chrono::NaiveDateTime) -> Ve
         .map(|l| {
             format!(
                 "[runner] warning: {} on {udid} keeps crashing — {} times in {} min ({} – {}), \
-                 each with a crash report dialog on this Mac; `smix sim crashes {udid}` lists them",
+                 each reported on this Mac's desktop; `smix sim crashes {udid}` lists them",
                 l.process,
                 l.count,
                 l.span.num_minutes().max(1),
