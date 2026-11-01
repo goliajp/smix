@@ -408,6 +408,28 @@ gesture.
 - A `tapOn` after a hover is an ordinary touch and lands as usual; the hover
   ends with it, as it does when a person taps a touchscreen.
 
+### Window size (a desktop window)
+
+```yaml
+# Width by height in dp, the caption bar included; the window is read back
+# after each, and a size it does not take fails naming the one it has.
+- setWindowSize: { width: 1024, height: 768 }
+- assertVisible: { id: "two_pane_layout" }
+- setWindowSize: 839x768
+- assertVisible: { id: "one_pane_layout" }
+```
+
+- Android only, and only for an app in a desktop window (a Chromebook, or
+  Android's desktop mode). An app that fills the display has no window size
+  to set and is refused by name; so is iOS.
+- The window keeps its top-left corner unless the new size would leave the
+  display's app area (the display less its taskbar); then it moves just far
+  enough to fit. A size larger than that area, or below the system's
+  smallest window (220 dp a side on the Android desktop image), is refused
+  naming the limit, and the window keeps its size.
+- The app resized is the one the flow last launched, its `appId` before any
+  launch.
+
 ### Keyboard / hardware keys
 
 ```yaml

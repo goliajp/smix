@@ -137,7 +137,13 @@ class DesktopActivity : Activity() {
 
     private fun showWindow() {
         val c = resources.configuration
-        window_.text = "window ${c.screenWidthDp} ${c.screenHeightDp}"
+        // the width classes an adaptive layout switches at, 600 and 840 dp
+        val layout = when {
+            c.screenWidthDp < 600 -> "compact"
+            c.screenWidthDp < 840 -> "medium"
+            else -> "expanded"
+        }
+        window_.text = "window ${c.screenWidthDp} ${c.screenHeightDp} $layout"
     }
 
     private fun label(text: String, id: Int) = TextView(this).apply {

@@ -334,6 +334,13 @@ object RunnerWire {
         .put("injected", injected)
         .toString()
 
+    fun windowSizeBody(ok: Boolean, widthDp: Int, heightDp: Int, pkg: String): String = JSONObject()
+        .put("ok", ok)
+        .put("widthDp", widthDp)
+        .put("heightDp", heightDp)
+        .put("package", pkg)
+        .toString()
+
     fun swipeAtNormCoordBody(ok: Boolean, q: SwipeQuad): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "swipe_returned_false")

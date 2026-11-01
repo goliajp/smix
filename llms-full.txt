@@ -580,6 +580,28 @@ gesture.
 - A `tapOn` after a hover is an ordinary touch and lands as usual; the hover
   ends with it, as it does when a person taps a touchscreen.
 
+### Window size (a desktop window)
+
+```yaml
+# Width by height in dp, the caption bar included; the window is read back
+# after each, and a size it does not take fails naming the one it has.
+- setWindowSize: { width: 1024, height: 768 }
+- assertVisible: { id: "two_pane_layout" }
+- setWindowSize: 839x768
+- assertVisible: { id: "one_pane_layout" }
+```
+
+- Android only, and only for an app in a desktop window (a Chromebook, or
+  Android's desktop mode). An app that fills the display has no window size
+  to set and is refused by name; so is iOS.
+- The window keeps its top-left corner unless the new size would leave the
+  display's app area (the display less its taskbar); then it moves just far
+  enough to fit. A size larger than that area, or below the system's
+  smallest window (220 dp a side on the Android desktop image), is refused
+  naming the limit, and the window keeps its size.
+- The app resized is the one the flow last launched, its `appId` before any
+  launch.
+
 ### Keyboard / hardware keys
 
 ```yaml
@@ -1821,6 +1843,21 @@ looking is `keyboard_state_unknown` — see
   is the next step's question.
 - Full shape: [02 — YAML reference](02-yaml-reference.md#hover-a-mouse-pointer).
 
+## Window size
+
+```yaml
+- setWindowSize: { width: 1024, height: 768 }
+- setWindowSize: 839x768
+```
+
+- Android: the app's task is found with `am stack list` and resized with
+  `am task resize`, in pixels at the display's density; the size is then
+  read back from the window manager. That command takes any bounds and
+  answers as if it worked, so the reading back is what the step's `ok`
+  means.
+- iOS: refused by name.
+- Full shape: [02 — YAML reference](02-yaml-reference.md#window-size-a-desktop-window).
+
 ## Scroll
 
 ### One-shot scroll
@@ -3002,6 +3039,7 @@ smix pinch id:player --from 1 --to 3 --pan 0,-0.2        # then drag up a fifth 
 smix pinch id:player --from 1 --to 3 --run-up slide      # for a recognizer that counts from the touch
 smix hover id:settings_row                 # Android: a mouse pointer rests on the element (hover style shows)
 smix hover --away                          # …and leaves the app
+smix window-size 839x768 --app com.example # Android desktop window: resize to 839x768 dp, read it back
 smix hide-keyboard
 
 smix tree --json | jq .                    # full a11y tree
@@ -6064,6 +6102,7 @@ that is why.
 | `travel` | ✅ | ⚠️ | iOS hands the route to CoreSimulator. Android has no route primitive — the emulator console takes one position at a time — so smix walks it from the host, one `geo fix` a second. Both return immediately and travel in the background. A registered physical iPhone takes the route through `devicectl` (Xcode 27), with the same caveat as `setLocation` |
 | `setPermissions` | ✅ | ✅ | `pm grant` / `pm revoke` per permission on Android; `simctl privacy` on iOS |
 | `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure. Android reads the display's rotation back before answering, so a rotation that does not arrive is a failure rather than a silent no-op. A foldable iOS simulator ignores the system call, so it is turned the way Device Hub turns it and read back; a facing its posture cannot reach is refused |
+| `setWindowSize` | ❌ | ✅ | smix's own verb. An app's desktop window (Chromebook, Android's desktop mode) resized to a width and height in dp, caption bar included, then read back; another size read back fails naming it. A fullscreen app, a size below the system's smallest window or larger than the display are refused by name, and so is iOS |
 | `setPosture` | ✅ | ❌ | Foldable iOS simulators (iPhone Duo): `closed` / `halfOpen` / `open`, read back from which screen is lit. A one-screen device is refused, and Android refuses by name: nothing drives an emulator's hinge yet |
 
 ## smix-native extensions

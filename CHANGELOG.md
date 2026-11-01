@@ -15,6 +15,17 @@ All notable changes to the `smix` workspace are documented here. The format foll
   and `smix hover --away` do the same from the command line. iOS refuses
   both by name. Underneath, `Driver::mouse`, `App::mouse` and
   `smix_input::Mouse`; the Android runner serves `POST /mouse-at-norm-coord`.
+- **Resize an Android desktop window: `setWindowSize`.** An app in a
+  Chromebook or Android desktop window lays itself out by the window's
+  width, and its breakpoints could only be reached by dragging the window.
+  `setWindowSize: { width: 1024, height: 768 }` (or `1024x768`) sets the
+  window in dp, caption bar included, and reads it back: a window that
+  reads back at another size fails naming it, and a size below the
+  system's smallest window or larger than the display is refused naming
+  the limit. `smix window-size 839x768` does the same from the command
+  line. A fullscreen app and iOS are refused by name. Underneath,
+  `Driver::set_window_size`, `App::set_window_size` and
+  `smix_input::WindowSize`; the Android runner serves `POST /window-size`.
 - **`tapOn` presses a button on a system popup.** A permission prompt
   belongs to the system, so `tapOn: "Allow"` found nothing in the app and
   failed. When a `text:` or `label:` tap has no match in the app, the

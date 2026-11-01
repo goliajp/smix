@@ -411,6 +411,21 @@ looking is `keyboard_state_unknown` — see
   is the next step's question.
 - Full shape: [02 — YAML reference](02-yaml-reference.md#hover-a-mouse-pointer).
 
+## Window size
+
+```yaml
+- setWindowSize: { width: 1024, height: 768 }
+- setWindowSize: 839x768
+```
+
+- Android: the app's task is found with `am stack list` and resized with
+  `am task resize`, in pixels at the display's density; the size is then
+  read back from the window manager. That command takes any bounds and
+  answers as if it worked, so the reading back is what the step's `ok`
+  means.
+- iOS: refused by name.
+- Full shape: [02 — YAML reference](02-yaml-reference.md#window-size-a-desktop-window).
+
 ## Scroll
 
 ### One-shot scroll
