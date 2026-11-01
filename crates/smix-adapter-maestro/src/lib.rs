@@ -266,6 +266,7 @@ mod runtime;
 pub mod selector_support;
 mod timing;
 mod watch;
+mod window_size;
 
 pub use emitter::{EmitError, emit_flow_yaml};
 
@@ -593,6 +594,12 @@ pub enum Step {
     },
     /// The mouse pointer leaves the app, so nothing in it stays hovered.
     HoverAway,
+    /// The app's desktop window resized, then read back — smix's own
+    /// verb. Android only; iOS refuses by name.
+    SetWindowSize {
+        /// Width and height in dp, the caption bar included.
+        size: smix_input::WindowSize,
+    },
     /// Launch / relaunch the app under test. Supports the full maestro
     /// yaml sub-parameter set: appId / clearState / clearKeychain /
     /// permissions / arguments / stopApp.

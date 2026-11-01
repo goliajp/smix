@@ -3347,6 +3347,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "pinch" => crate::pinch::parse(value),
         "hoverOn" => crate::hover::parse_on(value),
         "hoverAway" => crate::hover::parse_away(value),
+        "setWindowSize" => crate::window_size::parse(value),
         "launchApp" => parse_launch_app(value),
         "openLink" => parse_open_link(value),
         "stopApp" => Ok(Step::StopApp),

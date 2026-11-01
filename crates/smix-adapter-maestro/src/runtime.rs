@@ -324,6 +324,19 @@ pub trait AppLike: Send + Sync {
             ..Default::default()
         }))
     }
+    /// Resize the desktop window of `app_id`. Mirrors
+    /// [`App::set_window_size`]. An app with no window refuses by name.
+    async fn set_window_size(
+        &self,
+        _app_id: Option<&str>,
+        size: smix_input::WindowSize,
+    ) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!("setWindowSize {size}: this app has no window to resize"),
+            ..Default::default()
+        }))
+    }
     /// Viewport scroll one swipe in the given direction. Mirrors
     /// [`App::scroll_screen`].
     async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure>;
@@ -649,6 +662,13 @@ impl AppLike for App {
     }
     async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
         App::mouse(self, mouse).await
+    }
+    async fn set_window_size(
+        &self,
+        app_id: Option<&str>,
+        size: smix_input::WindowSize,
+    ) -> Result<(), ExpectationFailure> {
+        App::set_window_size(self, app_id, size).await
     }
     async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {
         App::scroll_screen(self, direction).await
@@ -976,6 +996,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::Pinch { .. } => "pinch",
         Step::HoverOn { .. } => "hoverOn",
         Step::HoverAway => "hoverAway",
+        Step::SetWindowSize { .. } => "setWindowSize",
         Step::LaunchApp { .. } => "launchApp",
         Step::StopApp => "stopApp",
         Step::ClearAppData { .. } => "clearAppData",
@@ -2212,6 +2233,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::HoverAway => {
                 self.app.mouse(&smix_input::Mouse::Away).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::SetWindowSize { size } => {
+                // the app the flow last launched, its appId before any launch
+                self.app
+                    .set_window_size(self.last_bundle.as_deref(), *size)
+                    .await?;
                 Ok(RunStepReport::Ok)
             }
             Step::Scroll => {

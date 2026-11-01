@@ -143,6 +143,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         Step::HoverOn { .. } => &[Slot::HoverTarget],
         Step::TapAtPoint { .. }
         | Step::HoverAway
+        | Step::SetWindowSize { .. }
         | Step::WebViewEval { .. }
         | Step::WaitForAnimationToEnd { .. }
         | Step::InputText { .. }
@@ -425,6 +426,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
             .collect(),
         Step::TapAtPoint { .. }
         | Step::HoverAway
+        | Step::SetWindowSize { .. }
         | Step::WebViewEval { .. }
         | Step::WaitForAnimationToEnd { .. }
         | Step::InputText { .. }

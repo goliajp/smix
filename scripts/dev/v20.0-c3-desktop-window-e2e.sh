@@ -17,6 +17,12 @@
 #      no window, which the runner once passed on as a failure
 #   5. `smix hover` / `smix hover --away` do the same from the command line
 #   6. iOS refuses `smix hover` by name, before any request is sent
+#   7. `setWindowSize` 1024 -> 839 -> 1024 in one flow: the screen reads
+#      the window's dp and the layout class (600 / 840 dp) after each
+#   8. a size below the system's smallest window, or larger than the
+#      display, is refused naming the limit, and the window keeps its size
+#   9. `smix window-size` does the same from the command line; iOS refuses
+#      it by name
 #
 # Runs on smix's own desktop emulator (E2E_ANDROID_DESKTOP), booted without
 # a window when it is off.
@@ -150,5 +156,37 @@ if "$SMIX" hover --away --platform ios --runner-port "$UNUSED_PORT" >"$WORK/ios.
   fail "6: smix hover on iOS succeeded"
 fi
 grep -q "Android-only" "$WORK/ios.log" || fail "6: the iOS refusal does not say why: $(cat "$WORK/ios.log")"
+
+log "7. setWindowSize there and back"
+flow resize \
+  '- setWindowSize: 1024x768' \
+  '- assertVisible: "window 1024 768 expanded"' \
+  '- setWindowSize: { width: 839, height: 768 }' \
+  '- assertVisible: "window 839 768 medium"' \
+  '- setWindowSize: 1024x768'
+is desk_window "window 1024 768 expanded" "7"
+
+log "8. sizes the display cannot give"
+refused() { # $1 name, $2 size, $3 what the refusal must say
+  printf 'appId: %s\n---\n- setWindowSize: %s\n' "$APP" "$2" >"$WORK/$1.yaml"
+  # raw run: this step's refusal is what is judged
+  if "$SMIX" run --device "$DEVICE" --runner-port "$PORT" "$WORK/$1.yaml" >"$WORK/$1.log" 2>&1; then
+    fail "8: setWindowSize $2 passed"
+  fi
+  grep -q "$3" "$WORK/$1.log" || fail "8: the refusal of $2 does not say '$3': $(grep -m2 -i 'fail\|error' "$WORK/$1.log")"
+  is desk_window "window 1024 768 expanded" "8 (after $2)"
+}
+refused too-small 100x100 "220 dp a side"
+refused too-large 5000x5000 "does not fit this display"
+
+log "9. smix window-size"
+"$SMIX" window-size 839x768 --app "$APP" --device "$DEVICE" --runner-port "$PORT" >"$WORK/cli-size.log" 2>&1 \
+  || fail "9: smix window-size: $(tail -3 "$WORK/cli-size.log")"
+grep -q "reads back at 839x768 dp" "$WORK/cli-size.log" || fail "9: smix window-size said: $(cat "$WORK/cli-size.log")"
+is desk_window "window 839 768 medium" "9"
+if "$SMIX" window-size 839x768 --platform ios --runner-port "$UNUSED_PORT" >"$WORK/ios-size.log" 2>&1; then
+  fail "9: smix window-size on iOS succeeded"
+fi
+grep -q "Android-only" "$WORK/ios-size.log" || fail "9: the iOS refusal does not say why: $(cat "$WORK/ios-size.log")"
 
 log "V20.0-C3-DESKTOP-WINDOW-PASS"

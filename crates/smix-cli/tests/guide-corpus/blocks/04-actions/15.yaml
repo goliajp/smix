@@ -1,3 +1,2 @@
-- scroll
-- scroll:
-    direction: UP
+- setWindowSize: { width: 1024, height: 768 }
+- setWindowSize: 839x768

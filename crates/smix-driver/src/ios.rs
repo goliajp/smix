@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use std::time::Duration;
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
-use smix_input::{KeyName, Mouse, Pinch, SwipeDirection};
+use smix_input::{KeyName, Mouse, Pinch, SwipeDirection, WindowSize};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
@@ -288,6 +288,21 @@ impl Driver for IosDriver {
                 "IosDriver::mouse: `{}` moves a mouse pointer, which is Android-only; \
                  XCUITest on iOS has no pointer to hover with.",
                 mouse.kind()
+            ),
+            ..Default::default()
+        }))
+    }
+
+    async fn set_window_size(
+        &self,
+        _app: Option<&str>,
+        size: WindowSize,
+    ) -> Result<WindowSize, ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!(
+                "IosDriver::set_window_size: resizing an app's window to {size} is Android-only \
+                 (a desktop window); XCUITest on iOS has no call that sizes an app's window."
             ),
             ..Default::default()
         }))

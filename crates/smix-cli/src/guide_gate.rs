@@ -426,6 +426,13 @@ impl AppLike for MockApp {
     async fn mouse(&self, _mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn set_window_size(
+        &self,
+        _app_id: Option<&str>,
+        _size: smix_input::WindowSize,
+    ) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     async fn swipe_at_coord(
         &self,
         _from: (f64, f64),
@@ -770,7 +777,7 @@ fn remove_artifacts(flow: &smix_adapter_maestro::Flow) {
 const KNOWN_BROKEN: &[(&str, usize, &str)] = &[
     (
         "02-yaml-reference",
-        13,
+        14,
         "repeat.while.visible loops until the element leaves the screen; \
          a mock that always says visible never exits, and one that said \
          otherwise would be inventing a screen.",

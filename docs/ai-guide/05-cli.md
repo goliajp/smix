@@ -977,6 +977,7 @@ smix pinch id:player --from 1 --to 3 --pan 0,-0.2        # then drag up a fifth 
 smix pinch id:player --from 1 --to 3 --run-up slide      # for a recognizer that counts from the touch
 smix hover id:settings_row                 # Android: a mouse pointer rests on the element (hover style shows)
 smix hover --away                          # …and leaves the app
+smix window-size 839x768 --app com.example # Android desktop window: resize to 839x768 dp, read it back
 smix hide-keyboard
 
 smix tree --json | jq .                    # full a11y tree

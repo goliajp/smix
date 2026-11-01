@@ -21,7 +21,7 @@ use smix_error::{FailureCode, FailureInit};
 use std::time::Duration;
 
 use smix_error::ExpectationFailure;
-use smix_input::{KeyName, Mouse, Pinch, SwipeDirection};
+use smix_input::{KeyName, Mouse, Pinch, SwipeDirection, WindowSize};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
@@ -395,6 +395,22 @@ pub trait Driver: Send + Sync {
                 "mouse {}: this driver has no mouse pointer to move",
                 mouse.kind()
             ),
+            ..Default::default()
+        }))
+    }
+
+    /// Resize the desktop window of `app` (the app in front when `None`)
+    /// and read back the size it then has, which the caller compares with
+    /// what it asked for. A platform whose apps have no window to resize
+    /// refuses by name.
+    async fn set_window_size(
+        &self,
+        _app: Option<&str>,
+        size: WindowSize,
+    ) -> Result<WindowSize, ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!("setWindowSize {size}: this driver has no app window to resize"),
             ..Default::default()
         }))
     }

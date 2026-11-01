@@ -468,6 +468,13 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Device,
         ArgShape::BareString,
     ),
+    // smix's own: maestro has no desktop window to resize.
+    v(
+        "setWindowSize",
+        "setWindowSize",
+        VerbCategory::Device,
+        ArgShape::Mapping,
+    ),
     // ----- smix-native extensions (parity with parser dispatch_step) -----
     v(
         "webview_eval",
@@ -693,7 +700,14 @@ mod tests {
 
     #[test]
     fn table_covers_smix_native_verbs() {
-        for name in ["fixture", "webviewEval", "pinch", "hoverOn", "hoverAway"] {
+        for name in [
+            "fixture",
+            "webviewEval",
+            "pinch",
+            "hoverOn",
+            "hoverAway",
+            "setWindowSize",
+        ] {
             assert!(
                 find_by_smix(name).is_some() || find_by_maestro(name).is_some(),
                 "smix-native verb {name:?} missing from VERB_TABLE"

@@ -71,6 +71,7 @@ enum MockCall {
     Pinch(smix_input::Pinch),
     /// `App::mouse(mouse)`.
     Mouse(smix_input::Mouse),
+    WindowSize(Option<String>, smix_input::WindowSize),
     /// `App::scroll_screen(direction)`.
     ScrollScreen(SwipeDirection),
     /// `App::assert_not_visible(selector)`. Adapter only records
@@ -733,6 +734,17 @@ impl AppLike for MockApp {
             .unwrap()
             .push(MockCall::LaunchAppWithOptions(opts.clone()));
         Ok(Vec::new())
+    }
+    async fn set_window_size(
+        &self,
+        app_id: Option<&str>,
+        size: smix_input::WindowSize,
+    ) -> Result<(), ExpectationFailure> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(MockCall::WindowSize(app_id.map(str::to_string), size));
+        Ok(())
     }
     async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::Mouse(*mouse));
@@ -4648,5 +4660,41 @@ async fn a_failed_run_keeps_the_times_up_to_the_step_that_failed() {
     assert_eq!(
         t.iter().map(|s| s.verdict).collect::<Vec<_>>(),
         ["ok", "failed"]
+    );
+}
+
+fn window_sizes(app: &MockApp) -> Vec<(Option<String>, smix_input::WindowSize)> {
+    app.calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            MockCall::WindowSize(a, s) => Some((a.clone(), *s)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn set_window_size_resizes_the_window_of_the_app_last_launched() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- setWindowSize: 1024x768\n- launchApp: { appId: com.u }\n- setWindowSize: { width: 839, height: 768 }\n",
+    )
+    .unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect("run ok");
+    let size = |w, h| smix_input::WindowSize {
+        width_dp: w,
+        height_dp: h,
+    };
+    assert_eq!(
+        window_sizes(&app),
+        vec![
+            (Some("com.t".into()), size(1024, 768)),
+            (Some("com.u".into()), size(839, 768))
+        ]
     );
 }

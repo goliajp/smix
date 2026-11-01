@@ -1,1 +1,2 @@
-- setPosture: open        # closed / halfOpen / open
+- setOrientation: LANDSCAPE_LEFT
+- setOrientation: PORTRAIT
