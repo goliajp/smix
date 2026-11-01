@@ -438,6 +438,11 @@ gesture.
 
 ### Window size (a desktop window)
 
+The caption bar's buttons are in the accessibility tree under their own
+ids, so they are tapped like any element: `tapOn: { id: back_button }`
+(the arrow, the app's back), `minimize_window`, `maximize_window`,
+`close_window`.
+
 `takeScreenshot: { window: true }` keeps only the app's desktop window,
 its caption bar included, cut where the window manager says the window
 sits; it and `cropOn` are not given together. An app that fills the
