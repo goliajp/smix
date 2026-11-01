@@ -21,6 +21,7 @@
 //! - `POST /pinch-at-norm-coord {cx, cy, fromSpan, toSpan, durationMs, pan*}` — two-finger pinch
 //! - `POST /mouse-at-norm-coord {kind, nx?, ny?}` — a mouse pointer over a point, or off the app (Android)
 //! - `POST /window-size {package?, widthDp, heightDp}` — an app's desktop window resized, and its size read back (Android)
+//! - `POST /window-bounds {package?}` — where an app's desktop window sits, in px, and the display's size (Android)
 //! - `POST /foreground {bundleId}` — bring app to foreground
 //! - `POST /hide-keyboard` — take the keyboard down: its Return or Done key,
 //!   a drag of the focused field's scroll view into it, a touch on an empty

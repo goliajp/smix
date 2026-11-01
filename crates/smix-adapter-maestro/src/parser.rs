@@ -3201,11 +3201,13 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
             path: None,
             annotations: Vec::new(),
             crop_on: None,
+            window: false,
         }),
         Value::String(s) => Ok(Step::TakeScreenshot {
             path: Some(s.clone()),
             annotations: Vec::new(),
             crop_on: None,
+            window: false,
         }),
         Value::Mapping(m) => {
             // Long form: { name? | path?, annotate?, cropOn? }. It used to
@@ -3214,7 +3216,7 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
                 m,
                 "takeScreenshot",
                 "takeScreenshot",
-                &["name", "path", "annotate", "cropOn"],
+                &["name", "path", "annotate", "cropOn", "window"],
                 &[
                     ("label", "smix does not carry out a per-step label here"),
                     (
@@ -3227,6 +3229,23 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
                 None => None,
                 Some(v) => Some(selector_under(v, "takeScreenshot.cropOn")?),
             };
+            let window = match m.get(Value::String("window".into())) {
+                None => false,
+                Some(Value::Bool(b)) => *b,
+                Some(other) => {
+                    return Err(ParseError::InvalidValue {
+                        field: "takeScreenshot.window".into(),
+                        reason: format!("expected true or false, got {other:?}"),
+                    });
+                }
+            };
+            if window && crop_on.is_some() {
+                return Err(ParseError::InvalidValue {
+                    field: "takeScreenshot".into(),
+                    reason: "`window: true` and `cropOn` each choose the region kept; give one"
+                        .into(),
+                });
+            }
             let path = m
                 .get(Value::String("name".into()))
                 .or_else(|| m.get(Value::String("path".into())))
@@ -3280,6 +3299,7 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
                 path,
                 annotations,
                 crop_on,
+                window,
             })
         }
         other => Err(ParseError::InvalidValue {

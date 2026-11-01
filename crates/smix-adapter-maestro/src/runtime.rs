@@ -337,6 +337,18 @@ pub trait AppLike: Send + Sync {
             ..Default::default()
         }))
     }
+    /// Where the desktop window of `app_id` sits, in px. Mirrors
+    /// [`App::window_bounds`]. An app with no window refuses by name.
+    async fn window_bounds(
+        &self,
+        _app_id: Option<&str>,
+    ) -> Result<smix_input::WindowBounds, ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "takeScreenshot window: this app has no window of its own".into(),
+            ..Default::default()
+        }))
+    }
     /// Viewport scroll one swipe in the given direction. Mirrors
     /// [`App::scroll_screen`].
     async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure>;
@@ -669,6 +681,12 @@ impl AppLike for App {
         size: smix_input::WindowSize,
     ) -> Result<(), ExpectationFailure> {
         App::set_window_size(self, app_id, size).await
+    }
+    async fn window_bounds(
+        &self,
+        app_id: Option<&str>,
+    ) -> Result<smix_input::WindowBounds, ExpectationFailure> {
+        App::window_bounds(self, app_id).await
     }
     async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {
         App::scroll_screen(self, direction).await
@@ -2440,14 +2458,23 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 path,
                 annotations,
                 crop_on,
+                window,
             } => {
                 let crop = match crop_on {
                     Some(sel) => Some(self.crop_target(sel).await?),
                     None => None,
                 };
+                let frame = if *window {
+                    Some(self.app.window_bounds(self.last_bundle.as_deref()).await?)
+                } else {
+                    None
+                };
                 let mut bytes = self.app.screenshot().await?;
                 if let Some(crop) = &crop {
                     bytes = smix_sdk::crop_to(&bytes, crop)?;
+                }
+                if let Some(frame) = &frame {
+                    bytes = smix_sdk::crop_to_window(&bytes, frame)?;
                 }
                 // Compose annotations onto the PNG BEFORE writing.
                 // Empty annotations = plain screenshot.

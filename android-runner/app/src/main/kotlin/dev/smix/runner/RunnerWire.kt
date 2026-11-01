@@ -341,6 +341,17 @@ object RunnerWire {
         .put("package", pkg)
         .toString()
 
+    fun windowBoundsBody(pkg: String, window: WindowResize.Box, display: WindowResize.Box): String = JSONObject()
+        .put("ok", true)
+        .put("package", pkg)
+        .put("left", window.left)
+        .put("top", window.top)
+        .put("right", window.right)
+        .put("bottom", window.bottom)
+        .put("displayWidth", display.width)
+        .put("displayHeight", display.height)
+        .toString()
+
     fun swipeAtNormCoordBody(ok: Boolean, q: SwipeQuad): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "swipe_returned_false")

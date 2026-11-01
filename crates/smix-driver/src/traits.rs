@@ -21,7 +21,7 @@ use smix_error::{FailureCode, FailureInit};
 use std::time::Duration;
 
 use smix_error::ExpectationFailure;
-use smix_input::{KeyName, Mouse, Pinch, SwipeDirection, WindowSize};
+use smix_input::{KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
@@ -411,6 +411,17 @@ pub trait Driver: Send + Sync {
         Err(ExpectationFailure::new(FailureInit {
             code: Some(FailureCode::DriverError),
             message: format!("setWindowSize {size}: this driver has no app window to resize"),
+            ..Default::default()
+        }))
+    }
+
+    /// Where the desktop window of `app` (the app in front when `None`)
+    /// sits on its display, in px, its caption bar included. A platform
+    /// whose apps have no window of their own refuses by name.
+    async fn window_bounds(&self, _app: Option<&str>) -> Result<WindowBounds, ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "window screenshot: this driver has no app window of its own".into(),
             ..Default::default()
         }))
     }
