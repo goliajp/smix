@@ -28,6 +28,7 @@ use smix_selector::Selector;
 
 /// A selector spelling the tree resolver cannot evaluate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UnreadableForm {
     /// `ocrText:` — pixels, read by Vision (iOS) / ML Kit (Android).
     OcrText,
@@ -63,6 +64,7 @@ impl UnreadableForm {
 /// on `notVisible:`, because "OCR did not find it" is evidence of
 /// presence in one direction and not of absence in the other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Slot {
     /// `tapOn:` — the element to tap.
     TapOnTarget,
