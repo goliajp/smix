@@ -21,7 +21,7 @@ use smix_error::{FailureCode, FailureInit};
 use std::time::Duration;
 
 use smix_error::ExpectationFailure;
-use smix_input::{KeyName, Pinch, SwipeDirection};
+use smix_input::{KeyName, Mouse, Pinch, SwipeDirection};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
@@ -383,6 +383,21 @@ pub trait Driver: Send + Sync {
     /// drag before they lift. A finger that would leave the screen is the
     /// runner's refusal, not a clipped gesture.
     async fn pinch(&self, pinch: &Pinch) -> Result<(), ExpectationFailure>;
+
+    /// A mouse pointer resting over a point or leaving the app: mouse
+    /// events, which a desktop window's hover styles and menus answer and
+    /// a touch does not. A platform with no pointer refuses by name;
+    /// nothing is turned into a touch.
+    async fn mouse(&self, mouse: &Mouse) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!(
+                "mouse {}: this driver has no mouse pointer to move",
+                mouse.kind()
+            ),
+            ..Default::default()
+        }))
+    }
 
     /// Dismiss the keyboard.
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure>;

@@ -315,6 +315,15 @@ pub trait AppLike: Send + Sync {
     ) -> Result<(), ExpectationFailure>;
     /// Two fingers in one gesture. Mirrors [`App::pinch`].
     async fn pinch(&self, pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure>;
+    /// A mouse pointer over a point or off the app. Mirrors [`App::mouse`].
+    /// An app with no pointer refuses by name.
+    async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!("mouse {}: this app has no mouse pointer", mouse.kind()),
+            ..Default::default()
+        }))
+    }
     /// Viewport scroll one swipe in the given direction. Mirrors
     /// [`App::scroll_screen`].
     async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure>;
@@ -637,6 +646,9 @@ impl AppLike for App {
     }
     async fn pinch(&self, pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure> {
         App::pinch(self, pinch).await
+    }
+    async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
+        App::mouse(self, mouse).await
     }
     async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {
         App::scroll_screen(self, direction).await
@@ -962,6 +974,8 @@ fn summarize_step_verb(step: &Step) -> String {
     match step {
         Step::SwipeOver { .. } => "swipe",
         Step::Pinch { .. } => "pinch",
+        Step::HoverOn { .. } => "hoverOn",
+        Step::HoverAway => "hoverAway",
         Step::LaunchApp { .. } => "launchApp",
         Step::StopApp => "stopApp",
         Step::ClearAppData { .. } => "clearAppData",
@@ -2189,6 +2203,15 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     point => point.clone(),
                 };
                 crate::pinch::run(self.app, &at, *spans, *duration_ms, *pan, *run_up).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::HoverOn { selector } => {
+                let selector = self.desugar_localized_text(selector);
+                crate::hover::run_on(self.app, &selector).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::HoverAway => {
+                self.app.mouse(&smix_input::Mouse::Away).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::Scroll => {

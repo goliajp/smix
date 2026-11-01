@@ -705,19 +705,20 @@ class SmixHttpServer(
     }
 
     private fun serveMouse(session: IHTTPSession): Response {
-        // OK MEANS: injected — every mouse event went in; whether the app hovered, opened a menu or scrolled is the caller's next assertion.
+        // OK MEANS: injected — every mouse event went in, or for `away` the system dropped the exit because its pointer hovered no window (nothing was hovered); whether the app hovered, opened a menu or scrolled is the caller's next assertion.
         val gesture = try {
             MouseGesture.decode(readBodyString(session))
         } catch (e: IllegalArgumentException) {
             return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad mouse request")
         }
         val (w, h) = displaySize()
-        val ok = MouseInjector.inject(instrumentation.uiAutomation, gesture.timeline(w, h))
+        val injected = MouseInjector.inject(instrumentation.uiAutomation, gesture.timeline(w, h))
         device.waitForIdle(500)
+        val ok = gesture.done(injected)
         return newFixedLengthResponse(
             Response.Status.OK,
             "application/json",
-            org.json.JSONObject().put("ok", ok).put("kind", gesture.kind.wire).toString(),
+            RunnerWire.mouseBody(ok, gesture.kind, injected),
         )
     }
 

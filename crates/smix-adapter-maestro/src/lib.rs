@@ -256,6 +256,7 @@ mod apps_config;
 mod emitter;
 mod entry;
 mod expr;
+mod hover;
 mod junit;
 mod output;
 mod parser;
@@ -583,6 +584,15 @@ pub enum Step {
         #[serde(default)]
         run_up: smix_input::RunUp,
     },
+    /// A mouse pointer comes to rest on the element's centre — smix's own
+    /// verb. Mouse events, not a touch: a desktop window's hover styles
+    /// answer it. Android only; iOS refuses by name.
+    HoverOn {
+        /// The element to rest the pointer on.
+        selector: Selector,
+    },
+    /// The mouse pointer leaves the app, so nothing in it stays hovered.
+    HoverAway,
     /// Launch / relaunch the app under test. Supports the full maestro
     /// yaml sub-parameter set: appId / clearState / clearKeychain /
     /// permissions / arguments / stopApp.

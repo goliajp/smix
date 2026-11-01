@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use std::time::Duration;
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
-use smix_input::{KeyName, Pinch, SwipeDirection};
+use smix_input::{KeyName, Mouse, Pinch, SwipeDirection};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
@@ -276,6 +276,21 @@ impl Driver for IosDriver {
 
     async fn pinch(&self, pinch: &Pinch) -> Result<(), ExpectationFailure> {
         IosDriver::pinch(self, pinch).await
+    }
+
+    async fn mouse(&self, mouse: &Mouse) -> Result<(), ExpectationFailure> {
+        // XCUITest's hover is macOS-only; an iOS simulator's pointer is
+        // the Mac's own, which a test cannot move without taking it from
+        // the person at the Mac.
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!(
+                "IosDriver::mouse: `{}` moves a mouse pointer, which is Android-only; \
+                 XCUITest on iOS has no pointer to hover with.",
+                mouse.kind()
+            ),
+            ..Default::default()
+        }))
     }
 
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure> {

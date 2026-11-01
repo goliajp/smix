@@ -103,13 +103,21 @@ data class MouseGesture(
         }
     }
 
+    /// Whether the gesture did what it asks, given whether every event went
+    /// in. The system drops a pointer's HOVER_EXIT when that pointer hovers
+    /// no window ("the hovering pointer is not in any windows"): nothing is
+    /// hovered, which is what leaving asks for — after a touch ended the
+    /// hover, or when nothing was hovered at all. Every other refusal is one.
+    fun done(injected: Boolean): Boolean = injected || kind == Kind.AWAY
+
     companion object {
         const val STEP_MS = 16L
         const val APPROACH_PX = 8f
         const val DRAG_STEPS = 12
 
         /// `{"kind":"hover","nx":0.5,"ny":0.5}`, plus `toNx`/`toNy` for a
-        /// drag and `wheel`/`ctrl` for a wheel turn.
+        /// drag and `wheel`/`ctrl` for a wheel turn; `{"kind":"away"}`
+        /// takes no point.
         fun decode(body: String): MouseGesture {
             val o = try {
                 JSONObject(body)
@@ -123,8 +131,10 @@ data class MouseGesture(
                 return v
             }
             val kind = Kind.of(o.optString("kind"))
-            val nx = share("nx")
-            val ny = share("ny")
+            // Leaving needs no point: HOVER_EXIT ends the hover wherever
+            // it is sent, inside the window or outside it.
+            val nx = if (kind == Kind.AWAY) share("nx", 0.0) else share("nx")
+            val ny = if (kind == Kind.AWAY) share("ny", 0.0) else share("ny")
             return MouseGesture(
                 kind = kind,
                 nx = nx,

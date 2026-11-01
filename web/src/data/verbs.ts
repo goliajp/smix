@@ -1,6 +1,6 @@
 // A hand-curated, representative subset of the canonical VERB_TABLE
-// (crates/smix-verbs/src/lib.rs). The full table is 55 entries — verified
-// against llms.txt ("The canonical yaml verb table (55 entries)"). Every row
+// (crates/smix-verbs/src/lib.rs). The full table is 57 entries — verified
+// against llms.txt ("The canonical yaml verb table (57 entries)"). Every row
 // below is copied verbatim from VERB_TABLE (maestro_name, smix_name,
 // category). The full table lives in llms.txt.
 
@@ -25,6 +25,8 @@ export const VERB_SUBSET: VerbRow[] = [
   { maestro: 'scroll', smix: 'scroll', category: 'Gesture' },
   { maestro: 'swipe', smix: 'swipe', category: 'Gesture' },
   { maestro: 'pinch', smix: 'pinch', category: 'Gesture', tag: 'native' },
+  { maestro: 'hoverOn', smix: 'hover', category: 'Gesture', tag: 'native' },
+  { maestro: 'hoverAway', smix: 'hoverAway', category: 'Gesture', tag: 'native' },
   { maestro: 'openLink', smix: 'openUrl', category: 'Device' },
   { maestro: 'runFlow', smix: 'runFlow', category: 'ControlFlow' },
   { maestro: 'assertWithAI', smix: 'assertCondition', category: 'Assert', tag: 'ai-tier' },
@@ -39,4 +41,4 @@ export const VERB_SUBSET: VerbRow[] = [
   },
 ]
 
-export const VERB_TABLE_TOTAL = 55
+export const VERB_TABLE_TOTAL = 57

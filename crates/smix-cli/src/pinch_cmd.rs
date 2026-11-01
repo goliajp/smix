@@ -5,18 +5,56 @@ use smix_input::{Pan, Pinch, PinchSpans, RunUp};
 use smix_selector::Selector;
 
 use crate::act::{ActError, driver_for, parse_selector};
+use crate::platform::RunPlatform;
 
 /// What the command line said, before anything is resolved.
+#[derive(clap::Args, Debug)]
 pub struct PinchArgs {
+    /// The element whose centre the fingers meet at, in `<kind>:<value>`
+    /// shorthand, or `point:X%,Y%`.
     pub selector: String,
+    /// Zoom factor at the start. Pairs with `--to`.
+    #[arg(long)]
     pub from: Option<f64>,
+    /// Zoom factor at the end. The larger of the two puts the fingers
+    /// 0.6 of the screen's shorter side apart.
+    #[arg(long)]
     pub to: Option<f64>,
+    /// Finger distance at the start, as a share of the screen's shorter
+    /// side. Pairs with `--to-span`; instead of `--from`/`--to`.
+    #[arg(long)]
     pub from_span: Option<f64>,
+    /// Finger distance at the end, same unit as `--from-span`.
+    #[arg(long)]
     pub to_span: Option<f64>,
+    /// Length of the pinch, in milliseconds (50..=10000).
+    #[arg(long, default_value_t = smix_input::PINCH_DEFAULT_DURATION_MS)]
     pub duration_ms: u64,
+    /// Drag both fingers this far after the pinch, before lifting:
+    /// `DX,DY` as shares of the screen (`0,-0.2` or `0%,-20%`).
+    #[arg(long, allow_hyphen_values = true)]
     pub pan: Option<String>,
+    /// Length of the drag, in milliseconds.
+    #[arg(long, default_value_t = smix_input::PINCH_DEFAULT_PAN_MS)]
     pub pan_ms: u64,
+    /// How the fingers reach the start before the counted pinch:
+    /// `spread` (the default) comes down a few points inside the start
+    /// and opens to it, which UIKit's recognizers and Android's
+    /// ScaleGestureDetector need; `slide` comes down at the start's span
+    /// and slides to it, for a recognizer that counts from the touch;
+    /// `none` starts at once.
+    #[arg(long, default_value = "spread")]
     pub run_up: String,
+    /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+    #[arg(long, alias = "runner-port")]
+    pub port: Option<u16>,
+    /// Device UDID, or an alias in this machine's registry.
+    #[arg(long)]
+    pub device: Option<String>,
+    /// Which platform the device is, for a device this machine has not
+    /// registered.
+    #[arg(long, value_enum)]
+    pub platform: Option<RunPlatform>,
 }
 
 /// The finger distances the flags name: one whole pair.
@@ -112,6 +150,9 @@ mod tests {
             pan: None,
             pan_ms: 300,
             run_up: "spread".into(),
+            port: None,
+            device: None,
+            platform: None,
         }
     }
 

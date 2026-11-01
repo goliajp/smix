@@ -6,6 +6,15 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Added
 
+- **Hover with a mouse pointer on Android: `hoverOn` and `hoverAway`.** A
+  Chromebook or Android desktop window draws a hover style under the
+  pointer, and nothing could put a pointer there: `adb shell input` has no
+  hover, and every smix gesture was a touch. `hoverOn: { id: row }` rests
+  the pointer on the element's centre with mouse events, and `hoverAway`
+  takes it off the app so nothing stays hovered. `smix hover <selector>`
+  and `smix hover --away` do the same from the command line. iOS refuses
+  both by name. Underneath, `Driver::mouse`, `App::mouse` and
+  `smix_input::Mouse`; the Android runner serves `POST /mouse-at-norm-coord`.
 - **`tapOn` presses a button on a system popup.** A permission prompt
   belongs to the system, so `tapOn: "Allow"` found nothing in the app and
   failed. When a `text:` or `label:` tap has no match in the app, the
