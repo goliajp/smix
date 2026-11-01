@@ -17,8 +17,9 @@
 #      no window, which the runner once passed on as a failure
 #   5. `smix hover` / `smix hover --away` do the same from the command line
 #   6. iOS refuses `smix hover` by name, before any request is sent
-#   7. `setWindowSize` 1024 -> 839 -> 1024 in one flow: the screen reads
-#      the window's dp and the layout class (600 / 840 dp) after each
+#   7. `setWindowSize` 1024 -> 839 -> compact -> 1024 in one flow: the
+#      screen reads the window's dp and the layout class (600 / 840 dp)
+#      after each
 #   8. a size below the system's smallest window, or larger than the
 #      display, is refused naming the limit, and the window keeps its size
 #   9. `smix window-size` does the same from the command line; iOS refuses
@@ -163,6 +164,8 @@ flow resize \
   '- assertVisible: "window 1024 768 expanded"' \
   '- setWindowSize: { width: 839, height: 768 }' \
   '- assertVisible: "window 839 768 medium"' \
+  '- setWindowSize: compact' \
+  '- assertVisible: "window 412 800 compact"' \
   '- setWindowSize: 1024x768'
 is desk_window "window 1024 768 expanded" "7"
 

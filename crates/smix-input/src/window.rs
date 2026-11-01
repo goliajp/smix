@@ -16,6 +16,34 @@ pub struct WindowSize {
     pub height_dp: u32,
 }
 
+/// Named sizes, one inside each width class adaptive layouts switch at
+/// (compact below 600 dp, medium below 840 dp, expanded from 840 dp). The
+/// sizes are smix's choice, not the system's: a phone's width, a small
+/// tablet's, and a laptop window's.
+pub const PRESETS: [(&str, WindowSize); 3] = [
+    (
+        "compact",
+        WindowSize {
+            width_dp: 412,
+            height_dp: 800,
+        },
+    ),
+    (
+        "medium",
+        WindowSize {
+            width_dp: 700,
+            height_dp: 800,
+        },
+    ),
+    (
+        "expanded",
+        WindowSize {
+            width_dp: 1024,
+            height_dp: 768,
+        },
+    ),
+];
+
 impl WindowSize {
     /// Why this cannot be asked for, in the caller's terms.
     ///
@@ -56,10 +84,16 @@ impl std::fmt::Display for WindowSize {
 impl std::str::FromStr for WindowSize {
     type Err = String;
 
-    /// `1024x768`: width by height in dp.
+    /// `1024x768`: width by height in dp, or a name from [`PRESETS`].
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let bad =
-            || format!("`{s}` is not a window size; write width x height in dp, like 1024x768");
+        if let Some((_, size)) = PRESETS.iter().find(|(name, _)| *name == s) {
+            return Ok(*size);
+        }
+        let bad = || {
+            format!(
+                "`{s}` is not a window size; write width x height in dp, like 1024x768, or compact, medium or expanded"
+            )
+        };
         let (w, h) = s.split_once(['x', 'X']).ok_or_else(bad)?;
         let size = WindowSize {
             width_dp: w.trim().parse().map_err(|_| bad())?,
@@ -89,6 +123,19 @@ mod tests {
         assert!(e.contains("like 1024x768"), "{e}");
         let e = "0x768".parse::<WindowSize>().unwrap_err();
         assert!(e.contains("no area"), "{e}");
+    }
+
+    #[test]
+    fn each_preset_lies_inside_the_width_class_it_is_named_for() {
+        assert_eq!("expanded".parse(), Ok(size(1024, 768)));
+        for (name, s) in PRESETS {
+            let class = match s.width_dp {
+                0..600 => "compact",
+                600..840 => "medium",
+                _ => "expanded",
+            };
+            assert_eq!(class, name, "{s}");
+        }
     }
 
     #[test]

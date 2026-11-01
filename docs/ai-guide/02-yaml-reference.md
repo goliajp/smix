@@ -417,6 +417,7 @@ gesture.
 - assertVisible: { id: "two_pane_layout" }
 - setWindowSize: 839x768
 - assertVisible: { id: "one_pane_layout" }
+- setWindowSize: compact            # or medium, expanded
 ```
 
 - Android only, and only for an app in a desktop window (a Chromebook, or
@@ -429,6 +430,10 @@ gesture.
   naming the limit, and the window keeps its size.
 - The app resized is the one the flow last launched, its `appId` before any
   launch.
+- Named sizes, one inside each width class an adaptive layout switches at
+  (below 600 dp, below 840 dp, from 840 dp): `compact` is 412x800,
+  `medium` 700x800, `expanded` 1024x768. These are smix's sizes, not the
+  system's; write dp to land beside a breakpoint.
 
 ### Keyboard / hardware keys
 
