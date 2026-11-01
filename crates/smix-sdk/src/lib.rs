@@ -2403,6 +2403,20 @@ impl App {
         self.driving()?.pinch(pinch).await
     }
 
+    /// A mouse pointer resting over a point or leaving the app. Mouse
+    /// events, not touches: they reach a desktop window's hover styles,
+    /// which a tap does not. iOS refuses by name.
+    pub async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
+        if let Err(why) = mouse.check() {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("mouse: {why}"),
+                ..Default::default()
+            }));
+        }
+        self.driving()?.mouse(mouse).await
+    }
+
     /// Swipe one gesture anchored at an element: the gesture starts from
     /// the selector's resolved centroid instead of the viewport centre.
     ///

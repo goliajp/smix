@@ -10,7 +10,9 @@
 
 use serde::{Deserialize, Serialize};
 
+mod mouse;
 mod pinch;
+pub use mouse::Mouse;
 pub use pinch::{
     DEFAULT_DURATION_MS as PINCH_DEFAULT_DURATION_MS, DEFAULT_PAN_MS as PINCH_DEFAULT_PAN_MS,
     DURATION_RANGE as PINCH_DURATION_RANGE, Pan, Pinch, PinchSpans, RunUp,

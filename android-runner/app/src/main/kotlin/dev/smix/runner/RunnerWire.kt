@@ -328,6 +328,12 @@ object RunnerWire {
         .put(JSONObject().put("x", Math.round(f.first.x)).put("y", Math.round(f.first.y)))
         .put(JSONObject().put("x", Math.round(f.second.x)).put("y", Math.round(f.second.y)))
 
+    fun mouseBody(ok: Boolean, kind: MouseGesture.Kind, injected: Boolean): String = JSONObject()
+        .put("ok", ok)
+        .put("kind", kind.wire)
+        .put("injected", injected)
+        .toString()
+
     fun swipeAtNormCoordBody(ok: Boolean, q: SwipeQuad): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "swipe_returned_false")

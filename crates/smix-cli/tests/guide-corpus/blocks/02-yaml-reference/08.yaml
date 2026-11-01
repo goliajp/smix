@@ -1,8 +1,6 @@
-- pressKey: ENTER                        # ENTER / TAB / SPACE / DELETE / ESCAPE
-- pressKey: HOME                         # iOS home button
-- pressKey: VOLUME_UP                    # Android; iOS fails the step by name
-- pressKey: Back                         # the same as `- back`
-- back                                   # navigation back
-- back:
-    optional: true                       # skipped, not failed, if the screen never moved
-    label: "close the detail"            # name reports use for the step
+# The pointer comes to rest on the element's centre: mouse events, so the
+# app's hover style shows, as it does under a Chromebook's pointer.
+- hoverOn: { id: "settings_row" }
+- assertVisible: { id: "settings_row_hovered" }
+# The pointer leaves the app; nothing in it stays hovered.
+- hoverAway

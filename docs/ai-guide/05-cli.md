@@ -975,6 +975,8 @@ smix pinch id:player --from 1 --to 3       # two fingers about the element's cen
 smix pinch point:50%,50% --from-span 0.6 --to-span 0.2   # zoom out about a point
 smix pinch id:player --from 1 --to 3 --pan 0,-0.2        # then drag up a fifth of the screen before lifting
 smix pinch id:player --from 1 --to 3 --run-up slide      # for a recognizer that counts from the touch
+smix hover id:settings_row                 # Android: a mouse pointer rests on the element (hover style shows)
+smix hover --away                          # …and leaves the app
 smix hide-keyboard
 
 smix tree --json | jq .                    # full a11y tree

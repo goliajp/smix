@@ -19,6 +19,7 @@
 //! - `POST /scroll {selector, direction, include?}` — scroll-until-visible
 //! - `POST /swipe-once {direction}` — single swipe gesture (no probe loop)
 //! - `POST /pinch-at-norm-coord {cx, cy, fromSpan, toSpan, durationMs, pan*}` — two-finger pinch
+//! - `POST /mouse-at-norm-coord {kind, nx?, ny?}` — a mouse pointer over a point, or off the app (Android)
 //! - `POST /foreground {bundleId}` — bring app to foreground
 //! - `POST /hide-keyboard` — take the keyboard down: its Return or Done key,
 //!   a drag of the focused field's scroll view into it, a touch on an empty
@@ -38,6 +39,7 @@ pub use acts::{TapTarget, target_gone_before_touch};
 mod hide_keyboard;
 mod hittable;
 mod input_text;
+mod mouse;
 mod paced_fill;
 pub use paced_fill::{FILL_PACE, paced_fill_budget};
 mod pinch;

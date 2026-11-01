@@ -199,6 +199,8 @@ pub const ROUTES: &[Route] = &[
     r("/swipe-at-norm-coord", ms(0), ms(500), true),
     r("/swipe-once", ms(0), ms(500), true),
     r("/pinch-at-norm-coord", REQ, REQ, true),
+    // Android: a drag's events 16 ms apart, then a 0.5 s idle wait.
+    r("/mouse-at-norm-coord", NONE, ms(800), false),
     r("/press-key", ms(0), ms(500), false),
     // iOS: five navigation settles of 2 s, two synthesis waits of 5 s and
     // one fixed 0.5 s settle. Android: up to 1.5 s for a still screen

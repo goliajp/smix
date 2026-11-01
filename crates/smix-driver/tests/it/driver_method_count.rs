@@ -30,6 +30,9 @@ const ROSTER: &[&str] = &[
     "hide_keyboard",
     "long_press",
     "long_press_at_norm_coord",
+    // Mouse events, not touches (v20.0-C3): a desktop window's hover and
+    // menus. Defaulted to a refusal, so a driver without a pointer says so.
+    "mouse",
     // How many of the tree's units make a device-independent
     // point: iOS reports points, Android physical pixels. A box compared
     // in raw pixels would give `within: 1` a different meaning on each

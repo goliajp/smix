@@ -385,6 +385,29 @@ gesture.
 - Pinching and then a separate `swipe` also drags the zoomed content: the
   zoom stays in the app once the fingers lift.
 
+### Hover (a mouse pointer)
+
+```yaml
+# The pointer comes to rest on the element's centre: mouse events, so the
+# app's hover style shows, as it does under a Chromebook's pointer.
+- hoverOn: { id: "settings_row" }
+- assertVisible: { id: "settings_row_hovered" }
+# The pointer leaves the app; nothing in it stays hovered.
+- hoverAway
+```
+
+- Android only (a Chromebook or Android desktop window, or any Android
+  device: a mouse reaches a phone's views too). iOS refuses both steps by
+  name: XCUITest on iOS has no pointer.
+- `hoverOn` waits up to 5 s for the element, then reads its centre from the
+  accessibility tree; `ocrText:` and `anchorRelative:` are refused there.
+- Hovering something else moves the pointer there: the element it left sees
+  the pointer leave. `hoverAway` is not a move to an empty spot, which is
+  still inside some row or container whose hover would stay on. With
+  nothing hovered it does nothing and passes.
+- A `tapOn` after a hover is an ordinary touch and lands as usual; the hover
+  ends with it, as it does when a person taps a touchscreen.
+
 ### Keyboard / hardware keys
 
 ```yaml

@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -19,6 +20,8 @@ class DesktopActivity : Activity() {
     private lateinit var window_: TextView
     private lateinit var keys: TextView
     private var hovers = 0
+    private var buttonHovers = 0
+    private var taps = 0
     private var contexts = 0
     private var wheel = 0f
     private var keysSeen = mutableListOf<String>()
@@ -40,6 +43,29 @@ class DesktopActivity : Activity() {
                     MotionEvent.ACTION_HOVER_EXIT -> hoverState.text = "hover out $hovers"
                 }
                 false
+            }
+        }
+        // A control of its own inside the window: its hover is its own,
+        // and a tap after the pointer rested on it still lands.
+        val button = Button(this).apply {
+            id = R.id.desk_button
+            fun show(state: String) {
+                text = "button $state $buttonHovers taps $taps"
+            }
+            show("out")
+            setOnHoverListener { _, e ->
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_HOVER_ENTER -> {
+                        buttonHovers++
+                        show("in")
+                    }
+                    MotionEvent.ACTION_HOVER_EXIT -> show("out")
+                }
+                false
+            }
+            setOnClickListener {
+                taps++
+                show(if (isHovered) "in" else "out")
             }
         }
         val context = label("context clicks 0", R.id.desk_context).apply {
@@ -86,6 +112,7 @@ class DesktopActivity : Activity() {
                 listOf(hoverRow, hoverState, context, scroll, drag, window_, keys).forEach {
                     addView(it, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
                 }
+                addView(button, 2, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             },
         )
     }
