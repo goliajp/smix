@@ -4,3 +4,4 @@
 - assertVisible: { id: "two_pane_layout" }
 - setWindowSize: 839x768
 - assertVisible: { id: "one_pane_layout" }
+- setWindowSize: compact            # or medium, expanded

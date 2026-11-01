@@ -978,6 +978,7 @@ smix pinch id:player --from 1 --to 3 --run-up slide      # for a recognizer that
 smix hover id:settings_row                 # Android: a mouse pointer rests on the element (hover style shows)
 smix hover --away                          # …and leaves the app
 smix window-size 839x768 --app com.example # Android desktop window: resize to 839x768 dp, read it back
+smix window-size compact                   # …or a named size: compact / medium / expanded
 smix hide-keyboard
 
 smix tree --json | jq .                    # full a11y tree

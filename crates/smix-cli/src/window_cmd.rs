@@ -10,7 +10,8 @@ use crate::platform::RunPlatform;
 /// What the command line said, before anything is resolved.
 #[derive(clap::Args, Debug)]
 pub struct WindowSizeArgs {
-    /// Width by height in dp, caption bar included: `1024x768`.
+    /// Width by height in dp, caption bar included: `1024x768`; or a named
+    /// size, `compact` (412x800), `medium` (700x800) or `expanded` (1024x768).
     pub size: WindowSize,
     /// The app whose window to resize; the app in front when left out.
     #[arg(long)]

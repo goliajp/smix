@@ -18,7 +18,8 @@ All notable changes to the `smix` workspace are documented here. The format foll
 - **Resize an Android desktop window: `setWindowSize`.** An app in a
   Chromebook or Android desktop window lays itself out by the window's
   width, and its breakpoints could only be reached by dragging the window.
-  `setWindowSize: { width: 1024, height: 768 }` (or `1024x768`) sets the
+  `setWindowSize: { width: 1024, height: 768 }` (or `1024x768`, or one of
+  the named sizes `compact`, `medium`, `expanded`) sets the
   window in dp, caption bar included, and reads it back: a window that
   reads back at another size fails naming it, and a size below the
   system's smallest window or larger than the display is refused naming

@@ -4,6 +4,7 @@
 //! - setWindowSize: { width: 1024, height: 768 }
 //! - assertVisible: { id: two_pane_layout }
 //! - setWindowSize: 839x768
+//! - setWindowSize: compact     # or medium, expanded
 //! ```
 
 use serde_norway::Value;
@@ -73,6 +74,7 @@ mod tests {
             size(1024, 768)
         );
         assert_eq!(parse(&yaml("839x768")).unwrap(), size(839, 768));
+        assert_eq!(parse(&yaml("compact")).unwrap(), size(412, 800));
     }
 
     #[test]
