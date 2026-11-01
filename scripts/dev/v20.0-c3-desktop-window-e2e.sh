@@ -29,6 +29,8 @@
 #  11. `pressKey: ctrl+s` and `ctrl+shift+z` reach the app with their
 #      modifiers held: "keys ctrl+S ctrl+shift+Z"
 #  12. `mouseDrag` by 96 dp moves the mouse 96 dp: "drag 96 0 mouse"
+#  13. the caption bar's back arrow is an element: `tapOn: { id:
+#      back_button }` closes the desktop screen
 #
 # A right click and a wheel turn are judged on an Android 16 tablet
 # instead (v21.0-c1-mouse-buttons-e2e.sh): this desktop image routes them
@@ -218,5 +220,9 @@ is desk_keys "keys ctrl+s ctrl+shift+z" "11"
 log "12. a drag by dp"
 flow drag '- mouseDrag: { from: { id: desk_drag }, by: { x: 96, y: 0 } }'
 is desk_drag "drag 96 0 mouse" "12"
+
+log "13. the caption bar's back arrow"
+flow back '- tapOn: { id: back_button }' \
+  '- assertNotVisible: { id: desk_hover_row }'
 
 log "V20.0-C3-DESKTOP-WINDOW-PASS"
