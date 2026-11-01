@@ -475,6 +475,9 @@ pub enum Step {
     /// Press a hardware / IME key. Maps to `App::press_key`. The name is
     /// read when the flow is, through [`smix_sdk::KeyName::from_name`].
     PressKey(smix_sdk::KeyName),
+    /// A key pressed with modifiers held — `pressKey: ctrl+s`, smix's own
+    /// spelling. Android only; iOS refuses by name.
+    PressKeyCombo(smix_input::KeyCombo),
     /// Navigation back (maestro `back`): iOS navbar-back / edge swipe,
     /// Android KEYCODE_BACK. Not a keyboard key. `optional` turns a back
     /// the screen never answered into a skip, as it does on a block.

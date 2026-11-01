@@ -21,7 +21,7 @@ use smix_error::{FailureCode, FailureInit};
 use std::time::Duration;
 
 use smix_error::ExpectationFailure;
-use smix_input::{KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
+use smix_input::{KeyCombo, KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
@@ -422,6 +422,16 @@ pub trait Driver: Send + Sync {
         Err(ExpectationFailure::new(FailureInit {
             code: Some(FailureCode::DriverError),
             message: "window screenshot: this driver has no app window of its own".into(),
+            ..Default::default()
+        }))
+    }
+
+    /// Press a key with modifiers held — a keyboard shortcut. A platform
+    /// that cannot send one refuses by name.
+    async fn press_key_combo(&self, combo: &KeyCombo) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!("pressKey {combo}: this driver sends no key combinations"),
             ..Default::default()
         }))
     }

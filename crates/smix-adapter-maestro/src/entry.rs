@@ -859,6 +859,7 @@ pub(crate) fn summarize_step(step: &Step) -> String {
             None => format!("inputText, set ({} chars)", text.chars().count()),
         },
         Step::PressKey(k) => format!("pressKey {k}"),
+        Step::PressKeyCombo(c) => format!("pressKey {c}"),
         Step::RunFlow(p) => format!("runFlow {p}"),
         Step::RunFlowConditional {
             file, when, opts, ..

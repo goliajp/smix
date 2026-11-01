@@ -7,6 +7,7 @@ package dev.smix.runner
 import org.json.JSONException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RunnerWireDecodeTest {
@@ -226,5 +227,16 @@ class RunnerWireDecodeTest {
         // The route read popup_id/button_id for as long as it existed,
         // 500ing every real client request. camelCase is the contract.
         RunnerWire.decodeSystemPopupAction("""{"popup_id":"p","button_id":"b"}""")
+    }
+
+    @Test
+    fun aKeyCombinationNamesItsKeyAsKeyEventDoesAndTheModifiersHeld() {
+        val c = RunnerWire.decodeKeyCombo("""{"key":"S","ctrl":true,"shift":true}""")
+        assertEquals(RunnerWire.KeyCombo("S", ctrl = true, shift = true, alt = false, meta = false), c)
+        assertEquals(false, RunnerWire.decodeKeyCombo("""{"key":"DPAD_LEFT"}""").ctrl)
+        val e = assertThrows(IllegalArgumentException::class.java) {
+            RunnerWire.decodeKeyCombo("""{"key":"s"}""")
+        }
+        assertTrue(e.message!!, e.message!!.contains("KeyEvent name"))
     }
 }

@@ -338,6 +338,9 @@ class SmixHttpServer(
                 // LONGEST WAIT /swipe-once: 500 ms — a 0.5 s idle wait
                 uri == "/swipe-once" && session.method == Method.POST ->
                     serveSwipeOnce(session)
+                // LONGEST WAIT /press-key-combo: 500 ms — a 0.5 s idle wait
+                uri == "/press-key-combo" && session.method == Method.POST ->
+                    servePressKeyCombo(session)
                 // LONGEST WAIT /press-key: 500 ms — a 0.5 s idle wait
                 uri == "/press-key" && session.method == Method.POST ->
                     servePressKey(session)
@@ -964,6 +967,27 @@ class SmixHttpServer(
         device.waitForIdle(500)
         val body = RunnerWire.pressKeyBody(injected, key, code)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    private fun servePressKeyCombo(session: IHTTPSession): Response {
+        // OK MEANS: injected — the key's down and up went in with the modifiers' meta state; what the app did with the shortcut is the caller's next assertion.
+        val combo = try {
+            RunnerWire.decodeKeyCombo(readBodyString(session))
+        } catch (e: IllegalArgumentException) {
+            return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad key combination")
+        }
+        val code = android.view.KeyEvent.keyCodeFromString("KEYCODE_${combo.key}")
+        if (code == android.view.KeyEvent.KEYCODE_UNKNOWN) {
+            return errorJson(Response.Status.BAD_REQUEST, "unknown_key", "no Android KeyEvent named KEYCODE_${combo.key}")
+        }
+        var meta = 0
+        if (combo.ctrl) meta = meta or android.view.KeyEvent.META_CTRL_ON or android.view.KeyEvent.META_CTRL_LEFT_ON
+        if (combo.shift) meta = meta or android.view.KeyEvent.META_SHIFT_ON or android.view.KeyEvent.META_SHIFT_LEFT_ON
+        if (combo.alt) meta = meta or android.view.KeyEvent.META_ALT_ON or android.view.KeyEvent.META_ALT_LEFT_ON
+        if (combo.meta) meta = meta or android.view.KeyEvent.META_META_ON or android.view.KeyEvent.META_META_LEFT_ON
+        val injected = device.pressKeyCode(code, meta)
+        device.waitForIdle(500)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", RunnerWire.keyComboBody(injected, combo, code))
     }
 
     private fun serveBack(): Response {

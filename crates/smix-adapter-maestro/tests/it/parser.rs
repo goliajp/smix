@@ -2718,6 +2718,18 @@ fn take_screenshot_takes_window_and_refuses_it_with_crop_on() {
     assert!(reason.contains("true or false"), "{reason}");
 }
 
+/// `pressKey` with `+` is a key combination, and one that is not names why.
+#[test]
+fn press_key_with_a_plus_is_a_combination() {
+    match only_step("- pressKey: ctrl+s\n") {
+        Step::PressKeyCombo(c) => assert_eq!(c.to_string(), "ctrl+s"),
+        other => panic!("{other:?}"),
+    }
+    let (field, reason) = parse_err("- pressKey: hyper+s\n");
+    assert_eq!(field, "pressKey");
+    assert!(reason.contains("not a modifier"), "{reason}");
+}
+
 #[test]
 fn assert_screenshot_refuses_a_misspelt_key() {
     let (field, reason) = parse_err("- assertScreenshot:\n    path: a.png\n    treshold: 3\n");
