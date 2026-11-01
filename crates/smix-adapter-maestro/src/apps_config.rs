@@ -255,6 +255,7 @@ fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
         | Step::WaitForAnimationToEnd { .. }
         | Step::InputText { .. }
         | Step::PressKey { .. }
+        | Step::PressKeyCombo(_)
         | Step::Back(_)
         | Step::RunFlow { .. }
         | Step::EraseText { .. }

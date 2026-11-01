@@ -239,6 +239,17 @@ pub trait AppLike: Send + Sync {
     async fn set_text(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure>;
     /// Press a hardware / IME key. Mirrors [`App::press_key`].
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure>;
+    /// Press a key with modifiers held. Mirrors [`App::press_key_combo`].
+    async fn press_key_combo(
+        &self,
+        combo: &smix_input::KeyCombo,
+    ) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!("pressKey {combo}: this app sends no key combinations"),
+            ..Default::default()
+        }))
+    }
     /// Scroll until selector is reached. Mirrors [`App::scroll`].
     async fn scroll(
         &self,
@@ -587,6 +598,12 @@ impl AppLike for App {
     }
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure> {
         App::press_key(self, key).await
+    }
+    async fn press_key_combo(
+        &self,
+        combo: &smix_input::KeyCombo,
+    ) -> Result<(), ExpectationFailure> {
+        App::press_key_combo(self, combo).await
     }
     async fn scroll(
         &self,
@@ -1038,7 +1055,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::ClearState { .. } => "clearState",
         Step::ClearKeychain => "clearKeychain",
         Step::HideKeyboard => "hideKeyboard",
-        Step::PressKey(_) => "pressKey",
+        Step::PressKey(_) | Step::PressKeyCombo(_) => "pressKey",
         Step::Back(_) => "back",
         Step::Scroll => "scroll",
         Step::ScrollUntilVisible { .. } => "scrollUntilVisible",
@@ -2150,6 +2167,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             Step::Back(opts) => {
                 let result = self.app.go_back().await.map(|()| RunStepReport::Ok);
                 block_outcome("back", opts, result.map_err(RunError::from))
+            }
+            Step::PressKeyCombo(combo) => {
+                self.app.press_key_combo(combo).await?;
+                Ok(RunStepReport::Ok)
             }
             Step::PressKey(key) => {
                 // Every key goes to the device, the hardware buttons

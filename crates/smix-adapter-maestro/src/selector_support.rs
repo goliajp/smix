@@ -156,6 +156,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         | Step::WaitForAnimationToEnd { .. }
         | Step::InputText { .. }
         | Step::PressKey { .. }
+        | Step::PressKeyCombo(_)
         | Step::Back(_)
         | Step::RunFlow { .. }
         | Step::EraseText { .. }
@@ -458,6 +459,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
         | Step::WaitForAnimationToEnd { .. }
         | Step::InputText { .. }
         | Step::PressKey { .. }
+        | Step::PressKeyCombo(_)
         | Step::Back(_)
         | Step::RunFlow { .. }
         | Step::EraseText { .. }

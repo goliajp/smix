@@ -35,6 +35,7 @@ const ROSTER: &[&str] = &[
     "mouse",
     "set_window_size",
     "window_bounds",
+    "press_key_combo",
     // How many of the tree's units make a device-independent
     // point: iOS reports points, Android physical pixels. A box compared
     // in raw pixels would give `within: 1` a different meaning on each

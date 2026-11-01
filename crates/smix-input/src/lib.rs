@@ -10,9 +10,11 @@
 
 use serde::{Deserialize, Serialize};
 
+mod combo;
 mod mouse;
 mod pinch;
 mod window;
+pub use combo::{ComboKey, KeyCombo};
 pub use mouse::Mouse;
 pub use pinch::{
     DEFAULT_DURATION_MS as PINCH_DEFAULT_DURATION_MS, DEFAULT_PAN_MS as PINCH_DEFAULT_PAN_MS,

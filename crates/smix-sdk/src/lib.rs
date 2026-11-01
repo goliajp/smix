@@ -2443,6 +2443,15 @@ impl App {
         })
     }
 
+    /// Press a key with modifiers held — a keyboard shortcut such as
+    /// `ctrl+s`. Android only; iOS refuses by name.
+    pub async fn press_key_combo(
+        &self,
+        combo: &smix_input::KeyCombo,
+    ) -> Result<(), ExpectationFailure> {
+        self.driving()?.press_key_combo(combo).await
+    }
+
     /// Where the desktop window of `app_id` (the app in front when `None`)
     /// sits on its display, in px, its caption bar included. Android
     /// only; iOS refuses by name.

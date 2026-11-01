@@ -73,6 +73,7 @@ enum MockCall {
     Mouse(smix_input::Mouse),
     WindowSize(Option<String>, smix_input::WindowSize),
     WindowBounds(Option<String>),
+    KeyCombo(smix_input::KeyCombo),
     /// `App::scroll_screen(direction)`.
     ScrollScreen(SwipeDirection),
     /// `App::assert_not_visible(selector)`. Adapter only records
@@ -745,6 +746,13 @@ impl AppLike for MockApp {
             .lock()
             .unwrap()
             .push(MockCall::WindowSize(app_id.map(str::to_string), size));
+        Ok(())
+    }
+    async fn press_key_combo(
+        &self,
+        combo: &smix_input::KeyCombo,
+    ) -> Result<(), ExpectationFailure> {
+        self.calls.lock().unwrap().push(MockCall::KeyCombo(*combo));
         Ok(())
     }
     /// A window a quarter of the mock's 64×64 capture in from each side.
@@ -4710,6 +4718,29 @@ async fn mouse_steps_act_at_the_element_centre_with_their_own_button_wheel_and_e
             Mouse::Drag { from: c, to: c },
         ]
     );
+}
+
+/// `pressKey: ctrl+s` is a combination; `pressKey: tab` stays a named key.
+#[tokio::test]
+async fn press_key_with_modifiers_sends_a_combination_and_a_bare_key_does_not() {
+    let app = MockApp::new();
+    let flow =
+        parse_flow_yaml("appId: com.t\n---\n- pressKey: Ctrl+Shift+Z\n- pressKey: tab\n").unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect("run ok");
+    let combos: Vec<_> = app
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            MockCall::KeyCombo(k) => Some(k.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(combos, vec!["ctrl+shift+z".to_string()]);
 }
 
 #[tokio::test]

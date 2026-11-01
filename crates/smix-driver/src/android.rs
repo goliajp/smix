@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_host_coord_resolver::{HostResolveError, resolve_to_norm_coord};
-use smix_input::{KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
+use smix_input::{KeyCombo, KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
 use smix_runner_client::{HttpRunnerClient, IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::{A11yNode, DEFAULT_VISIBLE_LIMIT, collect_visible_summaries, screen_facts};
 use smix_selector::{Selector, describe_selector};
@@ -708,6 +708,16 @@ impl Driver for AndroidDriver {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
                 message: format!("AndroidDriver::window_bounds: {e}"),
+                ..Default::default()
+            })
+        })
+    }
+
+    async fn press_key_combo(&self, combo: &KeyCombo) -> Result<(), ExpectationFailure> {
+        self.runner.press_key_combo(combo).await.map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("AndroidDriver::press_key_combo {combo}: {e}"),
                 ..Default::default()
             })
         })

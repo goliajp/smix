@@ -1549,6 +1549,15 @@ fn parse_press_key(v: &Value) -> Result<Step, ParseError> {
         field: "pressKey".into(),
         reason: "expected a string".into(),
     })?;
+    if s.contains('+') {
+        return s
+            .parse::<smix_input::KeyCombo>()
+            .map(Step::PressKeyCombo)
+            .map_err(|reason| ParseError::InvalidValue {
+                field: "pressKey".into(),
+                reason,
+            });
+    }
     smix_sdk::KeyName::from_name(s)
         .map(Step::PressKey)
         .map_err(|e| ParseError::InvalidValue {
