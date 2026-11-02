@@ -2693,6 +2693,43 @@ fn take_screenshot_takes_crop_on_and_refuses_what_it_does_not_read() {
     }
 }
 
+/// `window: true` keeps only the app's desktop window; it and `cropOn`
+/// both choose the region kept, so they are not given together.
+#[test]
+fn take_screenshot_takes_window_and_refuses_it_with_crop_on() {
+    match only_step("- takeScreenshot:\n    path: w\n    window: true\n") {
+        Step::TakeScreenshot {
+            window, crop_on, ..
+        } => {
+            assert!(window);
+            assert_eq!(crop_on, None);
+        }
+        other => panic!("{other:?}"),
+    }
+    match only_step("- takeScreenshot: w\n") {
+        Step::TakeScreenshot { window, .. } => assert!(!window),
+        other => panic!("{other:?}"),
+    }
+    let (field, reason) = parse_err("- takeScreenshot:\n    window: true\n    cropOn: { id: a }\n");
+    assert_eq!(field, "takeScreenshot");
+    assert!(reason.contains("give one"), "{reason}");
+    let (field, reason) = parse_err("- takeScreenshot:\n    window: yes please\n");
+    assert_eq!(field, "takeScreenshot.window");
+    assert!(reason.contains("true or false"), "{reason}");
+}
+
+/// `pressKey` with `+` is a key combination, and one that is not names why.
+#[test]
+fn press_key_with_a_plus_is_a_combination() {
+    match only_step("- pressKey: ctrl+s\n") {
+        Step::PressKeyCombo(c) => assert_eq!(c.to_string(), "ctrl+s"),
+        other => panic!("{other:?}"),
+    }
+    let (field, reason) = parse_err("- pressKey: hyper+s\n");
+    assert_eq!(field, "pressKey");
+    assert!(reason.contains("not a modifier"), "{reason}");
+}
+
 #[test]
 fn assert_screenshot_refuses_a_misspelt_key() {
     let (field, reason) = parse_err("- assertScreenshot:\n    path: a.png\n    treshold: 3\n");

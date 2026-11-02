@@ -859,6 +859,7 @@ pub(crate) fn summarize_step(step: &Step) -> String {
             None => format!("inputText, set ({} chars)", text.chars().count()),
         },
         Step::PressKey(k) => format!("pressKey {k}"),
+        Step::PressKeyCombo(c) => format!("pressKey {c}"),
         Step::RunFlow(p) => format!("runFlow {p}"),
         Step::RunFlowConditional {
             file, when, opts, ..
@@ -908,6 +909,31 @@ pub(crate) fn summarize_step(step: &Step) -> String {
             format!("hoverOn {}", smix_sdk::describe_selector(selector))
         }
         Step::HoverAway => "hoverAway".into(),
+        Step::RightClickOn { selector } => {
+            format!("rightClickOn {}", smix_sdk::describe_selector(selector))
+        }
+        Step::MouseWheel {
+            selector,
+            up,
+            notches,
+            ctrl,
+        } => format!(
+            "mouseWheel {} {} {notches}{}",
+            smix_sdk::describe_selector(selector),
+            if *up { "up" } else { "down" },
+            if *ctrl { " ctrl" } else { "" }
+        ),
+        Step::MouseDrag { from, to } => match to {
+            crate::MouseDragTo::Element(sel) => format!(
+                "mouseDrag {} to {}",
+                smix_sdk::describe_selector(from),
+                smix_sdk::describe_selector(sel)
+            ),
+            crate::MouseDragTo::ByDp((x, y)) => format!(
+                "mouseDrag {} by {x},{y} dp",
+                smix_sdk::describe_selector(from)
+            ),
+        },
         Step::SetWindowSize { size } => format!("setWindowSize {size}"),
         Step::AssertNotVisible { .. } => "assertNotVisible".into(),
         Step::Back(_) => "back".to_string(),
@@ -924,6 +950,7 @@ pub(crate) fn summarize_step(step: &Step) -> String {
             path,
             annotations,
             crop_on,
+            window,
         } => {
             let mut s = match path {
                 Some(p) => format!("takeScreenshot {p}"),
@@ -937,6 +964,9 @@ pub(crate) fn summarize_step(step: &Step) -> String {
                     " cropOn={}",
                     smix_selector::describe_selector(sel)
                 ));
+            }
+            if *window {
+                s.push_str(" window");
             }
             s
         }

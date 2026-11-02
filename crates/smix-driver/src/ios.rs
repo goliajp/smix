@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use std::time::Duration;
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
-use smix_input::{KeyName, Mouse, Pinch, SwipeDirection, WindowSize};
+use smix_input::{KeyCombo, KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
@@ -303,6 +303,28 @@ impl Driver for IosDriver {
             message: format!(
                 "IosDriver::set_window_size: resizing an app's window to {size} is Android-only \
                  (a desktop window); XCUITest on iOS has no call that sizes an app's window."
+            ),
+            ..Default::default()
+        }))
+    }
+
+    async fn window_bounds(&self, _app: Option<&str>) -> Result<WindowBounds, ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message:
+                "IosDriver::window_bounds: a screenshot of an app's own window is Android-only \
+                      (a desktop window); an iOS app fills the screen and has no window of its own."
+                    .into(),
+            ..Default::default()
+        }))
+    }
+
+    async fn press_key_combo(&self, combo: &KeyCombo) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!(
+                "IosDriver::press_key_combo: pressing {combo} is Android-only for now; \
+                 smix's iOS runner sends single named keys, not keys with modifiers held."
             ),
             ..Default::default()
         }))

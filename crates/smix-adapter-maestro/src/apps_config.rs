@@ -232,6 +232,9 @@ fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
         | Step::Pinch { .. }
         | Step::HoverOn { .. }
         | Step::HoverAway
+        | Step::RightClickOn { .. }
+        | Step::MouseWheel { .. }
+        | Step::MouseDrag { .. }
         | Step::SetWindowSize { .. }
         | Step::RepeatTap { .. }
         | Step::DoubleTapOn { .. }
@@ -252,6 +255,7 @@ fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
         | Step::WaitForAnimationToEnd { .. }
         | Step::InputText { .. }
         | Step::PressKey { .. }
+        | Step::PressKeyCombo(_)
         | Step::Back(_)
         | Step::RunFlow { .. }
         | Step::EraseText { .. }

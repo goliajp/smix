@@ -239,6 +239,17 @@ pub trait AppLike: Send + Sync {
     async fn set_text(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure>;
     /// Press a hardware / IME key. Mirrors [`App::press_key`].
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure>;
+    /// Press a key with modifiers held. Mirrors [`App::press_key_combo`].
+    async fn press_key_combo(
+        &self,
+        combo: &smix_input::KeyCombo,
+    ) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!("pressKey {combo}: this app sends no key combinations"),
+            ..Default::default()
+        }))
+    }
     /// Scroll until selector is reached. Mirrors [`App::scroll`].
     async fn scroll(
         &self,
@@ -334,6 +345,18 @@ pub trait AppLike: Send + Sync {
         Err(ExpectationFailure::new(FailureInit {
             code: Some(FailureCode::DriverError),
             message: format!("setWindowSize {size}: this app has no window to resize"),
+            ..Default::default()
+        }))
+    }
+    /// Where the desktop window of `app_id` sits, in px. Mirrors
+    /// [`App::window_bounds`]. An app with no window refuses by name.
+    async fn window_bounds(
+        &self,
+        _app_id: Option<&str>,
+    ) -> Result<smix_input::WindowBounds, ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "takeScreenshot window: this app has no window of its own".into(),
             ..Default::default()
         }))
     }
@@ -576,6 +599,12 @@ impl AppLike for App {
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure> {
         App::press_key(self, key).await
     }
+    async fn press_key_combo(
+        &self,
+        combo: &smix_input::KeyCombo,
+    ) -> Result<(), ExpectationFailure> {
+        App::press_key_combo(self, combo).await
+    }
     async fn scroll(
         &self,
         selector: &Selector,
@@ -669,6 +698,12 @@ impl AppLike for App {
         size: smix_input::WindowSize,
     ) -> Result<(), ExpectationFailure> {
         App::set_window_size(self, app_id, size).await
+    }
+    async fn window_bounds(
+        &self,
+        app_id: Option<&str>,
+    ) -> Result<smix_input::WindowBounds, ExpectationFailure> {
+        App::window_bounds(self, app_id).await
     }
     async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {
         App::scroll_screen(self, direction).await
@@ -996,6 +1031,9 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::Pinch { .. } => "pinch",
         Step::HoverOn { .. } => "hoverOn",
         Step::HoverAway => "hoverAway",
+        Step::RightClickOn { .. } => "rightClickOn",
+        Step::MouseWheel { .. } => "mouseWheel",
+        Step::MouseDrag { .. } => "mouseDrag",
         Step::SetWindowSize { .. } => "setWindowSize",
         Step::LaunchApp { .. } => "launchApp",
         Step::StopApp => "stopApp",
@@ -1017,7 +1055,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::ClearState { .. } => "clearState",
         Step::ClearKeychain => "clearKeychain",
         Step::HideKeyboard => "hideKeyboard",
-        Step::PressKey(_) => "pressKey",
+        Step::PressKey(_) | Step::PressKeyCombo(_) => "pressKey",
         Step::Back(_) => "back",
         Step::Scroll => "scroll",
         Step::ScrollUntilVisible { .. } => "scrollUntilVisible",
@@ -2130,6 +2168,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 let result = self.app.go_back().await.map(|()| RunStepReport::Ok);
                 block_outcome("back", opts, result.map_err(RunError::from))
             }
+            Step::PressKeyCombo(combo) => {
+                self.app.press_key_combo(combo).await?;
+                Ok(RunStepReport::Ok)
+            }
             Step::PressKey(key) => {
                 // Every key goes to the device, the hardware buttons
                 // included. Whether a device has a button is its own to
@@ -2233,6 +2275,32 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::HoverAway => {
                 self.app.mouse(&smix_input::Mouse::Away).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::RightClickOn { selector } => {
+                let selector = self.desugar_localized_text(selector);
+                crate::mouse::run_right_click(self.app, &selector).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::MouseWheel {
+                selector,
+                up,
+                notches,
+                ctrl,
+            } => {
+                let selector = self.desugar_localized_text(selector);
+                crate::mouse::run_wheel(self.app, &selector, *up, *notches, *ctrl).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::MouseDrag { from, to } => {
+                let from = self.desugar_localized_text(from).into_owned();
+                let to = match to {
+                    crate::MouseDragTo::Element(sel) => {
+                        crate::MouseDragTo::Element(self.desugar_localized_text(sel).into_owned())
+                    }
+                    by => by.clone(),
+                };
+                crate::mouse::run_drag(self.app, &from, &to).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::SetWindowSize { size } => {
@@ -2440,14 +2508,23 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 path,
                 annotations,
                 crop_on,
+                window,
             } => {
                 let crop = match crop_on {
                     Some(sel) => Some(self.crop_target(sel).await?),
                     None => None,
                 };
+                let frame = if *window {
+                    Some(self.app.window_bounds(self.last_bundle.as_deref()).await?)
+                } else {
+                    None
+                };
                 let mut bytes = self.app.screenshot().await?;
                 if let Some(crop) = &crop {
                     bytes = smix_sdk::crop_to(&bytes, crop)?;
+                }
+                if let Some(frame) = &frame {
+                    bytes = smix_sdk::crop_to_window(&bytes, frame)?;
                 }
                 // Compose annotations onto the PNG BEFORE writing.
                 // Empty annotations = plain screenshot.

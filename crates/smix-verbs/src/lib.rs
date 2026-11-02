@@ -424,6 +424,24 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         ArgShape::None,
     ),
     v(
+        "rightClickOn",
+        "rightClickOn",
+        VerbCategory::Gesture,
+        ArgShape::Selector,
+    ),
+    v(
+        "mouseWheel",
+        "mouseWheel",
+        VerbCategory::Gesture,
+        ArgShape::Mapping,
+    ),
+    v(
+        "mouseDrag",
+        "mouseDrag",
+        VerbCategory::Gesture,
+        ArgShape::Mapping,
+    ),
+    v(
         "hideKeyboard",
         "hideKeyboard",
         VerbCategory::Gesture,
@@ -706,6 +724,9 @@ mod tests {
             "pinch",
             "hoverOn",
             "hoverAway",
+            "rightClickOn",
+            "mouseWheel",
+            "mouseDrag",
             "setWindowSize",
         ] {
             assert!(

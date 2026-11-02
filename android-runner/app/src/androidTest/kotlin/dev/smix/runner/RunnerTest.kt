@@ -333,9 +333,14 @@ class SmixHttpServer(
                     serveMouse(session)
                 // LONGEST WAIT /window-size: 6000 ms — RESIZE_ARRIVES_MS and one look past it; the shell commands before it start only while the route's limit lasts
                 uri == "/window-size" && session.method == Method.POST -> serveWindowSize(session)
+                // LONGEST WAIT /window-bounds: 2000 ms — two shell commands, each within the route's limit
+                uri == "/window-bounds" && session.method == Method.POST -> serveWindowBounds(session)
                 // LONGEST WAIT /swipe-once: 500 ms — a 0.5 s idle wait
                 uri == "/swipe-once" && session.method == Method.POST ->
                     serveSwipeOnce(session)
+                // LONGEST WAIT /press-key-combo: 500 ms — a 0.5 s idle wait
+                uri == "/press-key-combo" && session.method == Method.POST ->
+                    servePressKeyCombo(session)
                 // LONGEST WAIT /press-key: 500 ms — a 0.5 s idle wait
                 uri == "/press-key" && session.method == Method.POST ->
                     servePressKey(session)
@@ -783,6 +788,39 @@ class SmixHttpServer(
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
+    private fun serveWindowBounds(session: IHTTPSession): Response {
+        // OK MEANS: reading — the window manager's own bounds for the app's desktop window, in px, and the display's size; nothing is changed.
+        val req = try {
+            WindowResize.Which.decode(readBodyString(session))
+        } catch (e: IllegalArgumentException) {
+            return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad window-bounds request")
+        }
+        val clock = routeClock("/window-bounds")
+        val display = clock.stage("display") {
+            WindowResize.readDisplaySize(shellOutput("dumpsys window displays", clock.leftMs()))
+        } ?: return errorJson(
+            Response.Status.INTERNAL_ERROR,
+            "display_unread",
+            if (clock.spent) clock.saw() else "`dumpsys window displays` did not give the display's size",
+        )
+        val task = clock.stage("task") {
+            WindowResize.findTask(shellOutput("am stack list", clock.leftMs()), req.pkg)
+        } ?: return errorJson(
+            Response.Status.NOT_FOUND,
+            "no_window",
+            if (clock.spent) clock.saw() else "${req.pkg ?: "no app"} has no visible window",
+        )
+        if (!task.freeform) {
+            return errorJson(
+                Response.Status.CONFLICT,
+                "not_a_desktop_window",
+                "${task.pkg} fills the display rather than sitting in a desktop window, so it has no window of its own to show",
+            )
+        }
+        val body = RunnerWire.windowBoundsBody(task.pkg, task.bounds, display)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
     private fun serveMouse(session: IHTTPSession): Response {
         // OK MEANS: injected — every mouse event went in, or for `away` the system dropped the exit because its pointer hovered no window (nothing was hovered); whether the app hovered, opened a menu or scrolled is the caller's next assertion.
         val gesture = try {
@@ -791,7 +829,8 @@ class SmixHttpServer(
             return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad mouse request")
         }
         val (w, h) = displaySize()
-        val injected = MouseInjector.inject(instrumentation.uiAutomation, gesture.timeline(w, h))
+        val density = instrumentation.targetContext.resources.displayMetrics.density
+        val injected = MouseInjector.inject(instrumentation.uiAutomation, gesture.timeline(w, h, density))
         device.waitForIdle(500)
         val ok = gesture.done(injected)
         return newFixedLengthResponse(
@@ -928,6 +967,27 @@ class SmixHttpServer(
         device.waitForIdle(500)
         val body = RunnerWire.pressKeyBody(injected, key, code)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    private fun servePressKeyCombo(session: IHTTPSession): Response {
+        // OK MEANS: injected — the key's down and up went in with the modifiers' meta state; what the app did with the shortcut is the caller's next assertion.
+        val combo = try {
+            RunnerWire.decodeKeyCombo(readBodyString(session))
+        } catch (e: IllegalArgumentException) {
+            return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad key combination")
+        }
+        val code = android.view.KeyEvent.keyCodeFromString("KEYCODE_${combo.key}")
+        if (code == android.view.KeyEvent.KEYCODE_UNKNOWN) {
+            return errorJson(Response.Status.BAD_REQUEST, "unknown_key", "no Android KeyEvent named KEYCODE_${combo.key}")
+        }
+        var meta = 0
+        if (combo.ctrl) meta = meta or android.view.KeyEvent.META_CTRL_ON or android.view.KeyEvent.META_CTRL_LEFT_ON
+        if (combo.shift) meta = meta or android.view.KeyEvent.META_SHIFT_ON or android.view.KeyEvent.META_SHIFT_LEFT_ON
+        if (combo.alt) meta = meta or android.view.KeyEvent.META_ALT_ON or android.view.KeyEvent.META_ALT_LEFT_ON
+        if (combo.meta) meta = meta or android.view.KeyEvent.META_META_ON or android.view.KeyEvent.META_META_LEFT_ON
+        val injected = device.pressKeyCode(code, meta)
+        device.waitForIdle(500)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", RunnerWire.keyComboBody(injected, combo, code))
     }
 
     private fun serveBack(): Response {

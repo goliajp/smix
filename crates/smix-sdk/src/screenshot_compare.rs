@@ -339,6 +339,41 @@ pub fn crop_to(png_bytes: &[u8], crop: &CropTo) -> Result<Vec<u8>, ExpectationFa
     crop_png(png_bytes, region)
 }
 
+/// A screenshot of the whole display cut down to an app's desktop window,
+/// its caption bar included. The window is placed by the display's size
+/// in px, so a screenshot taken at another scale is cut at the same place.
+///
+/// # Errors
+///
+/// The PNG cannot be read, or the window has no area on the display.
+pub fn crop_to_window(
+    png_bytes: &[u8],
+    window: &smix_input::WindowBounds,
+) -> Result<Vec<u8>, ExpectationFailure> {
+    let (w, h) = png_size(png_bytes)?;
+    let region = crop_rect_in_pixels(&window_rect(window), &display_rect(window), w, h)
+        .map_err(|why| failure(FailureCode::NotVisible, format!("window screenshot: {why}")))?;
+    crop_png(png_bytes, region)
+}
+
+fn window_rect(b: &smix_input::WindowBounds) -> Rect {
+    Rect {
+        x: f64::from(b.left),
+        y: f64::from(b.top),
+        w: f64::from(b.right - b.left),
+        h: f64::from(b.bottom - b.top),
+    }
+}
+
+fn display_rect(b: &smix_input::WindowBounds) -> Rect {
+    Rect {
+        x: 0.0,
+        y: 0.0,
+        w: f64::from(b.display_width),
+        h: f64::from(b.display_height),
+    }
+}
+
 fn png_size(png_bytes: &[u8]) -> Result<(u32, u32), ExpectationFailure> {
     let reader = png::Decoder::new(std::io::Cursor::new(png_bytes))
         .read_info()
@@ -534,6 +569,39 @@ mod tests {
                 y: 60,
                 w: 300,
                 h: 150
+            }
+        );
+    }
+
+    #[test]
+    fn a_window_is_cut_where_it_sits_on_the_display_at_the_screenshots_scale() {
+        // the emulator's window: [1000,464][2678,2000] on 3840x2160
+        let b = smix_input::WindowBounds {
+            left: 1000,
+            top: 464,
+            right: 2678,
+            bottom: 2000,
+            display_width: 3840,
+            display_height: 2160,
+        };
+        let full = crop_rect_in_pixels(&window_rect(&b), &display_rect(&b), 3840, 2160).unwrap();
+        assert_eq!(
+            full,
+            PixelRect {
+                x: 1000,
+                y: 464,
+                w: 1678,
+                h: 1536
+            }
+        );
+        let half = crop_rect_in_pixels(&window_rect(&b), &display_rect(&b), 1920, 1080).unwrap();
+        assert_eq!(
+            half,
+            PixelRect {
+                x: 500,
+                y: 232,
+                w: 839,
+                h: 768
             }
         );
     }

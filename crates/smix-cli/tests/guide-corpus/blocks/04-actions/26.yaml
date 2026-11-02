@@ -1,0 +1,3 @@
+- openLink: "myapp://home/details/42"
+- openLink:
+    link: "https://example.com"

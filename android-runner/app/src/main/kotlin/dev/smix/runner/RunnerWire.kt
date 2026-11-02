@@ -49,6 +49,31 @@ object RunnerWire {
     fun decodePressKey(payload: String): String =
         JSONObject(payload).getString("key")
 
+    /// A key pressed with modifiers held: `key` is the KeyEvent name
+    /// without `KEYCODE_` (`S`, `ENTER`, `DPAD_LEFT`, `F5`).
+    data class KeyCombo(val key: String, val ctrl: Boolean, val shift: Boolean, val alt: Boolean, val meta: Boolean)
+
+    fun decodeKeyCombo(payload: String): KeyCombo {
+        val o = JSONObject(payload)
+        val key = o.getString("key")
+        require(key.isNotEmpty() && key.all { it.isUpperCase() || it.isDigit() || it == '_' }) {
+            "key must be a KeyEvent name like S or DPAD_LEFT, not '$key'"
+        }
+        return KeyCombo(
+            key,
+            o.optBoolean("ctrl", false),
+            o.optBoolean("shift", false),
+            o.optBoolean("alt", false),
+            o.optBoolean("meta", false),
+        )
+    }
+
+    fun keyComboBody(ok: Boolean, combo: KeyCombo, keyCode: Int): String = JSONObject()
+        .put("ok", ok)
+        .put("key", combo.key)
+        .put("keyCode", keyCode)
+        .toString()
+
     fun decodeSetOrientation(payload: String): String =
         JSONObject(payload).getString("orientation")
 
@@ -339,6 +364,17 @@ object RunnerWire {
         .put("widthDp", widthDp)
         .put("heightDp", heightDp)
         .put("package", pkg)
+        .toString()
+
+    fun windowBoundsBody(pkg: String, window: WindowResize.Box, display: WindowResize.Box): String = JSONObject()
+        .put("ok", true)
+        .put("package", pkg)
+        .put("left", window.left)
+        .put("top", window.top)
+        .put("right", window.right)
+        .put("bottom", window.bottom)
+        .put("displayWidth", display.width)
+        .put("displayHeight", display.height)
         .toString()
 
     fun swipeAtNormCoordBody(ok: Boolean, q: SwipeQuad): String = JSONObject()

@@ -258,6 +258,7 @@ mod entry;
 mod expr;
 mod hover;
 mod junit;
+mod mouse;
 mod output;
 mod parser;
 mod pinch;
@@ -338,6 +339,17 @@ pub enum TapDispatch {
     Xcui,
     /// XCTRunnerDaemonSession touch synthesize.
     DaemonProxy,
+}
+
+/// Where a `mouseDrag` ends.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub enum MouseDragTo {
+    /// On this element's centre.
+    Element(Selector),
+    /// This far from where it started, in dp: x right, y down.
+    ByDp((f64, f64)),
 }
 
 /// One parsed yaml step. See the maestro-compat command table in the
@@ -463,6 +475,9 @@ pub enum Step {
     /// Press a hardware / IME key. Maps to `App::press_key`. The name is
     /// read when the flow is, through [`smix_sdk::KeyName::from_name`].
     PressKey(smix_sdk::KeyName),
+    /// A key pressed with modifiers held — `pressKey: ctrl+s`, smix's own
+    /// spelling. Android only; iOS refuses by name.
+    PressKeyCombo(smix_input::KeyCombo),
     /// Navigation back (maestro `back`): iOS navbar-back / edge swipe,
     /// Android KEYCODE_BACK. Not a keyboard key. `optional` turns a back
     /// the screen never answered into a skip, as it does on a block.
@@ -594,6 +609,33 @@ pub enum Step {
     },
     /// The mouse pointer leaves the app, so nothing in it stays hovered.
     HoverAway,
+    /// A secondary-button (right) click on the element's centre — smix's
+    /// own verb, what opens a context menu. Android only.
+    RightClickOn {
+        /// The element to right-click.
+        selector: Selector,
+    },
+    /// The mouse wheel turned over the element's centre — smix's own verb.
+    /// Android only.
+    MouseWheel {
+        /// The element the pointer is over.
+        selector: Selector,
+        /// Away from the user (content scrolls toward its start) when
+        /// true; toward the user when false.
+        up: bool,
+        /// Notches turned, 1 to 100.
+        notches: u32,
+        /// Ctrl held, which apps read as zoom.
+        ctrl: bool,
+    },
+    /// The primary mouse button pressed on an element, moved, released —
+    /// smix's own verb. Android only.
+    MouseDrag {
+        /// The element the button goes down on.
+        from: Selector,
+        /// Where it comes up.
+        to: MouseDragTo,
+    },
     /// The app's desktop window resized, then read back — smix's own
     /// verb. Android only; iOS refuses by name.
     SetWindowSize {
@@ -761,6 +803,7 @@ pub enum Step {
     ///       - text: { at: { x: 20, y: 20 }, content: "step 1", color: green, size: 20 }
     ///       - arrow: { from: { x: 100, y: 100 }, to: { x: 200, y: 200 }, color: blue }
     /// ```
+    #[non_exhaustive]
     TakeScreenshot {
         /// Optional output file name relative to cwd. None = discard bytes.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -774,6 +817,10 @@ pub enum Step {
         /// the baseline a cropped `assertScreenshot` compares against.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         crop_on: Option<Selector>,
+        /// `window: true`: keep only the app's desktop window, its caption
+        /// bar included (Android desktop windows; refused elsewhere).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        window: bool,
     },
     /// Write a literal to the device pasteboard. maestro yaml
     /// `setClipboard: "literal"`.

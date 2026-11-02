@@ -67,4 +67,18 @@ class MouseGestureTest {
             assertTrue("$kind hovers again at the end", events.last().action == Action.HOVER_MOVE)
         }
     }
+
+    // A drag by dp ends that many dp away at the display's density,
+    // wherever on the display it starts.
+    @Test
+    fun aDragByDpEndsThatFarAwayAtTheDisplaysDensity() {
+        val g = MouseGesture.decode("""{"kind":"drag","nx":0.5,"ny":0.25,"dxDp":96,"dyDp":-10}""")
+        val up = g.timeline(1000, 800, 2f).last { it.action == Action.UP }
+        assertEquals(500f + 192f, up.x)
+        assertEquals(200f - 20f, up.y)
+        val both = runCatching {
+            MouseGesture.decode("""{"kind":"drag","nx":0.5,"ny":0.5,"toNx":0.6,"toNy":0.5,"dxDp":1}""")
+        }.exceptionOrNull()
+        assertTrue(both?.message ?: "accepted", both?.message?.contains("not both") == true)
+    }
 }

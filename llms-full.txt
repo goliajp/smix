@@ -580,7 +580,46 @@ gesture.
 - A `tapOn` after a hover is an ordinary touch and lands as usual; the hover
   ends with it, as it does when a person taps a touchscreen.
 
+### Mouse buttons and wheel
+
+```yaml
+# A secondary (right) click on the element's centre: what opens a context menu.
+- rightClickOn: { id: "file_row" }
+# The wheel turned over the element; `ctrl: true` holds Ctrl, which apps read as zoom.
+- mouseWheel: { on: { id: "file_list" }, direction: down, notches: 3 }
+- mouseWheel: { on: { id: "map" }, direction: up, ctrl: true }
+# The primary button pressed on one element and released on another, or a
+# distance away in dp (x right, y down).
+- mouseDrag: { from: { id: "card_3" }, to: { id: "done_column" } }
+- mouseDrag: { from: { id: "split_divider" }, by: { x: 96, y: 0 } }
+```
+
+- Android only; iOS refuses each step by name. Mouse events, not touches:
+  `rightClickOn` sends the secondary button, so a long press menu is not
+  what opens.
+- Each element is waited for up to 5 s and its centre read from the
+  accessibility tree; `ocrText:` and `anchorRelative:` are refused there.
+- `direction` is `up` (away from you: the content moves toward its start)
+  or `down`; `notches` is 1 to 100 and defaults to 1.
+- The Android desktop emulator image (Android 14, API 34) routes a wheel
+  turn and a mouse button press to the view at the wrong height: its
+  `ViewGroup` takes the event's y from its x. The events smix sends are the
+  same as a mouse's, so the app sees what it would see from a real mouse on
+  that build; Android 14 QPR3 and later route them correctly. Check these
+  steps on an Android 15 or 16 device with desktop or freeform windows.
+
 ### Window size (a desktop window)
+
+The caption bar's buttons are in the accessibility tree under their own
+ids, so they are tapped like any element: `tapOn: { id: back_button }`
+(the arrow, the app's back), `minimize_window`, `maximize_window`,
+`close_window`.
+
+`takeScreenshot: { window: true }` keeps only the app's desktop window,
+its caption bar included, cut where the window manager says the window
+sits; it and `cropOn` are not given together. An app that fills the
+display has no window of its own and is refused by name; so is iOS.
+
 
 ```yaml
 # Width by height in dp, the caption bar included; the window is read back
@@ -614,6 +653,8 @@ gesture.
 - pressKey: HOME                         # iOS home button
 - pressKey: VOLUME_UP                    # Android; iOS fails the step by name
 - pressKey: Back                         # the same as `- back`
+- pressKey: ctrl+s                       # a key with modifiers held (Android)
+- pressKey: ctrl+shift+z
 - back                                   # navigation back
 - back:
     optional: true                       # skipped, not failed, if the screen never moved
@@ -631,6 +672,13 @@ the flow, `smix press-key` and the MCP tool alike: maestro's spellings
 `volumeUp`), and shorthands (`esc`, `up`). Case, spaces, `_` and `-` do
 not matter. maestro's TV remote keys are refused by name — smix drives
 no TV — and `Power` points to `LOCK`.
+
+A key written with `+` is a combination: modifiers first (`ctrl`, `shift`,
+`alt`, `meta`; `control`, `option`, `cmd` and `search` are read as those),
+then one key — a letter, a digit, `enter`, `tab`, `space`, `escape`,
+`backspace`, `delete`, an arrow (`up`, `down`, `left`, `right`) or `f1`–`f12`.
+Case does not matter. Android sends the key's down and up with the
+modifiers' meta state; iOS refuses a combination by name.
 
 ### System / device controls
 
@@ -680,6 +728,9 @@ the device in front of you is a no-op there, not an error.
 - takeScreenshot:
     path: "card.png"
     cropOn: { id: "summary-card" }       # only this element — a cropOn baseline
+- takeScreenshot:
+    path: "window.png"
+    window: true                         # only the app's desktop window, caption bar included (Android)
 ```
 
 ### Control flow
@@ -1848,6 +1899,38 @@ looking is `keyboard_state_unknown` — see
   is the next step's question.
 - Full shape: [02 — YAML reference](02-yaml-reference.md#hover-a-mouse-pointer).
 
+## Mouse buttons and wheel
+
+```yaml
+- rightClickOn: { id: "file_row" }
+- mouseWheel: { on: { id: "file_list" }, direction: down, notches: 3, ctrl: false }
+- mouseDrag: { from: { id: "card_3" }, to: { id: "done_column" } }
+- mouseDrag: { from: { id: "split_divider" }, by: { x: 96, y: 0 } }
+```
+
+- Android: `SOURCE_MOUSE` events through UiAutomation — a secondary-button
+  press and release, an `ACTION_SCROLL` on the vertical axis (Ctrl in the
+  meta state), or a primary-button drag moved in small steps. A drag
+  `by:` dp is turned into pixels at the display's density on the device.
+- iOS: refused by name.
+- `ok` means every event went in; whether the app opened its menu,
+  scrolled or moved is the next step's question.
+- The Android 14 desktop emulator image sends wheel turns and button
+  presses to the view at the wrong height (see
+  [02 — YAML reference](02-yaml-reference.md#mouse-buttons-and-wheel)).
+
+## Key combinations
+
+```yaml
+- pressKey: ctrl+s
+- pressKey: ctrl+shift+z
+```
+
+- Android: the key's down and up through UiAutomation with the modifiers'
+  meta state, which is what `KeyEvent.isCtrlPressed()` and an app's
+  shortcut handling read.
+- iOS: refused by name.
+
 ## Window size
 
 ```yaml
@@ -1861,6 +1944,8 @@ looking is `keyboard_state_unknown` — see
   answers as if it worked, so the reading back is what the step's `ok`
   means.
 - iOS: refused by name.
+- `takeScreenshot: { window: true }` reads the window's bounds the same way
+  and cuts the screenshot to them.
 - Full shape: [02 — YAML reference](02-yaml-reference.md#window-size-a-desktop-window).
 
 ## Scroll
@@ -6065,7 +6150,7 @@ that is why.
 | `runFlow: { when, commands }` | ✅ | ✅ | Inline conditional; `when` takes `platform` / `true` / `visible` / `notVisible` / `label`, combined with AND in maestro's order; OCR fires when a gate selector contains `ocrText`; `env` / `label` / `optional` on the block; unknown keys are parse errors; skips emit `SKIPPED: <reason>` to stderr |
 | `retry` | ✅ | ✅ | `maxRetries` field; default 3 |
 | `repeat` | ✅ | ✅ | `while:` takes the same conditions as `runFlow.when`; `label` / `optional` on the block |
-| `pressKey` | ✅ | ✅ | One key table for the flow, `smix press-key` and MCP, read when the flow is read: maestro's spellings, the wire names, shorthands. enter/return, delete, tab, space, escape, and the four arrows on both. `back` is the `back` verb below. lock / volumeUp / volumeDown are pressed on Android (`KEYCODE_POWER` and the volume keys); on iOS the step fails with `no_such_button` and the reason — no lock button in XCUIDevice, no volume buttons on the simulator. maestro's TV remote keys are refused by name; `Power` points to `lock` |
+| `pressKey` | ✅ | ✅ | One key table for the flow, `smix press-key` and MCP, read when the flow is read: maestro's spellings, the wire names, shorthands. enter/return, delete, tab, space, escape, and the four arrows on both. `back` is the `back` verb below. lock / volumeUp / volumeDown are pressed on Android (`KEYCODE_POWER` and the volume keys); on iOS the step fails with `no_such_button` and the reason — no lock button in XCUIDevice, no volume buttons on the simulator. maestro's TV remote keys are refused by name; `Power` points to `lock`. A key written with `+` (`ctrl+s`, `ctrl+shift+z`) is a combination: Android presses it with the modifiers held, iOS refuses by name |
 | `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. `pressKey: back` and `smix press-key back` are this, not a keystroke. Closes a system share sheet under gesture navigation, where there is no back button to tap. Both platforms answer whether the screen changed, not whether the key was delivered, and both report which reading decided (`settledBy`); a back an app swallows is a failure |
 
 ## Lifecycle
@@ -6098,6 +6183,9 @@ that is why.
 | `pinch` (`over:` or `at:`, `from`/`to` or `fromSpan`/`toSpan`, optional `pan:`) | ✅ | ✅ | smix's own verb (maestro has none). Two fingers in one gesture about an element's centre or a point; the iOS runner synthesises two touch paths in one event record, the Android runner injects two-pointer motion events. A finger that would leave the screen is refused by name, never clipped |
 | `hoverOn` / `hover` | ❌ | ✅ | smix's own verb. A mouse pointer comes to rest on the element's centre: mouse events, not a touch, so a desktop window's hover styles answer it (Chromebook, Android's desktop mode). The element is waited for up to 5 s. iOS refuses by name: XCUITest on iOS has no pointer |
 | `hoverAway` | ❌ | ✅ | The pointer leaves the app, so nothing in it stays hovered. Not a move to an empty spot, which is still inside some row or container. iOS refuses by name |
+| `rightClickOn` | ❌ | ✅ | smix's own verb. A secondary-button click on the element's centre, what opens a context menu. iOS refuses by name. The Android 14 desktop emulator image routes it to the view at the wrong height |
+| `mouseWheel` (`on:`, `direction:`, `notches:`, `ctrl:`) | ❌ | ✅ | smix's own verb. The wheel turned over the element, with Ctrl held when asked. iOS refuses by name; the Android 14 desktop image routes it as it does a right click |
+| `mouseDrag` (`from:` and `to:` or `by:`) | ❌ | ✅ | smix's own verb. The primary mouse button pressed on one element and released on another, or a distance away in dp. iOS refuses by name |
 | `hideKeyboard` | ✅ | ✅ | |
 
 ## Device

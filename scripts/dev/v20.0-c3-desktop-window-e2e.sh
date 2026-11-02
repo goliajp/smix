@@ -24,6 +24,17 @@
 #      display, is refused naming the limit, and the window keeps its size
 #   9. `smix window-size` does the same from the command line; iOS refuses
 #      it by name
+#  10. `takeScreenshot: { window: true }` writes exactly the window: the
+#      PNG measures the task's bounds, its caption bar included
+#  11. `pressKey: ctrl+s` and `ctrl+shift+z` reach the app with their
+#      modifiers held: "keys ctrl+S ctrl+shift+Z"
+#  12. `mouseDrag` by 96 dp moves the mouse 96 dp: "drag 96 0 mouse"
+#  13. the caption bar's back arrow is an element: `tapOn: { id:
+#      back_button }` closes the desktop screen
+#
+# A right click and a wheel turn are judged on an Android 16 tablet
+# instead (v21.0-c1-mouse-buttons-e2e.sh): this desktop image routes them
+# to the wrong view, a bug of its Android 14 build.
 #
 # Runs on smix's own desktop emulator (E2E_ANDROID_DESKTOP), booted with no
 # window (--no-window) when it is off.
@@ -85,7 +96,7 @@ is() { # $1 id, $2 expected text (case does not matter: a Button shows capitals)
 }
 
 open_desktop() {
-  adb -s "$DEVICE" shell am start -W -S -n "$APP/.DesktopActivity" >/dev/null 2>&1 \
+  adb -s "$DEVICE" shell am start -W -S --windowingMode 5 -n "$APP/.DesktopActivity" >/dev/null 2>&1 \
     || fail "could not start the desktop screen"
   flow open '- extendedWaitUntil: { visible: { id: desk_hover_row }, timeout: 10000 }'
   [ "$(label desk_hover_state)" = "hover out 0" ] \
@@ -191,5 +202,27 @@ if "$SMIX" window-size 839x768 --platform ios --runner-port "$UNUSED_PORT" >"$WO
   fail "9: smix window-size on iOS succeeded"
 fi
 grep -q "Android-only" "$WORK/ios-size.log" || fail "9: the iOS refusal does not say why: $(cat "$WORK/ios-size.log")"
+
+log "10. a screenshot of the window"
+printf 'appId: %s\n---\n- takeScreenshot:\n    path: %s\n    window: true\n' "$APP" "$WORK/window.png" >"$WORK/shot.yaml"
+"$SMIX_RUN" --device "$DEVICE" --runner-port "$PORT" "$WORK/shot.yaml" >"$WORK/shot.log" 2>&1 \
+  || { tail -10 "$WORK/shot.log" >&2; fail "10: takeScreenshot window failed"; }
+bounds="$(adb -s "$DEVICE" shell am stack list | grep "$APP/" | grep -oE 'bounds=\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | head -1)"
+[ -n "$bounds" ] || cannot_judge "10: the fixture's task is not in am stack list"
+want="$(printf '%s' "$bounds" | python3 -c 'import re,sys; l,t,r,b=map(int,re.findall(r"-?\d+",sys.stdin.read())); print(f"{r-l}x{b-t}")')"
+got="$(python3 -c 'import struct,sys; d=open(sys.argv[1],"rb").read(24); w,h=struct.unpack(">II",d[16:24]); print(f"{w}x{h}")' "$WORK/window.png")"
+[ "$got" = "$want" ] || fail "10: the window screenshot is $got, the window is $want ($bounds)"
+
+log "11. key combinations"
+flow keys '- pressKey: ctrl+s' '- pressKey: ctrl+shift+z'
+is desk_keys "keys ctrl+s ctrl+shift+z" "11"
+
+log "12. a drag by dp"
+flow drag '- mouseDrag: { from: { id: desk_drag }, by: { x: 96, y: 0 } }'
+is desk_drag "drag 96 0 mouse" "12"
+
+log "13. the caption bar's back arrow"
+flow back '- tapOn: { id: back_button }' \
+  '- assertNotVisible: { id: desk_hover_row }'
 
 log "V20.0-C3-DESKTOP-WINDOW-PASS"
