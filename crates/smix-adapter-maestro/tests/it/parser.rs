@@ -2753,6 +2753,38 @@ fn input_text_takes_a_secret_by_name() {
     assert_eq!(field, "inputText.secret");
 }
 
+/// `tapOn` and `pressKey` take an effect to wait for; the action inside is
+/// the plain step.
+#[test]
+fn tap_and_key_take_an_effect_to_wait_for() {
+    match only_step("- tapOn: { id: menu, until: { visible: { id: close } }, retries: 2 }\n") {
+        Step::UntilEffect {
+            action,
+            until_visible,
+            retries,
+            within_ms,
+            ..
+        } => {
+            assert!(matches!(*action, Step::TapOn { .. }));
+            assert_eq!((until_visible, retries, within_ms), (true, 2, 2000));
+        }
+        other => panic!("{other:?}"),
+    }
+    match only_step("- pressKey: { key: enter, until: { notVisible: { id: input-email } } }\n") {
+        Step::UntilEffect {
+            action,
+            until_visible,
+            ..
+        } => {
+            assert!(matches!(*action, Step::PressKey(_)));
+            assert!(!until_visible);
+        }
+        other => panic!("{other:?}"),
+    }
+    let (field, _) = parse_err("- pressKey: { until: { visible: a } }\n");
+    assert_eq!(field, "pressKey.key");
+}
+
 #[test]
 fn assert_screenshot_refuses_a_misspelt_key() {
     let (field, reason) = parse_err("- assertScreenshot:\n    path: a.png\n    treshold: 3\n");

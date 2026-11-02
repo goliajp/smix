@@ -811,6 +811,22 @@ fn block_label(opts: &crate::BlockOptions) -> String {
 /// keys off the bare verb next door.
 pub(crate) fn summarize_step(step: &Step) -> String {
     match step {
+        Step::UntilEffect {
+            action,
+            until,
+            until_visible,
+            within_ms,
+            retries,
+        } => format!(
+            "{} until {} {} within {within_ms} ms, retries {retries}",
+            summarize_step(action),
+            if *until_visible {
+                "visible"
+            } else {
+                "notVisible"
+            },
+            smix_sdk::describe_selector(until)
+        ),
         Step::RepeatTap { times, .. } => format!("repeatTap x{times}"),
         Step::Pinch { spans, pan, .. } => {
             let (a, b, unit) = match spans {

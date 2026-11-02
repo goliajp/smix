@@ -186,6 +186,10 @@ struct MockApp {
     /// Describe_selector-keyed: if present, assert_not_visible
     /// raises AssertionFailed for that selector. Missing key = Ok.
     assert_not_visible_failures: Mutex<HashMap<String, ()>>,
+    /// `wait_for` on these selectors (by description) times out this many
+    /// more times before it finds them: an effect that shows only after a
+    /// tap has been repeated.
+    wait_for_misses: Mutex<HashMap<String, usize>>,
     /// Describe_selector-keyed transient visibility counter:
     /// (target_visible_count, current_call_count). find() returns true
     /// while current < target, then false. Used to model selector-style
@@ -252,6 +256,7 @@ impl MockApp {
             tap_failures: Mutex::new(HashMap::new()),
             tap_failures_n_times: Mutex::new(HashMap::new()),
             assert_not_visible_failures: Mutex::new(HashMap::new()),
+            wait_for_misses: Mutex::new(HashMap::new()),
             find_visible_n_times: Mutex::new(HashMap::new()),
             clipboard: Mutex::new(String::new()),
             ocr_result: Mutex::new(None),
@@ -604,6 +609,20 @@ impl AppLike for MockApp {
             .lock()
             .unwrap()
             .push(MockCall::WaitFor(selector.clone(), timeout));
+        if let Some(left) = self
+            .wait_for_misses
+            .lock()
+            .unwrap()
+            .get_mut(&smix_sdk::describe_selector(selector))
+            && *left > 0
+        {
+            *left -= 1;
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::Timeout),
+                message: "not yet".into(),
+                ..Default::default()
+            }));
+        }
         Ok(())
     }
     async fn wait_for_not_visible(
@@ -4820,6 +4839,58 @@ async fn a_secret_that_is_not_set_names_the_variable() {
             .any(|c| matches!(c, MockCall::Fill(..))),
         "nothing typed"
     );
+}
+
+fn taps_on(app: &MockApp, id: &str) -> usize {
+    app.calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|c| matches!(c, MockCall::Tap(Selector::Id { id: i, .. }) if i == id))
+        .count()
+}
+
+async fn tap_until(
+    misses: usize,
+    retries: u32,
+) -> (MockApp, Result<smix_adapter_maestro::RunReport, RunError>) {
+    let app = MockApp::new();
+    app.wait_for_misses
+        .lock()
+        .unwrap()
+        .insert("{ id=\"menu-open\" }".into(), misses);
+    let flow = parse_flow_yaml(&format!(
+        "appId: com.t\n---\n- tapOn:\n    id: fixture-input\n    until: {{ visible: {{ id: menu-open }} }}\n    within: 50\n    retries: {retries}\n"
+    ))
+    .unwrap();
+    let out = Adapter::new(&app, fixtures_dir()).run(&flow).await;
+    (app, out)
+}
+
+/// A tap whose effect shows is done once, never again.
+#[tokio::test]
+async fn a_tap_whose_effect_shows_is_done_once() {
+    let (app, out) = tap_until(0, 2).await;
+    out.expect("run ok");
+    assert_eq!(taps_on(&app, "fixture-input"), 1);
+}
+
+/// A tap that was swallowed is done again, and stops once the effect shows.
+#[tokio::test]
+async fn a_swallowed_tap_is_done_again_until_its_effect_shows() {
+    let (app, out) = tap_until(1, 2).await;
+    out.expect("run ok");
+    assert_eq!(taps_on(&app, "fixture-input"), 2);
+}
+
+/// A tap that never has its effect fails saying it landed and nothing changed.
+#[tokio::test]
+async fn a_tap_that_changes_nothing_fails_saying_so() {
+    let (app, out) = tap_until(99, 2).await;
+    let e = out.expect_err("the effect never showed").to_string();
+    assert_eq!(taps_on(&app, "fixture-input"), 3);
+    assert!(e.contains("did not happen within 50 ms"), "{e}");
+    assert!(e.contains("landed and the screen did not change"), "{e}");
 }
 
 // --- step timings --------------------------------------------------------
