@@ -98,6 +98,13 @@ pub struct FlowArgs {
     /// `file://<path>` starts a file tail. None → no metro tail
     /// (`expect.signal` verbs will error if used).
     pub metro_log_url: Option<String>,
+    /// Read the app's own log on its device as a signal source as well:
+    /// the iOS unified log (subsystem = the app's bundle id) or Android's
+    /// logcat (the app's uid), live from the start of the run.
+    pub app_log: bool,
+    /// More files to tail as signal sources, beside the others (a dev
+    /// server's log, say). Every source feeds the same `expect.signal`.
+    pub log_files: Vec<std::path::PathBuf>,
     /// Append an implicit `expect.signal { regex }` step at the end of
     /// the flow.
     pub await_signal: Option<String>,
@@ -509,11 +516,41 @@ async fn run_flow_inner(args: FlowArgs, junit: &mut Option<String>) -> u8 {
         }
     }
 
-    // Attach metro log tail if configured. Subscriber handle is dropped
-    // at scope exit → subscriber task shuts down.
-    let _subscriber_guard = if let Some(url) = &args.metro_log_url {
-        let tail = smix_metro_log::MetroLogTail::new();
+    // Every log source feeds one tail, which `expect.signal` reads. The
+    // handles are dropped at scope exit, which stops their tasks.
+    let tail = smix_metro_log::MetroLogTail::new();
+    let any_source = args.metro_log_url.is_some() || args.app_log || !args.log_files.is_empty();
+    if any_source {
         adapter = adapter.with_metro_tail(tail.clone());
+    }
+    let mut _source_guards: Vec<smix_metro_log::SubscriberHandle> = Vec::new();
+    for path in &args.log_files {
+        _source_guards.push(smix_metro_log::FileTailSubscriber::start(
+            path.clone(),
+            tail.clone(),
+        ));
+    }
+    if args.app_log {
+        match args.udid.as_deref() {
+            Some(device) => {
+                let uid = match args.platform {
+                    FlowPlatform::Android => crate::app_log::android_uid(device, &bundle_id),
+                    FlowPlatform::Ios => None,
+                };
+                match crate::app_log::command(args.platform, device, &bundle_id, uid) {
+                    Some((program, cmd_args)) => _source_guards.push(
+                        smix_metro_log::ProcessSubscriber::start(program, cmd_args, tail.clone()),
+                    ),
+                    None => eprintln!(
+                        "WARN: --app-log: {bundle_id} is not installed on {device}, so it has no log to read"
+                    ),
+                }
+            }
+            None => eprintln!("WARN: --app-log needs --device to know whose log to read"),
+        }
+    }
+    let _subscriber_guard = if let Some(url) = &args.metro_log_url {
+        let tail = tail.clone();
         if let Some(path) = url.strip_prefix("file://") {
             Some(smix_metro_log::FileTailSubscriber::start(
                 std::path::PathBuf::from(path),

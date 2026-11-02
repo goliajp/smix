@@ -53,7 +53,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::time;
 
+pub mod process;
 pub mod subscriber;
+pub use process::ProcessSubscriber;
 pub use subscriber::{FileTailSubscriber, SubscriberHandle, WebSocketSubscriber, parse_log_line};
 
 /// Metro / expo log entry, normalized. Level is best-effort: metro

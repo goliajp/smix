@@ -1,4 +1,8 @@
 import UIKit
+import os
+
+/// The app's own log, under its bundle id: what `smix run --app-log` reads.
+private let fixtureLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "fixture", category: "live")
 
 /// Controls over a picture that never stops moving — the shape of a
 /// consumer's screens, which sit over a live video view redrawn every frame.
@@ -31,7 +35,12 @@ final class LiveController: UIViewController, UITextFieldDelegate {
     counts.textColor = .white
     menu.setTitle("Menu", for: .normal)
     menu.accessibilityIdentifier = "live-menu"
-    menu.addAction(UIAction { [weak self] _ in self?.menuTaps += 1; self?.show() }, for: .touchUpInside)
+    menu.addAction(UIAction { [weak self] _ in
+      guard let self else { return }
+      self.menuTaps += 1
+      self.show()
+      fixtureLog.info("live menu \(self.menuTaps, privacy: .public)")
+    }, for: .touchUpInside)
     present.setTitle("Present", for: .normal)
     present.accessibilityIdentifier = "live-present"
     present.addAction(UIAction { [weak self] _ in self?.presentSheet() }, for: .touchUpInside)

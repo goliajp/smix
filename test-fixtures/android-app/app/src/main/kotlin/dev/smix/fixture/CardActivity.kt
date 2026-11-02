@@ -74,7 +74,14 @@ class CardActivity : ComponentActivity() {
                             .padding(vertical = 12.dp)
                             .testTag("card_custom"),
                     )
-                    Button(onClick = { applied += 1 }, modifier = Modifier.testTag("card_apply")) { Text("Apply") }
+                    Button(
+                        onClick = {
+                            applied += 1
+                            // the app's own log: what `smix run --app-log` reads
+                            android.util.Log.i("SmixFixture", "card applied $applied")
+                        },
+                        modifier = Modifier.testTag("card_apply"),
+                    ) { Text("Apply") }
                 }
             }
         }

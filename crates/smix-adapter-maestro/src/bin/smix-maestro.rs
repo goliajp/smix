@@ -110,6 +110,8 @@ async fn main() -> ExitCode {
                 format: smix_adapter_maestro::OutputFormat::Human,
                 auto_activate: false,
                 metro_log_url: None,
+                app_log: false,
+                log_files: Vec::new(),
                 await_signal: None,
                 gate_signal: None,
                 gate_signal_timeout_ms: 60_000,
