@@ -748,9 +748,12 @@ fn run_example(page: &str, block: &str) -> Verdict {
         .build()
         .expect("runtime");
     let outcome = rt.block_on(async {
+        // the variable the guide's `secret:` example names, as a caller exports it
+        let env = [("E2E_PASSWORD".to_string(), "guide-secret".to_string())].into();
         let mut adapter = smix_adapter_maestro::Adapter::new(&app, base)
             .with_fixture_registry(guide_registry())
-            .with_metro_tail(guide_metro_tail());
+            .with_metro_tail(guide_metro_tail())
+            .with_env(env);
         adapter.run(&flow).await
     });
     remove_artifacts(&flow);
