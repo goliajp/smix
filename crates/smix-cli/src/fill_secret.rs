@@ -14,7 +14,7 @@ pub(crate) fn parse_or_exit<C: Parser>() -> C {
     let argv: Vec<String> = std::env::args().collect();
     match C::try_parse_from(&argv) {
         Ok(c) => c,
-        Err(e) if argv.get(1).map(String::as_str) == Some("fill") => {
+        Err(e) if e.use_stderr() && argv.get(1).map(String::as_str) == Some("fill") => {
             let said = e.render().to_string();
             eprint!("{}", mask_fill_values(&said, &argv[2..]));
             std::process::exit(e.exit_code());

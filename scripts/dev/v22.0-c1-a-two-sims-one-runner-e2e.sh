@@ -36,7 +36,11 @@ cannot_judge() { printf '[v22.0-c1-a] cannot judge: %s\n' "$*" >&2; exit 2; }
 
 UDID_A="" UDID_B="" UP=0 WE_BOOTED_A=0 WE_BOOTED_B=0
 cleanup() {
-  if [ "$UP" = 1 ]; then "$SMIX" runner down --device "$UDID_A" --runner-port "$PORT" >/dev/null 2>&1 || true; fi
+  local said
+  if [ "$UP" = 1 ] && ! said="$("$SMIX" runner down --device "$UDID_A" --runner-port "$PORT" 2>&1)"; then
+    log "warning: the runner on $PORT was not stopped:"
+    printf '%s\n' "$said" | tail -3 >&2
+  fi
   if [ "$WE_BOOTED_A" = 1 ]; then "$SMIX" sim shutdown "$UDID_A" >/dev/null 2>&1 || true; fi
   if [ "$WE_BOOTED_B" = 1 ]; then "$SMIX" sim shutdown "$UDID_B" >/dev/null 2>&1 || true; fi
   rm -rf "$WORK"
@@ -104,7 +108,10 @@ gate_free_port PORT_B
 "$SMIX" runner up "$UDID_B" --bundle "$APP" --runner-port "$PORT_B" >"$WORK/up-b.log" 2>&1 \
   || fail "4: runner up on B: $(tail -5 "$WORK/up-b.log")"
 b_tree="$("$SMIX" tree --device "$UDID_B" --runner-port "$PORT_B" 2>&1 || true)"
-"$SMIX" runner down --device "$UDID_B" --runner-port "$PORT_B" >/dev/null 2>&1 || true
+if ! said_b="$("$SMIX" runner down --device "$UDID_B" --runner-port "$PORT_B" 2>&1)"; then
+  log "warning: the runner on $PORT_B was not stopped:"
+  printf '%s\n' "$said_b" | tail -3 >&2
+fi
 printf '%s\n' "$b_tree" | grep -q 'label="nothing submitted"' \
   || fail "4: B's result reads otherwise: $(printf '%s\n' "$b_tree" | grep -m1 'fixture-result')"
 

@@ -2,6 +2,9 @@
 - inputText:
     id: "form-email-input"               # names a field, so it replaces
     text: "alice@example.com"
+- inputText:
+    id: "input-password"
+    secret: E2E_PASSWORD                 # the value comes from --env or the environment, never the flow
 
 - eraseText: 5                           # backspace N chars (default 50)
 - copyTextFrom:
