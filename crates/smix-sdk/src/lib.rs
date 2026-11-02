@@ -107,13 +107,14 @@ pub use smix_driver::{
     RunnerTransportError, ScrollUntil, SimctlDriver, SystemPopup, TapMode,
 };
 pub use smix_error::{
-    ExpectationFailure, FailureCode, FailureInit, build_suggestions, edit_distance, similarity,
+    ExpectationFailure, FailureCode, FailureInit, build_suggestions, edit_distance, mask_secret,
+    similarity,
 };
 pub use smix_input::{KeyName, SwipeDirection};
 pub use smix_screen::{
     A11yNode, Bounds, ElementSummary, Movement, Rect, Role, ScreenDescription, bounds_moved,
-    collect_visible_summaries, is_visible_enough, rect_in_points, screen_facts, summarize_node,
-    visible_area,
+    collect_visible_summaries, is_visible_enough, masked, rect_in_points, screen_facts,
+    summarize_node, visible_area,
 };
 pub use smix_selector::{
     AnchorBox, IndexModifiers, Modifiers, Pattern, Selector, True, describe_selector, match_text,

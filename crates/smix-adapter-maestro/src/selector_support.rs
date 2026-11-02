@@ -133,7 +133,9 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         Step::RepeatTap { .. } => &[Slot::RepeatTapTarget],
         Step::DoubleTapOn { .. } => &[Slot::DoubleTapTarget],
         Step::LongPressOn { .. } => &[Slot::LongPressTarget],
-        Step::InputTextInto { .. } | Step::SetText { .. } => &[Slot::FillTarget],
+        Step::InputTextInto { .. } | Step::SetText { .. } | Step::InputSecret { .. } => {
+            &[Slot::FillTarget]
+        }
         Step::CopyTextFrom { .. } => &[Slot::CopyTextSource],
         Step::RememberBounds { .. } | Step::AssertBoundsUnchanged { .. } => &[Slot::BoundsTarget],
         Step::AssertVisible { .. } => &[Slot::AssertVisibleTarget],
@@ -413,7 +415,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
         Step::DoubleTapOn { selector, .. } => vec![(Slot::DoubleTapTarget, selector)],
         Step::LongPressOn { selector, .. } => vec![(Slot::LongPressTarget, selector)],
         Step::InputTextInto { selector, .. } => vec![(Slot::FillTarget, selector)],
-        Step::SetText { selector, .. } => selector
+        Step::SetText { selector, .. } | Step::InputSecret { selector, .. } => selector
             .iter()
             .map(|selector| (Slot::FillTarget, selector))
             .collect(),

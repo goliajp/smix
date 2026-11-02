@@ -550,13 +550,12 @@ object RunnerWire {
             .put("ok", ok)
             .put("status", if (ok) "ok" else "text_did_not_land")
             .put("method", method)
-            .put("text", text)
             .put("chunks", chunks)
             .put("retyped", retyped)
         if (masked) {
-            obj.put("beforeLength", before.length).put("heldLength", held.length)
+            obj.put("textLength", text.length).put("beforeLength", before.length).put("heldLength", held.length)
         } else {
-            obj.put("before", before).put("held", held)
+            obj.put("text", text).put("before", before).put("held", held)
         }
         return obj.toString()
     }

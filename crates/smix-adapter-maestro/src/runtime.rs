@@ -1049,6 +1049,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::RepeatTap { .. } => "repeatTap",
         Step::LongPressOn { .. } => "longPressOn",
         Step::InputText(_) => "inputText",
+        Step::InputSecret { .. } => "inputText",
         Step::InputTextInto { .. } => "inputText",
         Step::SetText { .. } => "inputText",
         Step::EraseText(_) => "eraseText",
@@ -1162,6 +1163,11 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// Beside `output` rather than in it: a box is four numbers to
     /// compare, and `output` holds what a template can print.
     remembered_bounds: std::collections::BTreeMap<String, smix_sdk::Rect>,
+    /// Every secret this run has typed. A failure, a step record and a
+    /// saved tree lose them all before they are written, because a value
+    /// typed in one step can surface in another: a keyboard's suggestion
+    /// strip showed the last piece of a typed password.
+    secrets: Vec<String>,
     /// Env store used by the expression engine for bare `${NAME}`
     /// lookup. Populated from CLI `--env KEY=VAL` (repeatable) + the
     /// inherited process env as fallback. Enables yaml with
@@ -1296,6 +1302,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             run_stack: Vec::new(),
             output: std::collections::BTreeMap::new(),
             remembered_bounds: std::collections::BTreeMap::new(),
+            secrets: Vec::new(),
             env: std::collections::BTreeMap::new(),
             debug_output: None,
             debug_records: Vec::new(),
@@ -1339,6 +1346,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         self.timing.push(Vec::new());
         let started = std::time::Instant::now();
         let (result, phases) = smix_driver::phases::record(self.run_step(step, warnings)).await;
+        let result = match result {
+            Err(RunError::Sdk(e)) => Err(RunError::Sdk(self.without_secrets(e))),
+            other => other,
+        };
         let wall_ms = started.elapsed().as_millis() as u64;
         let steps = self.timing.pop().expect("pushed above");
         let timing = crate::StepTiming {
@@ -1527,6 +1538,39 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
         }
         Ok(out)
+    }
+
+    /// `e` with every secret this run has typed masked.
+    fn without_secrets(&self, e: ExpectationFailure) -> ExpectationFailure {
+        self.secrets.iter().fold(e, |e, s| e.without_secret(s))
+    }
+
+    /// Text about to be written out, with every secret this run has typed
+    /// masked, quoted pieces of one included.
+    fn scrubbed(&self, text: String) -> String {
+        self.secrets
+            .iter()
+            .fold(text, |t, s| smix_sdk::mask_secret(&t, s))
+    }
+
+    /// A secret's value: `--env` first, then the process environment. The
+    /// failure names the variable, never a value.
+    fn secret_value(&self, name: &str) -> Result<String, RunError> {
+        self.env
+            .get(name)
+            .cloned()
+            .or_else(|| std::env::var(name).ok())
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| {
+                RunError::Sdk(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!(
+                        "inputText secret: the environment variable {name} is not set (or is \
+                         empty); pass it with --env {name}=… or export it"
+                    ),
+                    ..Default::default()
+                }))
+            })
     }
 
     /// Eval a raw expression (no `${}` wrapping). Used by
@@ -1761,7 +1805,12 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 let tree_path = base.with_extension("fail.tree.json");
                 match self.app.tree().await {
                     Ok(tree) => {
-                        let tree_bytes = serde_json::to_vec_pretty(&tree).unwrap_or_default();
+                        let tree_bytes = self
+                            .scrubbed(
+                                serde_json::to_string_pretty(&smix_sdk::masked(&tree))
+                                    .unwrap_or_default(),
+                            )
+                            .into_bytes();
                         let mut warns: Vec<String> = Vec::new();
                         match crate::output::write_yaml_output_lenient(
                             &tree_path,
@@ -1791,7 +1840,8 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         let mut warns: Vec<String> = Vec::new();
         let json_written = crate::output::write_yaml_output_lenient(
             &json_path,
-            &serde_json::to_vec_pretty(&record).unwrap_or_default(),
+            self.scrubbed(serde_json::to_string_pretty(&record).unwrap_or_default())
+                .as_bytes(),
             &mut warns,
         );
         if json_written.is_none() {
@@ -2126,6 +2176,23 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     return Ok(RunStepReport::Ok);
                 }
                 self.app.assert_visible(&desugared).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::InputSecret { selector, env, set } => {
+                let value = self.secret_value(env)?;
+                if !self.secrets.contains(&value) {
+                    self.secrets.push(value.clone());
+                }
+                let target = match selector {
+                    Some(sel) => self.desugar_localized_text(sel).into_owned(),
+                    None => smix_sdk::focused(),
+                };
+                let done = if *set {
+                    self.app.set_text(&target, &value).await
+                } else {
+                    self.app.fill(&target, &value).await
+                };
+                done.map_err(|e| e.without_secret(&value))?;
                 Ok(RunStepReport::Ok)
             }
             Step::InputText(s) => {
@@ -4099,8 +4166,8 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
         }
         match self.app.tree().await {
-            Ok(tree) => match serde_json::to_vec_pretty(&tree) {
-                Ok(bytes) => match std::fs::write(&tree_path, &bytes) {
+            Ok(tree) => match serde_json::to_string_pretty(&smix_sdk::masked(&tree)) {
+                Ok(json) => match std::fs::write(&tree_path, self.scrubbed(json)) {
                     Ok(_) => segments.push(format!("tree={}", tree_path.display())),
                     Err(e) => {
                         eprintln!("WARN: v1.0.22 timeout capture: write {tree_path:?} failed: {e}")

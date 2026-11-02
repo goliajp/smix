@@ -2730,6 +2730,29 @@ fn press_key_with_a_plus_is_a_combination() {
     assert!(reason.contains("not a modifier"), "{reason}");
 }
 
+/// `inputText: { secret: ENV }` names the variable; the value never
+/// enters the flow.
+#[test]
+fn input_text_takes_a_secret_by_name() {
+    match only_step("- inputText: { secret: E2E_PASSWORD }\n") {
+        Step::InputSecret { selector, env, set } => {
+            assert_eq!((selector, env.as_str(), set), (None, "E2E_PASSWORD", false));
+        }
+        other => panic!("{other:?}"),
+    }
+    match only_step("- inputText: { id: pw, secret: E2E_PASSWORD, method: setText }\n") {
+        Step::InputSecret { selector, set, .. } => {
+            assert_eq!(selector, Some(id_selector("pw")));
+            assert!(set);
+        }
+        other => panic!("{other:?}"),
+    }
+    let (_, reason) = parse_err("- inputText: { secret: E2E_PASSWORD, text: x }\n");
+    assert!(reason.contains("not both"), "{reason}");
+    let (field, _) = parse_err("- inputText: { secret: \"hunter2 !\" }\n");
+    assert_eq!(field, "inputText.secret");
+}
+
 #[test]
 fn assert_screenshot_refuses_a_misspelt_key() {
     let (field, reason) = parse_err("- assertScreenshot:\n    path: a.png\n    treshold: 3\n");

@@ -475,7 +475,8 @@ pub async fn cmd_fill(
                 smix_sdk::focused_fill_refusal(e)
             }
         })
-        .map_err(|e| ActError::Transport(format!("{e}")))?;
+        // a runner's refusal quotes what it typed and what the field held
+        .map_err(|e| ActError::Transport(format!("{}", e.without_secret(&text))))?;
     // The value never comes back out. smix's output is a transcript that
     // persists and is read by an AI, so a password typed through here
     // would live in the record forever — and it did: a staging account's

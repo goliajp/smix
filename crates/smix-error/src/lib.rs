@@ -17,6 +17,8 @@
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-error")]
 
+mod redact;
+pub use redact::{MASK, mask as mask_secret};
 use serde::{Deserialize, Serialize};
 use smix_screen::{ElementSummary, ScreenFacts, WindowInfo, WindowKind};
 use smix_selector::{Selector, describe_selector};
