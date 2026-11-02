@@ -2,7 +2,6 @@
 
 use crate::act::ActError;
 use smix_driver::SimctlDriver;
-use smix_runner_client::HttpRunnerClient;
 
 /// `smix tree [--json]` — print the runner's current accessibility tree.
 /// `--json` emits the wire-format JSON (large — typically 100KB+ for a
@@ -29,7 +28,7 @@ pub async fn cmd_tree(
     // when the answer looks thin. A screen the accessibility reader has
     // gone blind on and a screen with nothing on it print identically
     // otherwise.
-    let client = HttpRunnerClient::new(port);
+    let client = crate::act::runner_client(port);
     let mut perceived = match reader {
         TreeReader::Auto => client.get_tree(None).await,
         TreeReader::Probe => client.semantics_tree_only().await,
@@ -72,7 +71,7 @@ pub(crate) fn collapse_keyboards(node: &mut smix_screen::A11yNode) -> usize {
 /// Helper for authoring subcommand to fetch the a11y
 /// tree as raw JSON (bypasses print_tree_outline).
 pub async fn fetch_tree_json(port: u16) -> Result<serde_json::Value, ActError> {
-    let d = SimctlDriver::new(HttpRunnerClient::new(port));
+    let d = SimctlDriver::new(crate::act::runner_client(port));
     let tree = d
         .tree(None)
         .await
