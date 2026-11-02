@@ -276,10 +276,23 @@ object SemanticsProbe {
                 .map { window to it }
         }
         val windows = WindowInspector.getGlobalWindowViews()
-        val stacked = StackOrder.bottomFirst(withSiblings + windowsWithoutCompose(compose), { it.first }, windows)
+        val stacked = StackOrder.bottomFirst(
+            withSiblings + windowsWithoutCompose(compose),
+            { it.first },
+            windows,
+            parentOf = { w -> parentWindow(w as View, windows) },
+        )
         return Occlusion.prune(
             stacked.map { (window, root) -> opaqueFace(window) to root.copy(modal = takesEveryTouch(window)) },
         ).toWireJson()
+    }
+
+    /** The window a sub-window (a popup, a panel) is attached to, among `windows`. */
+    private fun parentWindow(root: View, windows: List<View>): View? {
+        val params = root.layoutParams as? WindowManager.LayoutParams ?: return null
+        val sub = params.type in WindowManager.LayoutParams.FIRST_SUB_WINDOW..WindowManager.LayoutParams.LAST_SUB_WINDOW
+        if (!sub || params.token == null) return null
+        return windows.firstOrNull { it !== root && it.windowToken == params.token }
     }
 
     /** Whether the window `root` stands for takes every touch on the screen. */

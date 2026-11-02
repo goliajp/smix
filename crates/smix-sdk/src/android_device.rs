@@ -134,21 +134,7 @@ impl AndroidDeviceControl {
         let Ok(text) = out else {
             return CONVENTION.to_string();
         };
-        text.lines()
-            .rev()
-            .map(str::trim)
-            .find(|l| l.starts_with(&format!("{bundle_id}/")))
-            .and_then(|l| l.strip_prefix(bundle_id))
-            .map(|rest| rest.trim_start_matches('/').to_string())
-            .map(|a| {
-                if a.starts_with('.') {
-                    a
-                } else {
-                    format!(".{a}")
-                }
-            })
-            .filter(|a| a.len() > 1)
-            .unwrap_or_else(|| CONVENTION.to_string())
+        activity_from_brief(&text, bundle_id).unwrap_or_else(|| CONVENTION.to_string())
     }
 
     /// Construct with an existing `AdbClient` (tests / non-PATH adb).
@@ -377,7 +363,16 @@ impl DeviceControl for AndroidDeviceControl {
         self.client
             .shell(
                 serial,
-                &["am", "start", "-a", "android.intent.action.VIEW", "-d", url],
+                // quoted for the device's shell, which ends the command at
+                // an unquoted `&` and dropped every parameter after the first
+                &[
+                    "am",
+                    "start",
+                    "-a",
+                    "android.intent.action.VIEW",
+                    "-d",
+                    &shell_quoted(url),
+                ],
             )
             .await
             .map(|_| ())
@@ -929,5 +924,59 @@ mod tests {
             .await
             .expect_err("zero speed would divide by zero and tick forever");
         assert!(err.to_string().contains("positive"), "{err}");
+    }
+}
+
+/// `s` as one word for the device's `sh`: single-quoted, with any single
+/// quote inside closed, escaped and reopened.
+fn shell_quoted(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// The activity `cmd package resolve-activity --brief` names for
+/// `bundle_id`, in the form `am start -n <pkg>/<this>` takes.
+fn activity_from_brief(text: &str, bundle_id: &str) -> Option<String> {
+    text.lines()
+        .rev()
+        .map(str::trim)
+        .find(|l| l.starts_with(&format!("{bundle_id}/")))
+        .and_then(|l| l.strip_prefix(bundle_id))
+        .map(|rest| rest.trim_start_matches('/').to_string())
+        // `.Main` is relative to the package; `com.x.ui.Main` is a
+        // class named in full, which an app whose namespace differs from
+        // its applicationId prints — a dot in front of that names a
+        // class that does not exist, and the app did not start.
+        .map(|a| {
+            if a.starts_with('.') || a.contains('.') {
+                a
+            } else {
+                format!(".{a}")
+            }
+        })
+        .filter(|a| a.len() > 1)
+}
+
+#[cfg(test)]
+mod launch_and_link_tests {
+    use super::*;
+
+    #[test]
+    fn an_activity_named_in_full_keeps_its_name() {
+        let brief = "priority=0 preferredOrder=0\ncom.qualcomm.insight/com.qualcomm.insight.feature.MainActivity\n";
+        assert_eq!(
+            activity_from_brief(brief, "com.qualcomm.insight").as_deref(),
+            Some("com.qualcomm.insight.feature.MainActivity")
+        );
+        assert_eq!(
+            activity_from_brief("dev.smix.fixture/.MainActivity", "dev.smix.fixture").as_deref(),
+            Some(".MainActivity")
+        );
+        assert_eq!(activity_from_brief("No activity found", "a.b"), None);
+    }
+
+    #[test]
+    fn a_link_is_one_word_for_the_device_shell() {
+        assert_eq!(shell_quoted("x://h?a=1&b=2"), "'x://h?a=1&b=2'");
+        assert_eq!(shell_quoted("it's"), "'it'\\''s'");
     }
 }

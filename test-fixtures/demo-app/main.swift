@@ -731,6 +731,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       root = ZoomController()
     } else if CommandLine.arguments.contains("-blink") {
       root = BlinkController()
+    } else if CommandLine.arguments.contains("-live") {
+      root = LiveController()
     } else if CommandLine.arguments.contains("-toast") {
       root = ToastController()
     } else if CommandLine.arguments.contains("-sheet-over-form") {

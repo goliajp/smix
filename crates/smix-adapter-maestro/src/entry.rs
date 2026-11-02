@@ -845,6 +845,13 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         }
         Step::AssertVisible { .. } => "assertVisible".into(),
         Step::InputText(s) => format!("inputText ({} chars)", s.chars().count()),
+        Step::InputSecret { selector, env, .. } => match selector {
+            Some(sel) => format!(
+                "inputText secret {env} into {}",
+                smix_sdk::describe_selector(sel)
+            ),
+            None => format!("inputText secret {env}"),
+        },
         Step::InputTextInto { selector, text } => {
             format!(
                 "inputText into {selector:?} ({} chars)",

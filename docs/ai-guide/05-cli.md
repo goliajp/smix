@@ -967,6 +967,7 @@ smix wait-for id:loading-spinner --absent  # wait until it is GONE
 
 smix fill id:form-email-input --text alice@example.com
 smix fill id:form-email-input --text alice@example.com --set-text   # Android: without the keyboard (see 04-actions)
+smix fill id:input-password --text-env E2E_PASSWORD   # the value from the environment, off the command line
 smix press-key return                      # positional key name, read as a flow's pressKey reads it
 smix press-key back                        # navigation back — fails when nothing went back
 smix scroll "text:Row #5000" --direction down   # stops when it is wholly in view
@@ -989,6 +990,12 @@ smix describe                              # visible interactive elements
 smix system-popups                         # list active popups
 smix system-popup-action <popup-id> <button-id>
 ```
+
+With `--device`, each of these first checks that the runner port reaches
+that device, and refuses before sending anything when it reaches another:
+with two simulators running, a port held by one is never read or tapped as
+the other. `smix run` has always checked; since 22.1.0 the one-shot verbs
+do too.
 
 ### What `bounds` is measured in, and why the two platforms differ
 

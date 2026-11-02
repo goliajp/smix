@@ -472,6 +472,19 @@ pub enum Step {
         /// What to put in.
         text: String,
     },
+    /// Type (or set) a secret read from an environment variable when the
+    /// step runs: yaml `inputText: { secret: E2E_PASSWORD }`, with a
+    /// target beside it or none for the focused field. The value never
+    /// enters the flow, a report or a failure; failures show it as `***`.
+    InputSecret {
+        /// The field, or `None` for whatever holds focus.
+        selector: Option<Selector>,
+        /// The environment variable holding the value (`--env` first,
+        /// then the process environment).
+        env: String,
+        /// `method: setText`: put it in without the keyboard.
+        set: bool,
+    },
     /// Press a hardware / IME key. Maps to `App::press_key`. The name is
     /// read when the flow is, through [`smix_sdk::KeyName::from_name`].
     PressKey(smix_sdk::KeyName),

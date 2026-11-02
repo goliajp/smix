@@ -1467,13 +1467,18 @@ fn parse_input_text(v: &Value) -> Result<Step, ParseError> {
         // Targeted form: `inputText: { id: <target>, text: <input> }`.
         // The SDK's fill(selector) predates this wiring — the guides
         // documented the form long before the parser accepted it.
+        Value::Mapping(map) if map.contains_key(Value::String("secret".into())) => {
+            parse_input_secret(map)
+        }
         Value::Mapping(map) => {
             let text = map
                 .get(Value::String("text".into()))
                 .and_then(Value::as_str)
                 .ok_or_else(|| ParseError::InvalidValue {
                     field: "inputText".into(),
-                    reason: "mapping form requires `text:` (what to type)".into(),
+                    reason: "mapping form requires `text:` (what to type) or `secret:` \
+                             (the environment variable holding it)"
+                        .into(),
                 })?;
             // Everything but `text:` names the target, and `text:` is
             // the value — which is why this used to accept `id:` and
@@ -1523,6 +1528,44 @@ fn parse_input_text(v: &Value) -> Result<Step, ParseError> {
             reason: format!("expected scalar or {{id, text}} mapping, got {other:?}"),
         }),
     }
+}
+
+/// `inputText: { secret: ENV, id: …?, method: setText? }`: the value is
+/// named, not written, so it never enters the flow.
+fn parse_input_secret(map: &serde_norway::Mapping) -> Result<Step, ParseError> {
+    if map.contains_key(Value::String("text".into())) {
+        return Err(ParseError::InvalidValue {
+            field: "inputText".into(),
+            reason: "give `text:` or `secret:`, not both: `secret:` names the environment \
+                     variable that holds what to type"
+                .into(),
+        });
+    }
+    let env = map
+        .get(Value::String("secret".into()))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        .ok_or_else(|| ParseError::InvalidValue {
+            field: "inputText.secret".into(),
+            reason: "expected the name of an environment variable, like E2E_PASSWORD — \
+                     the value itself is never written in a flow"
+                .into(),
+        })?
+        .to_string();
+    let set = input_method(map)?;
+    let mut target = serde_norway::Mapping::new();
+    for (key, value) in map {
+        if matches!(key.as_str(), Some("secret" | "method")) {
+            continue;
+        }
+        target.insert(key.clone(), value.clone());
+    }
+    let selector = if target.is_empty() {
+        None
+    } else {
+        Some(visible_to_selector(&Value::Mapping(target))?)
+    };
+    Ok(Step::InputSecret { selector, env, set })
 }
 
 /// Whether `inputText`'s `method:` asks for the text to be set rather

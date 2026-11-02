@@ -29,15 +29,17 @@ mod boot_avd;
 mod boot_cold;
 mod boot_record;
 mod capsule;
+mod fill_secret;
 mod hover_cmd;
 mod pinch_cmd;
 mod platform;
 mod runner_target;
+use runner_target::{runner_dial_port, runner_dial_target};
 mod sim_crashes;
 mod swipe_cmd;
 mod tree_cmd;
 mod window_cmd;
-use platform::{DeviceDial, RunPlatform, dial_platform, resolve_run_platform};
+use platform::{RunPlatform, resolve_run_platform};
 mod departures;
 mod device_for;
 mod device_hub;
@@ -373,8 +375,12 @@ enum Cmd {
         /// Which field to type into, in `<kind>:<value>` shorthand.
         selector: String,
         /// The text to type.
-        #[arg(long)]
-        text: String,
+        #[arg(long, conflicts_with = "text_env")]
+        text: Option<String>,
+        /// The environment variable holding the text to type, so it is
+        /// not on the command line.
+        #[arg(long = "text-env")]
+        text_env: Option<String>,
         /// Put the text in the field without the keyboard (Android:
         /// `ACTION_SET_TEXT`), so an input method that composes typed
         /// keys into Chinese, Japanese or Korean cannot change it. iOS
@@ -2764,7 +2770,7 @@ fn write_stdout(args: std::fmt::Arguments<'_>) {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli: Cli = fill_secret::parse_or_exit();
     match run(cli).await {
         Ok(code) => code,
         Err(e) => {
@@ -4073,12 +4079,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Fill {
             selector,
             text,
+            text_env,
             set_text,
             port,
             device,
             platform,
         } => {
             let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
+            let text = fill_secret::text_to_type(text, text_env).map_err(CliError::Other)?;
             act::cmd_fill(selector, text, p, plat, set_text)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -5859,7 +5867,7 @@ async fn cmd_session(action: SessionAction) -> Result<(), CliError> {
     match action {
         SessionAction::State { port, device } => {
             let p = runner_dial_port(port, device.as_deref());
-            let client = smix_runner_client::HttpRunnerClient::new(p);
+            let client = act::runner_client(p);
             let sessions = match client.list_sessions().await {
                 Ok(resp) => serde_json::to_value(&resp.sessions).unwrap_or(serde_json::Value::Null),
                 // Read-only: an unreachable runner is a state to report,
@@ -6773,50 +6781,6 @@ fn project_key() -> String {
         .into_owned()
 }
 
-fn runner_dial_port(flag: Option<u16>, device: Option<&str>) -> u16 {
-    run_port(flag.or_else(act::runner_port_from_env_opt), || {
-        device
-            .and_then(lookup_registered)
-            .and_then(|sim| sim.runner_port)
-    })
-}
-
-/// Dial both the port and the platform a CLI verb should drive, so
-/// `fill` / `find` reach the driver the flow path already uses. The port
-/// keeps `runner_dial_port`'s flag → env → registry → default ladder;
-/// the platform is read from the device the same way `smix run` reads it
-/// (C1) — one rule at both entrances. No `--device` lets the dialed
-/// port's registered holder decide (the consumer's `--port 22088`
-/// usage). An unclassifiable target is an error, not a silent iOS drive
-/// that would 501 on Android.
-fn runner_dial_target(
-    flag: Option<u16>,
-    device: Option<&str>,
-    platform: Option<RunPlatform>,
-) -> Result<(u16, smix_driver::Platform), CliError> {
-    let port = runner_dial_port(flag, device);
-    // Said outright, as `smix run --platform` says it.
-    if let Some(p) = platform {
-        return Ok((port, p.to_driver()));
-    }
-    let dial = device.map(|d| match lookup_registered(d) {
-        Some(sim) => DeviceDial::Registered(sim.kind),
-        None => DeviceDial::Unregistered,
-    });
-    let holders: Vec<smix_simctl::registry::DeviceKind> = if device.is_none() {
-        load_registry()
-            .registry
-            .all()
-            .filter(|(_, sim)| sim.runner_port == Some(port))
-            .map(|(_, sim)| sim.kind)
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let plat = dial_platform(dial, &holders).map_err(CliError::Other)?;
-    Ok((port, plat.to_driver()))
-}
-
 /// Refuse `runner up` flags that only the iOS path implements.
 ///
 /// The Android branch reads `--runner-port` and nothing else. It used to
@@ -6958,6 +6922,7 @@ mod phone_screenshot_routing {
 #[cfg(test)]
 mod dial_platform {
     use super::*;
+    use crate::platform::{DeviceDial, dial_platform};
     use smix_simctl::registry::DeviceKind;
 
     #[test]
