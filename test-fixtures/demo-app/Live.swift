@@ -15,6 +15,9 @@ final class LiveController: UIViewController, UITextFieldDelegate {
   private let present = UIButton(type: .system)
   private let field = UITextField()
   private let secret = UITextField()
+  private let stubborn = UIButton(type: .system)
+  private let stubbornCount = UILabel()
+  private var stubbornTouches = 0
   private var menuTaps = 0
   private var modalTaps = 0
   private var submits = 0
@@ -32,6 +35,18 @@ final class LiveController: UIViewController, UITextFieldDelegate {
     present.setTitle("Present", for: .normal)
     present.accessibilityIdentifier = "live-present"
     present.addAction(UIAction { [weak self] _ in self?.presentSheet() }, for: .touchUpInside)
+    // A control that takes its first touch and does nothing with it, as a
+    // control over a live picture sometimes does; the second one counts.
+    stubborn.setTitle("Stubborn", for: .normal)
+    stubborn.accessibilityIdentifier = "live-stubborn"
+    stubborn.addAction(UIAction { [weak self] _ in
+      guard let self else { return }
+      self.stubbornTouches += 1
+      self.stubbornCount.text = "stubborn \(max(0, self.stubbornTouches - 1))"
+    }, for: .touchUpInside)
+    stubbornCount.text = "stubborn 0"
+    stubbornCount.textColor = .white
+    stubbornCount.accessibilityIdentifier = "live-stubborn-count"
     field.placeholder = "type here"
     field.backgroundColor = .white
     field.accessibilityIdentifier = "live-input"
@@ -41,7 +56,7 @@ final class LiveController: UIViewController, UITextFieldDelegate {
     secret.isSecureTextEntry = true
     secret.backgroundColor = .white
     secret.accessibilityIdentifier = "live-password"
-    let stack = UIStackView(arrangedSubviews: [counts, menu, present, field, secret])
+    let stack = UIStackView(arrangedSubviews: [counts, menu, present, stubborn, stubbornCount, field, secret])
     stack.axis = .vertical
     stack.spacing = 16
     stack.translatesAutoresizingMaskIntoConstraints = false
