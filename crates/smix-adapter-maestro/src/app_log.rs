@@ -76,21 +76,22 @@ mod tests {
 
     #[test]
     fn ios_streams_the_apps_subsystem_live() {
-        let (prog, args) = command(FlowPlatform::Ios, "UDID", "com.q.insight", None).unwrap();
+        let (prog, args) = command(FlowPlatform::Ios, "UDID", "com.example.shop", None).unwrap();
         assert_eq!(prog, "xcrun");
         assert!(args.contains(&"stream".to_string()), "live, not `log show`");
-        assert_eq!(args.last().unwrap(), "subsystem == \"com.q.insight\"");
+        assert_eq!(args.last().unwrap(), "subsystem == \"com.example.shop\"");
     }
 
     #[test]
     fn android_reads_the_apps_uid_from_now() {
-        let listing = "package:com.q.insight.debug uid:10190\npackage:com.q.insight uid:10189\n";
-        assert_eq!(uid_from_packages(listing, "com.q.insight"), Some(10189));
+        let listing =
+            "package:com.example.shop.debug uid:10190\npackage:com.example.shop uid:10189\n";
+        assert_eq!(uid_from_packages(listing, "com.example.shop"), Some(10189));
         assert_eq!(uid_from_packages(listing, "com.q"), None);
         let (_, args) = command(
             FlowPlatform::Android,
             "emulator-5554",
-            "com.q.insight",
+            "com.example.shop",
             Some(10189),
         )
         .unwrap();

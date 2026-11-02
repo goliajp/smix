@@ -2,6 +2,41 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [23.0.0] — Unreleased
+
+### Added
+
+- **A tap or key with the effect it should have: `until`, `within`,
+  `retries` on `tapOn` and `pressKey`.** The action is done, then `until`
+  (`visible:` or `notVisible:` and a selector) is waited for `within` ms;
+  while it has not shown and the target stands where it stood — for a key,
+  the same field still holds focus — the action is done again, at most
+  `retries` more times. A tap whose effect shows is never repeated, and a
+  target that moved is not touched again. When the effect never shows the
+  step says how often the action was done and that it landed while the
+  screen did not change. This replaces a fixed wait and a second, optional
+  tap, which tapped twice when the first only took a moment.
+- **The app's own log as a signal source: `smix run --app-log`.** The iOS
+  unified log for the app's subsystem, or Android's logcat for the app's
+  uid, read live from the start of the run, so `expect: { signal }`
+  matches a line the app writes — a link handled with nothing shown, a
+  push received. `--log-file <path>` (repeatable) adds files, such as a dev
+  server's log; every source feeds the same signal.
+
+### Fixed
+
+- **`text: "1"` in a date picker found another month's day on a tablet.**
+  The platform's picker keeps the months beside the shown one in its tree,
+  each page reported hidden and its days visible; centred on a tablet,
+  their boxes fall on the screen. A candidate under a hidden ancestor now
+  yields to one that is not; a match that stands alone is found as before.
+
+### Breaking
+
+- **Rust API: `smix_adapter_maestro::FlowArgs` gains `app_log` and
+  `log_files`.** Code that builds it with a struct literal adds the two
+  fields (`false`, `Vec::new()` for the old behaviour).
+
 ## [22.1.0] — 2026-11-02
 
 ### Added

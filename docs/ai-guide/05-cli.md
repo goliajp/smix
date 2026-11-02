@@ -26,6 +26,8 @@ smix run [FLAGS] <FLOW.yaml>
 | `--retry <N>` | — | `1` | Per-flow attempt count; attempts recorded in `~/.local/share/smix/flow-attempts.json` for `smix diagnostic dump` attribution |
 | `--debug-output <DIR>` | — | (unset) | Per-step JSON as each step ends, on-fail screenshot/tree, and `run-summary.json` with every step's time (see "Where the time went") |
 | `--nodes <PATH>` | — | (unset) | Distributed run across machines; see below |
+| `--app-log` | — | (off) | Read the app's own log on the device as a source for `expect: signal`, live: the iOS unified log for the app's subsystem (its bundle id), Android's logcat for the app's uid. Needs `--device` |
+| `--log-file <PATH>` | — | (none) | Tail this file as a source for `expect: signal` too (repeatable). Every source — these, `--app-log`, `--metro-log-url` — feeds the same signal |
 
 Environment variables consumed by `smix run` (beyond the flag-bound ones above):
 

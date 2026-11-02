@@ -95,7 +95,11 @@ mod tests {
     #[tokio::test]
     async fn a_program_that_cannot_start_leaves_the_tail_empty() {
         let tail = MetroLogTail::new();
-        let _h = ProcessSubscriber::start("/no/such/program".into(), vec![], tail.clone());
+        let _h = ProcessSubscriber::start(
+            "smix-test-program-that-does-not-exist".into(),
+            vec![],
+            tail.clone(),
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(tail.snapshot().is_empty());
     }

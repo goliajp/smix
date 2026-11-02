@@ -1,10 +1,7 @@
-- pressKey: ENTER                        # ENTER / TAB / SPACE / DELETE / ESCAPE
-- pressKey: HOME                         # iOS home button
-- pressKey: VOLUME_UP                    # Android; iOS fails the step by name
-- pressKey: Back                         # the same as `- back`
-- pressKey: ctrl+s                       # a key with modifiers held (Android)
-- pressKey: ctrl+shift+z
-- back                                   # navigation back
-- back:
-    optional: true                       # skipped, not failed, if the screen never moved
-    label: "close the detail"            # name reports use for the step
+# Width by height in dp, the caption bar included; the window is read back
+# after each, and a size it does not take fails naming the one it has.
+- setWindowSize: { width: 1024, height: 768 }
+- assertVisible: { id: "two_pane_layout" }
+- setWindowSize: 839x768
+- assertVisible: { id: "one_pane_layout" }
+- setWindowSize: compact            # or medium, expanded
