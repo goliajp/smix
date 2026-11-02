@@ -15,6 +15,9 @@ All notable changes to the `smix` workspace are documented here. The format foll
   part of it, or a keyboard's suggestion strip, which on Android showed the
   last piece of a typed password. `smix fill --text-env NAME` keeps the
   value off the command line.
+- **`SMIX_EMULATOR_NO_WINDOW=1`** makes every `smix sim boot` of an Android
+  emulator start it with no window, as `--no-window` does for one boot. An
+  emulator already running is left as it is rather than refused.
 
 ### Fixed
 

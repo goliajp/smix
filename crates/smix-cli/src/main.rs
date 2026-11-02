@@ -3163,7 +3163,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             } else {
                                 smix_adb::BootFrom::Snapshot
                             };
-                            let started = if no_window {
+                            let started = if no_window || boot_cold::no_window_asked_by_env() {
                                 adb.start_emulator_on_without_window(&avd, &udid, &console, from)
                             } else {
                                 adb.start_emulator_on_with(&avd, &udid, &console, from)
