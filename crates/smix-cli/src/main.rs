@@ -29,6 +29,7 @@ mod boot_avd;
 mod boot_cold;
 mod boot_record;
 mod capsule;
+mod fill_secret;
 mod hover_cmd;
 mod pinch_cmd;
 mod platform;
@@ -374,8 +375,12 @@ enum Cmd {
         /// Which field to type into, in `<kind>:<value>` shorthand.
         selector: String,
         /// The text to type.
-        #[arg(long)]
-        text: String,
+        #[arg(long, conflicts_with = "text_env")]
+        text: Option<String>,
+        /// The environment variable holding the text to type, so it is
+        /// not on the command line.
+        #[arg(long = "text-env")]
+        text_env: Option<String>,
         /// Put the text in the field without the keyboard (Android:
         /// `ACTION_SET_TEXT`), so an input method that composes typed
         /// keys into Chinese, Japanese or Korean cannot change it. iOS
@@ -2765,7 +2770,7 @@ fn write_stdout(args: std::fmt::Arguments<'_>) {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli: Cli = fill_secret::parse_or_exit();
     match run(cli).await {
         Ok(code) => code,
         Err(e) => {
@@ -4074,12 +4079,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Fill {
             selector,
             text,
+            text_env,
             set_text,
             port,
             device,
             platform,
         } => {
             let (p, plat) = runner_dial_target(port, device.as_deref(), platform)?;
+            let text = fill_secret::text_to_type(text, text_env).map_err(CliError::Other)?;
             act::cmd_fill(selector, text, p, plat, set_text)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;

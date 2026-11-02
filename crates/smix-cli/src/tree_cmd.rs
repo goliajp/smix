@@ -38,6 +38,7 @@ pub async fn cmd_tree(
     if !keyboard {
         collapse_keyboards(&mut perceived.root);
     }
+    perceived.root = smix_screen::masked(&perceived.root);
     if json {
         let s = serde_json::to_string_pretty(&perceived)
             .map_err(|e| ActError::Transport(format!("serde: {e}")))?;

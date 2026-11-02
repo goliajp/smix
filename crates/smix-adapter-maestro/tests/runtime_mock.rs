@@ -157,6 +157,9 @@ fn mock_png_sized(width: u32, height: u32, mut pixel: impl FnMut(u32, u32) -> u8
 
 struct MockApp {
     calls: Mutex<Vec<MockCall>>,
+    /// When set, `fill` fails quoting what it was given, the way the
+    /// Android runner's refusal quotes the typed text and what the field held.
+    fill_quotes_its_text: Mutex<bool>,
     /// describe_selector-keyed map of find responses (true = visible).
     find_returns: Mutex<HashMap<String, bool>>,
     /// describe_selector-keyed set of selectors for which `find`
@@ -240,6 +243,7 @@ impl MockApp {
     fn new() -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
+            fill_quotes_its_text: Mutex::new(false),
             find_returns: Mutex::new(HashMap::new()),
             find_error_selectors: Mutex::new(std::collections::HashSet::new()),
             find_failures: Mutex::new(HashMap::new()),
@@ -543,6 +547,17 @@ impl AppLike for MockApp {
             .lock()
             .unwrap()
             .push(MockCall::Fill(selector.clone(), text.to_string()));
+        if *self.fill_quotes_its_text.lock().unwrap() {
+            let tail: String = text.chars().skip(1).collect();
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!(
+                    "input-text: typed \"{text}\" into f; the field held \"\" and holds \"{tail}\""
+                ),
+                hint: Some(format!("retype {text}")),
+                ..Default::default()
+            }));
+        }
         Ok(())
     }
     async fn set_text(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
@@ -4750,6 +4765,61 @@ async fn a_mouse_step_on_a_missing_element_sends_nothing() {
         parse_flow_yaml("appId: com.t\n---\n- rightClickOn: { id: \"no-such-thing\" }\n").unwrap();
     assert!(Adapter::new(&app, fixtures_dir()).run(&flow).await.is_err());
     assert!(mice(&app).is_empty(), "no click somewhere else instead");
+}
+
+/// `inputText: { secret: … }` types the variable's value, and a failure
+/// carries `***` where the value, or a quoted piece of it, would be.
+#[tokio::test]
+async fn a_secret_is_typed_and_never_said() {
+    let app = MockApp::new();
+    let env: std::collections::BTreeMap<String, String> =
+        [("E2E_PW".to_string(), "hunter2-secret".to_string())].into();
+    let ok = parse_flow_yaml("appId: com.t\n---\n- inputText: { secret: E2E_PW }\n").unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .with_env(env.clone())
+        .run(&ok)
+        .await
+        .expect("run ok");
+    assert!(
+        app.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| matches!(c, MockCall::Fill(_, t) if t == "hunter2-secret")),
+        "the value is what was typed"
+    );
+
+    *app.fill_quotes_its_text.lock().unwrap() = true;
+    let err = Adapter::new(&app, fixtures_dir())
+        .with_env(env)
+        .run(&ok)
+        .await
+        .expect_err("the fill fails");
+    let said = format!("{err:?} {err}");
+    assert!(!said.contains("hunter2"), "{said}");
+    assert!(!said.contains("unter2-secret"), "{said}");
+    assert!(said.contains("***"), "{said}");
+}
+
+#[tokio::test]
+async fn a_secret_that_is_not_set_names_the_variable() {
+    let app = MockApp::new();
+    let flow =
+        parse_flow_yaml("appId: com.t\n---\n- inputText: { secret: SMIX_TEST_NOT_SET_9F2 }\n")
+            .unwrap();
+    let err = Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect_err("no value");
+    assert!(format!("{err}").contains("SMIX_TEST_NOT_SET_9F2"), "{err}");
+    assert!(
+        !app.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| matches!(c, MockCall::Fill(..))),
+        "nothing typed"
+    );
 }
 
 // --- step timings --------------------------------------------------------

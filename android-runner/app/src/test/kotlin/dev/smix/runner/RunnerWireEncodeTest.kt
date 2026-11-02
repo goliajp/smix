@@ -301,6 +301,8 @@ class RunnerWireEncodeTest {
         assertEquals(0, obj.getInt("beforeLength"))
         assertEquals(10, obj.getInt("heldLength"))
         assertFalse("a masked field's reading went on the wire", obj.has("held") || obj.has("before"))
+        assertFalse("what was typed into a masked field went on the wire", obj.has("text"))
+        assertEquals(10, obj.getInt("textLength"))
     }
 
     @Test
