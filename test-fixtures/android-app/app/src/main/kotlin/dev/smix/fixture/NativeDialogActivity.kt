@@ -10,6 +10,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -55,6 +56,21 @@ class NativeDialogActivity : ComponentActivity() {
                     modifier = Modifier.testTag("native_dialog_open"),
                 ) { Text("Ask") }
                 Text("confirmed $confirmed", modifier = Modifier.testTag("native_dialog_count"))
+                // The platform's date picker keeps the month before the
+                // one it shows in its tree, the page hidden and its days
+                // not: a `text: "1"` found that month's first.
+                var picked by remember { mutableStateOf("none") }
+                Button(
+                    onClick = {
+                        android.app.DatePickerDialog(
+                            this@NativeDialogActivity,
+                            { _, y, m, d -> picked = "%04d-%02d-%02d".format(y, m + 1, d) },
+                            2026, 10, 3,
+                        ).show()
+                    },
+                    modifier = Modifier.testTag("native_date_open"),
+                ) { Text("Pick a date") }
+                Text("picked $picked", modifier = Modifier.testTag("native_date_picked"))
             }
         }
     }

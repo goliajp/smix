@@ -135,6 +135,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v22.0-c1-b-card-dialog-e2e.sh",
     "v22.0-c1-c-taps-over-a-live-picture-e2e.sh",
     "v22.0-c2-a-a-tap-and-its-effect-e2e.sh",
+    "v22.0-c2-b-the-shown-month-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.
