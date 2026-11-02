@@ -272,6 +272,13 @@ pub const DEFAULT_VISIBLE_LIMIT: usize = 1000;
 /// `text` is only set when distinct from `name`.
 #[must_use]
 pub fn summarize_node(node: &A11yNode) -> ElementSummary {
+    let shown;
+    let node = if node.role == Some(Role::SecureTextField) {
+        shown = masked(node);
+        &shown
+    } else {
+        node
+    };
     let name = node
         .label
         .clone()
@@ -1175,8 +1182,43 @@ impl ProbeNodeWire {
             w: (b[2] - b[0]).max(0.0),
             h: (b[3] - b[1]).max(0.0),
         });
+        // A masked field shows one bullet per character as its editable
+        // text, while `inputText` carries what was typed. Said by its
+        // role, so everything that writes a node out can leave it out.
+        if self
+            .editable_text
+            .as_deref()
+            .is_some_and(|t| !t.is_empty() && t.chars().all(|c| c == BULLET))
+            && matches!(n.role, None | Some(Role::TextField))
+        {
+            n.role = Some(Role::SecureTextField);
+        }
         n.children = self.children.iter().map(ProbeNodeWire::to_a11y).collect();
         n
+    }
+}
+
+/// The character a masked field shows for each one it holds.
+const BULLET: char = '\u{2022}';
+
+/// `node` as it may be written out: a secure text field's value and text
+/// replaced by one bullet per character, at every depth. Matching reads
+/// the node as it is; reports, failure files and printed trees read this.
+#[must_use]
+pub fn masked(node: &A11yNode) -> A11yNode {
+    let mut n = node.clone();
+    mask_in_place(&mut n);
+    n
+}
+
+fn mask_in_place(n: &mut A11yNode) {
+    if n.role == Some(Role::SecureTextField) {
+        let bullets = |s: &String| BULLET.to_string().repeat(s.chars().count());
+        n.value = n.value.as_ref().map(bullets);
+        n.text = n.text.as_ref().map(bullets);
+    }
+    for c in &mut n.children {
+        mask_in_place(c);
     }
 }
 
@@ -1388,6 +1430,38 @@ mod what_the_probe_says_about_a_node {
                "enabled":true,"visible":false,"actions":[],"children":[]"#,
         );
         assert!(!n.visible, "a node reported as hidden reads as visible");
+    }
+
+    #[test]
+    fn a_masked_compose_field_is_a_secure_field_and_is_written_out_as_bullets() {
+        // Compose shows a password field's editable text as bullets and
+        // carries what was typed as its input text; a failure listing the
+        // elements on screen printed the typed password.
+        let n = node_from_wire(
+            r#""id":2,"testTag":"pw","bounds":[0,0,100,40],"focused":true,
+               "enabled":true,"editableText":"\u2022\u2022\u2022\u2022\u2022\u2022\u2022",
+               "inputText":"hunter2","actions":[],"children":[]"#,
+        );
+        assert_eq!(n.role, Some(Role::SecureTextField));
+        assert_eq!(
+            n.value.as_deref(),
+            Some("hunter2"),
+            "matching still reads the value"
+        );
+        let out = crate::masked(&n);
+        assert_eq!(out.value.as_deref(), Some("\u{2022}".repeat(7).as_str()));
+        let summary = crate::summarize_node(&n);
+        assert!(
+            !format!("{summary:?}").contains("hunter2"),
+            "a summary carried the value: {summary:?}"
+        );
+        // a field that is not masked keeps its text everywhere
+        let plain = node_from_wire(
+            r#""id":3,"testTag":"name","bounds":[0,0,100,40],"focused":false,
+               "enabled":true,"editableText":"Ada","inputText":"Ada","actions":[],"children":[]"#,
+        );
+        assert_eq!(plain.role, None);
+        assert_eq!(crate::masked(&plain).value.as_deref(), Some("Ada"));
     }
 
     #[test]

@@ -176,6 +176,36 @@ pub enum ActError {
     Timeout { selector: String, timeout_ms: u64 },
 }
 
+/// The device the command line named, with the book that says which
+/// device a port reaches. Set once, when the verb dials its port.
+static NAMED_DEVICE: std::sync::OnceLock<(String, smix_runner_client::OwnerProbe)> =
+    std::sync::OnceLock::new();
+
+/// Record the device the command named, so every runner client this
+/// process builds refuses a port that reaches another one. `smix run`
+/// refused that before its first request; the one-shot verbs built
+/// their clients bare and read whichever device held the port.
+pub(crate) fn name_the_device(device: Option<&str>, android: bool) {
+    if let Some(d) = device {
+        let probe = if android {
+            smix_runner_client::OwnerProbe::Android
+        } else {
+            smix_runner_client::OwnerProbe::Ios
+        };
+        let _ = NAMED_DEVICE.set((d.to_string(), probe));
+    }
+}
+
+/// A runner client on `port` that checks, before its first request, that
+/// the port reaches the device the command named.
+pub(crate) fn runner_client(port: u16) -> HttpRunnerClient {
+    let client = HttpRunnerClient::new(port);
+    match NAMED_DEVICE.get() {
+        Some((device, probe)) => client.with_port_owner_check(Some(device.clone()), *probe),
+        None => client,
+    }
+}
+
 /// Dial the driver a CLI verb should drive through, by platform. The act
 /// verbs used to build a `SimctlDriver` unconditionally, so `fill` and
 /// `find text:` were 501 on Android while the flow path — which already
@@ -184,7 +214,7 @@ pub enum ActError {
 /// entrance. iOS-only sense (`describe`) stays on `SimctlDriver` because
 /// it is an inherent method, not on the `Driver` trait.
 pub(crate) fn driver_for(platform: Platform, port: u16) -> Box<dyn Driver> {
-    let client = HttpRunnerClient::new(port);
+    let client = runner_client(port);
     match platform {
         Platform::Android => Box::new(AndroidDriver::new(client)),
         Platform::Ios => Box::new(SimctlDriver::new(client)),
@@ -445,7 +475,8 @@ pub async fn cmd_fill(
                 smix_sdk::focused_fill_refusal(e)
             }
         })
-        .map_err(|e| ActError::Transport(format!("{e}")))?;
+        // a runner's refusal quotes what it typed and what the field held
+        .map_err(|e| ActError::Transport(format!("{}", e.without_secret(&text))))?;
     // The value never comes back out. smix's output is a transcript that
     // persists and is read by an AI, so a password typed through here
     // would live in the record forever — and it did: a staging account's
@@ -584,7 +615,7 @@ pub async fn cmd_swipe(
 /// in the tree, and two of the three metadata fields were empty on top
 /// of that — the help described a richer thing than the code produced.
 pub async fn cmd_describe(json: bool, port: u16) -> Result<(), ActError> {
-    let d = SimctlDriver::new(HttpRunnerClient::new(port));
+    let d = SimctlDriver::new(runner_client(port));
     let desc = d
         .describe()
         .await
@@ -604,7 +635,7 @@ pub async fn cmd_describe(json: bool, port: u16) -> Result<(), ActError> {
 /// `--json` emits the wire JSON; default emits a pretty-printed Debug
 /// summary keyed by popup id + buttons.
 pub async fn cmd_system_popups(json: bool, port: u16) -> Result<(), ActError> {
-    let d = SimctlDriver::new(HttpRunnerClient::new(port));
+    let d = SimctlDriver::new(runner_client(port));
     let popups = d
         .system_popups(None)
         .await
@@ -632,7 +663,7 @@ pub async fn cmd_system_popup_action(
     button_id: &str,
     port: u16,
 ) -> Result<(), ActError> {
-    let d = SimctlDriver::new(HttpRunnerClient::new(port));
+    let d = SimctlDriver::new(runner_client(port));
     let pressed = d
         .system_popup_action(popup_id, button_id)
         .await

@@ -2,6 +2,55 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [22.1.0] — Unreleased
+
+### Added
+
+- **A secret typed from the environment: `inputText: { secret: E2E_PASSWORD }`.**
+  The value is named, not written: it comes from `--env` or the process
+  environment and never enters the flow. Every secret a run types is shown
+  as `***` wherever smix writes anything — a failure, its hint and visible
+  elements, `--format json`, the step records and saved trees under
+  `--debug-output` — and so is any quoted piece of one: a field that held
+  part of it, or a keyboard's suggestion strip, which on Android showed the
+  last piece of a typed password. `smix fill --text-env NAME` keeps the
+  value off the command line.
+
+### Fixed
+
+- **A mistaken `smix fill` printed what it was to type.** A forgotten
+  `--text` made the argument parser report the text as a stray argument —
+  a password, in one consumer's log. `fill`'s values are masked in that
+  refusal, and a runner's refusal that quotes the text is masked too.
+- **A Compose password field was written out with what it held.** The
+  semantics tree carries a masked field's typed text, and a failure's list
+  of visible elements printed it. Such a field is now recognised (its shown
+  text is all bullets) and written out as bullets everywhere; matching still
+  reads it. The Android runner no longer sends what was typed into a masked
+  field back on the wire.
+- **With two simulators running, a one-shot verb read the wrong one.**
+  `smix tree`, `find`, `tap`, `describe` and the rest built their runner
+  connection without checking which device the port reached, so
+  `--device B` on a port held by A read and tapped A. They now refuse, as
+  `smix run` always did, naming both devices, before anything is sent.
+- **A tap inside a dialog card over a scrim popup failed TAP_MISSED.** The
+  probe stacked windows in the order they were added, and a scrim popup
+  attached to the activity and shown after the dialog read as the window on
+  top. A sub-window now stands just over the window it belongs to. The app
+  needs the new `smix-probe`.
+- **A tap right after a sheet came or went.** The default tap refused an
+  element still covered by a sheet sliding away, at the first look; it now
+  waits for the cover to leave, within the tap's wait. A `dispatch: xcui`
+  tap did not wait at all: on a sheet still sliding in it answered ok and
+  landed where the button had been. It now waits for its target to appear,
+  stand still and be uncovered.
+- **Android `openLink` dropped every parameter after the first `&`**, which
+  the device's shell took as the end of the command, and did not expand
+  `${…}`. The link is quoted and expanded.
+- **Android `launchApp` did not start an app whose entry activity is named
+  in full** (a namespace that differs from the applicationId): a dot was put
+  in front of the full name.
+
 ## [22.0.0] — 2026-11-02
 
 ### Added

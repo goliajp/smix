@@ -373,7 +373,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::SetWindowSize { .. } => "setWindowSize",
         Step::ExtendedWaitUntil { .. } => "extendedWaitUntil",
         Step::AssertVisible { .. } => "assertVisible",
-        Step::InputText(_) => "inputText",
+        Step::InputText(_) | Step::InputSecret { .. } => "inputText",
         Step::InputTextInto { .. } => "inputTextInto",
         Step::SetText { .. } => "inputText",
         Step::PressKey(_) | Step::PressKeyCombo(_) => "pressKey",
