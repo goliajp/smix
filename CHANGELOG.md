@@ -2,7 +2,7 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [22.1.0] — Unreleased
+## [22.1.0] — 2026-11-02
 
 ### Added
 
@@ -15,6 +15,9 @@ All notable changes to the `smix` workspace are documented here. The format foll
   part of it, or a keyboard's suggestion strip, which on Android showed the
   last piece of a typed password. `smix fill --text-env NAME` keeps the
   value off the command line.
+- **`SMIX_EMULATOR_NO_WINDOW=1`** makes every `smix sim boot` of an Android
+  emulator start it with no window, as `--no-window` does for one boot. An
+  emulator already running is left as it is rather than refused.
 
 ### Fixed
 

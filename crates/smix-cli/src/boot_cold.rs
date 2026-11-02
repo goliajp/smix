@@ -43,6 +43,15 @@ pub(crate) fn cold_boot_refusal(device: &str, kind: DeviceKind, running: bool) -
     }
 }
 
+/// Whether `SMIX_EMULATOR_NO_WINDOW` asks every emulator boot to leave its
+/// window out, as `--no-window` does for one. A preference rather than a
+/// demand: an emulator already running is left as it is, not refused. Set
+/// by the e2e scripts, so a suite run on a machine somebody is using does
+/// not open windows on their screen.
+pub(crate) fn no_window_asked_by_env() -> bool {
+    std::env::var("SMIX_EMULATOR_NO_WINDOW").is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
 /// Why `--no-window` cannot be honoured, or `None` when it can. A
 /// simulator `simctl` boots has no window to begin with.
 pub(crate) fn no_window_refusal(device: &str, kind: DeviceKind, running: bool) -> Option<String> {
