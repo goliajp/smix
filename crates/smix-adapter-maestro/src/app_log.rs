@@ -31,7 +31,7 @@ pub(crate) fn command(
         )),
         FlowPlatform::Android => uid.map(|uid| {
             (
-                "adb".into(),
+                smix_adb::adb_path().0.display().to_string(),
                 vec![
                     "-s".into(),
                     device.into(),
@@ -61,7 +61,8 @@ pub(crate) fn uid_from_packages(listing: &str, bundle_id: &str) -> Option<u32> {
 
 /// The uid Android runs `bundle_id` as on `device`.
 pub(crate) fn android_uid(device: &str, bundle_id: &str) -> Option<u32> {
-    let out = std::process::Command::new("adb")
+    let out = smix_adb::std_command()
+        .ok()?
         .args([
             "-s", device, "shell", "pm", "list", "packages", "-U", bundle_id,
         ])
