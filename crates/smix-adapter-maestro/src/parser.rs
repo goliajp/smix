@@ -645,7 +645,7 @@ pub(crate) fn reject_unknown_keys(
 
 /// A selector nested under `field`, its errors naming where it sits
 /// (`assertScreenshot.cropOn.id` rather than `id`).
-fn selector_under(v: &Value, field: &str) -> Result<Selector, ParseError> {
+pub(crate) fn selector_under(v: &Value, field: &str) -> Result<Selector, ParseError> {
     visible_to_selector(v).map_err(|e| match e {
         ParseError::InvalidValue {
             field: inner,
@@ -1549,6 +1549,15 @@ fn parse_press_key(v: &Value) -> Result<Step, ParseError> {
         field: "pressKey".into(),
         reason: "expected a string".into(),
     })?;
+    if s.contains('+') {
+        return s
+            .parse::<smix_input::KeyCombo>()
+            .map(Step::PressKeyCombo)
+            .map_err(|reason| ParseError::InvalidValue {
+                field: "pressKey".into(),
+                reason,
+            });
+    }
     smix_sdk::KeyName::from_name(s)
         .map(Step::PressKey)
         .map_err(|e| ParseError::InvalidValue {
@@ -3201,11 +3210,13 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
             path: None,
             annotations: Vec::new(),
             crop_on: None,
+            window: false,
         }),
         Value::String(s) => Ok(Step::TakeScreenshot {
             path: Some(s.clone()),
             annotations: Vec::new(),
             crop_on: None,
+            window: false,
         }),
         Value::Mapping(m) => {
             // Long form: { name? | path?, annotate?, cropOn? }. It used to
@@ -3214,7 +3225,7 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
                 m,
                 "takeScreenshot",
                 "takeScreenshot",
-                &["name", "path", "annotate", "cropOn"],
+                &["name", "path", "annotate", "cropOn", "window"],
                 &[
                     ("label", "smix does not carry out a per-step label here"),
                     (
@@ -3227,6 +3238,23 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
                 None => None,
                 Some(v) => Some(selector_under(v, "takeScreenshot.cropOn")?),
             };
+            let window = match m.get(Value::String("window".into())) {
+                None => false,
+                Some(Value::Bool(b)) => *b,
+                Some(other) => {
+                    return Err(ParseError::InvalidValue {
+                        field: "takeScreenshot.window".into(),
+                        reason: format!("expected true or false, got {other:?}"),
+                    });
+                }
+            };
+            if window && crop_on.is_some() {
+                return Err(ParseError::InvalidValue {
+                    field: "takeScreenshot".into(),
+                    reason: "`window: true` and `cropOn` each choose the region kept; give one"
+                        .into(),
+                });
+            }
             let path = m
                 .get(Value::String("name".into()))
                 .or_else(|| m.get(Value::String("path".into())))
@@ -3280,6 +3308,7 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
                 path,
                 annotations,
                 crop_on,
+                window,
             })
         }
         other => Err(ParseError::InvalidValue {
@@ -3346,6 +3375,9 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "swipe" => parse_swipe(value),
         "pinch" => crate::pinch::parse(value),
         "hoverOn" => crate::hover::parse_on(value),
+        "rightClickOn" => crate::mouse::parse_right_click(value),
+        "mouseWheel" => crate::mouse::parse_wheel(value),
+        "mouseDrag" => crate::mouse::parse_drag(value),
         "hoverAway" => crate::hover::parse_away(value),
         "setWindowSize" => crate::window_size::parse(value),
         "launchApp" => parse_launch_app(value),

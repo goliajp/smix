@@ -2,6 +2,51 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [22.0.0] — Unreleased
+
+### Added
+
+- **Right click, wheel and drag with a mouse on Android: `rightClickOn`,
+  `mouseWheel`, `mouseDrag`.** An app in a Chromebook or Android desktop
+  window opens menus on a secondary click, scrolls and zooms on the wheel
+  and drags with the mouse, and none of these could be sent: `adb shell
+  input` has no buttons or wheel. `rightClickOn: { id: row }` clicks the
+  secondary button on the element's centre; `mouseWheel: { on: { id: list },
+  direction: down, notches: 3 }` turns the wheel over it, with `ctrl: true`
+  for zoom; `mouseDrag: { from: { id: card }, to: { id: column } }` drags
+  with the primary button, or `by: { x: 96, y: 0 }` in dp. iOS refuses each
+  by name. Underneath, `smix_input::Mouse` gains `SecondaryClick`, `Wheel`,
+  `Drag` and `DragBy`. The Android 14 desktop emulator image sends wheel
+  turns and button presses to the view at the wrong height (its
+  `ViewGroup` reads the event's y from its x); the guide says so, and these
+  steps are checked on Android 16.
+- **Key combinations: `pressKey: ctrl+s`.** A key written with `+` is
+  pressed with the modifiers held (`ctrl`, `shift`, `alt`, `meta`) on
+  Android, which is how an app's keyboard shortcuts are reached; iOS
+  refuses a combination by name. Underneath, `smix_input::KeyCombo`,
+  `Driver::press_key_combo` and `App::press_key_combo`; the Android runner
+  serves `POST /press-key-combo`.
+- **A screenshot of just the app's window: `takeScreenshot: { window:
+  true }`.** On a desktop display the app is one window among others; the
+  screenshot is cut to the window the window manager places, its caption
+  bar included. A fullscreen app and iOS are refused by name. Underneath,
+  `Driver::window_bounds`, `App::window_bounds` and
+  `smix_sdk::crop_to_window`; the Android runner serves
+  `POST /window-bounds`.
+
+### Fixed
+
+- **`setWindowSize` on Android 16.** It read the display's app area under
+  the name Android 14 gives it and refused every size on Android 16, which
+  names it differently.
+
+### Breaking
+
+- **Rust API: `smix_adapter_maestro::Step::TakeScreenshot` gains a
+  `window` field and is `#[non_exhaustive]`.** Code that builds the variant
+  outside the crate, or matches it without `..`, no longer compiles; match
+  it with `..`.
+
 ## [21.0.0] — 2026-11-02
 
 ### Added

@@ -1,63 +1,126 @@
-# Fixed sleep — NOT an XCTest quiescence wait. smix no-ops XCTest's
-# internal idle-wait for performance (SmixQuiescenceSwizzle); this verb
-# has always been a bounded pause at the runtime layer.
-#
-# On an Android emulator a run zeroes the three animation scales before
-# it starts, so this verb has little left to wait for, and puts them
-# back to exactly what they were when it ends — a scale the emulator
-# never had is deleted, not set to 1. A run that is killed before it
-# can put them back is made good by the next run on that emulator. A
-# physical Android device is left as it is, and the run says so.
-# `--animations` leaves every device's own settings alone, and with
-# them the original reason for this verb.
-#
-# On iOS nothing is quietened — no host-side lever exists — so this
-# verb keeps its full value there.
-- waitForAnimationToEnd                  # bare form: ceiling 400 ms (maestro-compat)
-- waitForAnimationToEnd: 500             # integer: ceiling 500 ms
-- waitForAnimationToEnd:
-    timeout: 5000                        # map form: ceiling 5000 ms (maestro-canonical)
+# Repeat fixed count
+- repeat:
+    times: 5
+    commands:
+      - tapOn: "Increment"
 
-# The number is a CEILING in all three forms, never a sleep. The verb
-# samples the screen and returns as soon as two frames match, so a still
-# screen costs two captures and not the number written here. It used to
-# sleep, which charged for an animation whether or not one ran; this note
-# said "sleep N ms" for longer than that was true, and a consumer wrote
-# `waitForAnimationToEnd: 500` meaning "pause here" on the strength of it.
-#
-# There is no bare sleep verb, deliberately. To wait for something, name
-# it: `extendedWaitUntil` for an element. The keyboard is an element —
-# `extendedWaitUntil: { visible: { role: "keyboard" } }` — which is the
-# wait people most often reach for a pause instead of, because the keys
-# are not in the tree and `describe` leaves the keyboard out of its
-# summary. See "role: keyboard" in the selectors guide.
-#
-# If the thing you are waiting for really is not in the tree, that is a
-# gap worth reporting rather than routing around with a pause.
-#
-# A screen that never settles is a warning, not a failure — so is a window
-# in which the device refused every capture (see CAPTURE_BACKPRESSURE in
-# the errors guide). The verb waits refusals out inside its own ceiling.
+# Repeat while condition
+- repeat:
+    while:
+      visible: "Loading..."
+    commands:
+      - waitForAnimationToEnd: 500
 
-- extendedWaitUntil:
-    visible: "Loading complete"
-    timeout: 30000
+# Repeat while NOT visible (poll for appearance)
+- repeat:
+    while:
+      notVisible:
+        id: "home-result-label"
+    commands:
+      - waitForAnimationToEnd: 200
 
-- extendedWaitUntil:
-    notVisible: "Spinner"
-    timeout: 10000
+# `repeat.while` takes the same conditions as `runFlow.when` (below),
+# and a block can be labelled and made optional
+- repeat:
+    while:
+      platform: Android
+      visible: "Load more"
+    label: "drain the list"
+    optional: true
+    commands:
+      - tapOn: "Load more"
 
-# On timeout, extendedWaitUntil auto-captures a screenshot + tree JSON
-# to `.smix/timeouts/` (or `--debug-output` dir when set) and appends
-# the written paths to the failure hint — no flag needed.
+# Both together: another pass needs the condition to hold AND the count
+# to be unspent. Give neither and it is a parse error — nothing would
+# say when the loop ends.
+- repeat:
+    times: 5
+    while:
+      visible: "Load more"
+    commands:
+      - tapOn: "Load more"
 
-# Inside a flow, this is the verb. Driving the runner from OUTSIDE one —
-# a shell harness deciding whether the app is up before it starts —
-# reach for `smix wait-for` instead (see 05-cli):
-#
-#     smix wait-for --device <d> --port <p> --timeout 30 id:tab-device
-#
-# Same question, no yaml. A consumer wrote a one-step `ready.yaml` and
-# ran `smix run` on it before finding `wait-for` in `--help`; the two
-# belong beside each other because the choice is "am I in a flow or
-# around one", not "which is better".
+# Retry on failure
+- retry:
+    maxRetries: 3
+    commands:
+      - tapOn: "Flaky Button"
+      - assertVisible: "Confirmed"
+
+# Run a sub-flow (file include)
+- runFlow: "../subflows/launch-fresh.yaml"
+
+# Run a sub-flow conditionally (same `runFlow` verb + `when:` gate)
+- runFlow:
+    when:
+      visible: "Need Login"           # enter only when this is visible
+    file: "../subflows/login.yaml"
+
+# Inverse gate (v1.0.24) — enter only when the selector is NOT visible.
+# Idempotency pattern: skip a ceremony whose end state is already reached.
+- runFlow:
+    when:
+      notVisible: { id: "qa-bubble" }
+    file: "../subflows/enter-qa-mode.yaml"
+
+# Inline body instead of a file (`commands:`); `when:` gates identically.
+- runFlow:
+    when:
+      visible: "Open in"
+    commands:
+      - tapOn: "Open"
+      - waitForAnimationToEnd
+
+# Conditions combine: every one present must hold (AND), checked in
+# maestro's order — platform, true, visible, notVisible — and the first
+# that fails skips the block without checking the rest.
+- runFlow:
+    when:
+      platform: Android                # Android | iOS | Web, any case
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+
+# `true:` is a template, expanded when the gate is checked. It is false
+# when the result is blank, `false` (any case), `undefined`, `null` or a
+# number equal to zero, and true otherwise.
+- runFlow:
+    when:
+      true: ${output.skipOnboarding == 'yes'}
+      label: "onboarding already done"   # names the skip in the log
+    commands:
+      - tapOn: "Skip"
+
+# `env:` names values for the block only; each value is expanded in the
+# caller's scope on entry. `optional: true` turns a failure inside the
+# block into a skip with the failure's own words, and the flow goes on.
+- runFlow:
+    env:
+      GREETING: "hello"
+    label: "type the greeting"
+    optional: true
+    commands:
+      - tapOn: "Message"
+      - inputText: ${GREETING}
+
+# Every key of `runFlow:`, `repeat:`, `when:` and `while:` is one smix
+# acts on. A key it does not know — a typo, or `when.optional`, which
+# maestro accepts and ignores — is a parse error naming the key.
+# The gate selector supports the full selector table, including
+# `fallback:` chains with `ocrText` (OCR fires for the check).
+
+# Run inline JS (evaluated in the maestro JS context)
+- evalScript: |
+    output.userId = output.someResponse.id
+- runScript: "../scripts/setup.js"
+
+# `runScript` also takes maestro's mapping form, `when:` included — so a
+# script meant for one platform is skipped on the other rather than
+# failing there. smix has no JS runtime, so one whose condition holds
+# fails saying exactly that; what `when:` changes is whether it is
+# reached at all.
+- runScript:
+    file: "../scripts/seed-android.js"
+    when:
+      platform: Android
+    label: "seed the database"

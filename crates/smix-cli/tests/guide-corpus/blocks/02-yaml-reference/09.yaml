@@ -1,7 +1,9 @@
-# Width by height in dp, the caption bar included; the window is read back
-# after each, and a size it does not take fails naming the one it has.
-- setWindowSize: { width: 1024, height: 768 }
-- assertVisible: { id: "two_pane_layout" }
-- setWindowSize: 839x768
-- assertVisible: { id: "one_pane_layout" }
-- setWindowSize: compact            # or medium, expanded
+# A secondary (right) click on the element's centre: what opens a context menu.
+- rightClickOn: { id: "file_row" }
+# The wheel turned over the element; `ctrl: true` holds Ctrl, which apps read as zoom.
+- mouseWheel: { on: { id: "file_list" }, direction: down, notches: 3 }
+- mouseWheel: { on: { id: "map" }, direction: up, ctrl: true }
+# The primary button pressed on one element and released on another, or a
+# distance away in dp (x right, y down).
+- mouseDrag: { from: { id: "card_3" }, to: { id: "done_column" } }
+- mouseDrag: { from: { id: "split_divider" }, by: { x: 96, y: 0 } }

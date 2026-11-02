@@ -27,7 +27,7 @@
 pub(crate) mod png_gray;
 pub mod screenshot_compare;
 pub(crate) mod screenshot_hash;
-pub use screenshot_compare::{CropTo, ScreenshotCheck, ScreenshotCompare, crop_to};
+pub use screenshot_compare::{CropTo, ScreenshotCheck, ScreenshotCompare, crop_to, crop_to_window};
 pub use screenshot_hash::ScreenMask;
 
 /// Frame-to-frame stillness, backing `waitForAnimationToEnd`.
@@ -2441,6 +2441,25 @@ impl App {
                 ..Default::default()
             })
         })
+    }
+
+    /// Press a key with modifiers held — a keyboard shortcut such as
+    /// `ctrl+s`. Android only; iOS refuses by name.
+    pub async fn press_key_combo(
+        &self,
+        combo: &smix_input::KeyCombo,
+    ) -> Result<(), ExpectationFailure> {
+        self.driving()?.press_key_combo(combo).await
+    }
+
+    /// Where the desktop window of `app_id` (the app in front when `None`)
+    /// sits on its display, in px, its caption bar included. Android
+    /// only; iOS refuses by name.
+    pub async fn window_bounds(
+        &self,
+        app_id: Option<&str>,
+    ) -> Result<smix_input::WindowBounds, ExpectationFailure> {
+        self.driving()?.window_bounds(app_id).await
     }
 
     /// Swipe one gesture anchored at an element: the gesture starts from

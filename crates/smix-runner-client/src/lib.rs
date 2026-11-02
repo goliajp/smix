@@ -19,8 +19,10 @@
 //! - `POST /scroll {selector, direction, include?}` — scroll-until-visible
 //! - `POST /swipe-once {direction}` — single swipe gesture (no probe loop)
 //! - `POST /pinch-at-norm-coord {cx, cy, fromSpan, toSpan, durationMs, pan*}` — two-finger pinch
-//! - `POST /mouse-at-norm-coord {kind, nx?, ny?}` — a mouse pointer over a point, or off the app (Android)
+//! - `POST /mouse-at-norm-coord {kind, nx?, ny?, toNx?, toNy?, dxDp?, dyDp?, wheel?, ctrl?}` — a mouse pointer over a point, off the app, a right click, a wheel turn or a drag (Android)
 //! - `POST /window-size {package?, widthDp, heightDp}` — an app's desktop window resized, and its size read back (Android)
+//! - `POST /press-key-combo {key, ctrl?, shift?, alt?, meta?}` — a key pressed with modifiers held (Android)
+//! - `POST /window-bounds {package?}` — where an app's desktop window sits, in px, and the display's size (Android)
 //! - `POST /foreground {bundleId}` — bring app to foreground
 //! - `POST /hide-keyboard` — take the keyboard down: its Return or Done key,
 //!   a drag of the focused field's scroll view into it, a touch on an empty
@@ -37,6 +39,7 @@
 
 mod acts;
 pub use acts::{TapTarget, target_gone_before_touch};
+mod combo;
 mod hide_keyboard;
 mod hittable;
 mod input_text;

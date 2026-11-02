@@ -22,6 +22,7 @@ E2E_ANDROID_THIRD="${SMIX_E2E_ANDROID_THIRD:-sim-smix-android-03}"
 # The Android Desktop image (a Chromebook's windowed apps, API 34
 # android-desktop), for the scripts whose subject is a desktop window.
 E2E_ANDROID_DESKTOP="${SMIX_E2E_ANDROID_DESKTOP:-sim-smix-desktop-01}"
+E2E_ANDROID_TABLET="${SMIX_E2E_ANDROID_TABLET:-sim-smix-tablet-01}"
 # All three are API 36 (google_apis) and the simulators iOS 27: the suite
 # runs on what consumers run, once, rather than on an older image with the
 # newer one as a second pass.

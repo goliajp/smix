@@ -166,6 +166,7 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
             Ok(single("back", Value::Mapping(inner)))
         }
         Step::PressKey(k) => Ok(single("pressKey", Value::String(k.as_str().into()))),
+        Step::PressKeyCombo(c) => Ok(single("pressKey", Value::String(c.to_string()))),
         Step::EraseText(n) => Ok(single("eraseText", Value::Number(Number::from(*n)))),
         Step::Swipe { from, to } => {
             let mut inner = Mapping::new();
@@ -366,13 +367,16 @@ fn step_verb(step: &Step) -> &'static str {
         Step::Pinch { .. } => "pinch",
         Step::HoverOn { .. } => "hoverOn",
         Step::HoverAway => "hoverAway",
+        Step::RightClickOn { .. } => "rightClickOn",
+        Step::MouseWheel { .. } => "mouseWheel",
+        Step::MouseDrag { .. } => "mouseDrag",
         Step::SetWindowSize { .. } => "setWindowSize",
         Step::ExtendedWaitUntil { .. } => "extendedWaitUntil",
         Step::AssertVisible { .. } => "assertVisible",
         Step::InputText(_) => "inputText",
         Step::InputTextInto { .. } => "inputTextInto",
         Step::SetText { .. } => "inputText",
-        Step::PressKey(_) => "pressKey",
+        Step::PressKey(_) | Step::PressKeyCombo(_) => "pressKey",
         Step::Back(_) => "back",
         Step::RunFlow(_) => "runFlow",
         Step::RunFlowConditional { .. } => "runFlowConditional",

@@ -94,4 +94,39 @@ class WindowResizeTest {
             WindowResize.Request.decode("""{"widthDp":0,"heightDp":2}""")
         }
     }
+
+    @Test
+    fun theDisplaySizeIsWhatItMeasuresTurnedAsItIsNow() {
+        assertEquals(Box(0, 0, 3840, 2160), WindowResize.readDisplaySize(displays))
+        assertNull(WindowResize.readDisplaySize(displays.replace("cur=3840x2160", "")))
+        assertNull(WindowResize.readDisplaySize("no display here"))
+    }
+
+    @Test
+    fun aWindowIsNamedByPackageOrIsTheAppInFront() {
+        assertEquals(WindowResize.Which("a.b"), WindowResize.Which.decode("""{"package":"a.b"}"""))
+        assertEquals(WindowResize.Which(null), WindowResize.Which.decode("{}"))
+        assertEquals(WindowResize.Which(null), WindowResize.Which.decode(""))
+        assertThrows(IllegalArgumentException::class.java) { WindowResize.Which.decode("nope") }
+    }
+
+    // Cut from an Android 16 tablet emulator (2560x1600 at 320 dpi) with
+    // freeform windows on: the app area is named overrideConfigFrame there.
+    @Test
+    fun androidSixteenNamesTheAppAreaOverrideConfigFrame() {
+        val sixteen = """
+            WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)
+              Display: mDisplayId=0 (organized)
+                init=2560x1600 320dpi mMinSizeOfResizeableTaskDp=220 cur=2560x1600 app=2560x1600 rng=1600x1600-2560x2560
+                mDecorInsetsInfo:
+                  ROTATION_0={nonDecorInsets=[0,0][0,0], overrideNonDecorInsets=[0,0][0,64], configInsets=[0,0][0,0], overrideConfigInsets=[0,48][0,64], overrideNonDecorFrame=[0,0][2560,1536], overrideConfigFrame=[0,48][2560,1536]}
+                  ROTATION_90={nonDecorInsets=[0,0][0,0], overrideNonDecorInsets=[0,0][0,64], configInsets=[0,0][0,0], overrideConfigInsets=[0,48][0,64], overrideNonDecorFrame=[0,0][1600,2496], overrideConfigFrame=[0,48][1600,2496]}
+              DisplayRotation
+                mRotation=0 mDeferredRotationPauseCount=0
+        """.trimIndent()
+        val d = WindowResize.readDisplay(sixteen)!!
+        assertEquals(Box(0, 48, 2560, 1536), d.appArea)
+        assertEquals(220, d.minSideDp)
+        assertEquals(Box(0, 0, 2560, 1600), WindowResize.readDisplaySize(sixteen))
+    }
 }

@@ -10,16 +10,18 @@
 
 use serde::{Deserialize, Serialize};
 
+mod combo;
 mod mouse;
 mod pinch;
 mod window;
+pub use combo::{ComboKey, KeyCombo};
 pub use mouse::Mouse;
 pub use pinch::{
     DEFAULT_DURATION_MS as PINCH_DEFAULT_DURATION_MS, DEFAULT_PAN_MS as PINCH_DEFAULT_PAN_MS,
     DURATION_RANGE as PINCH_DURATION_RANGE, Pan, Pinch, PinchSpans, RunUp,
     SCALE_SPAN as PINCH_SCALE_SPAN,
 };
-pub use window::{PRESETS as WINDOW_PRESETS, WindowSize};
+pub use window::{PRESETS as WINDOW_PRESETS, WindowBounds, WindowSize};
 
 /// Maestro yaml `direction:` semantic: the direction names what
 /// content the caller wants to **see** (navigation through content),

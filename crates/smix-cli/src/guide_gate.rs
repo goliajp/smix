@@ -320,7 +320,8 @@ impl AppLike for MockApp {
         // `assertBoundsUnchanged` example, which measures a named
         // element's box the same way; `summary-card` is the element the
         // screenshot examples crop to; `player` is what the pinch examples
-        // zoom; `settings_row` is what the hover examples rest on.
+        // zoom; `settings_row` is what the hover examples rest on; the
+        // mouse-button examples click, wheel and drag on the rest.
         Ok(box_named(
             "root",
             vec![
@@ -329,6 +330,12 @@ impl AppLike for MockApp {
                 box_named("btn-ptz-stop", Vec::new()),
                 box_named("summary-card", Vec::new()),
                 box_named("settings_row", Vec::new()),
+                box_named("file_row", Vec::new()),
+                box_named("file_list", Vec::new()),
+                box_named("map", Vec::new()),
+                box_named("card_3", Vec::new()),
+                box_named("done_column", Vec::new()),
+                box_named("split_divider", Vec::new()),
             ],
         ))
     }
@@ -430,6 +437,25 @@ impl AppLike for MockApp {
         &self,
         _app_id: Option<&str>,
         _size: smix_input::WindowSize,
+    ) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
+    async fn window_bounds(
+        &self,
+        _app_id: Option<&str>,
+    ) -> Result<smix_input::WindowBounds, ExpectationFailure> {
+        Ok(smix_input::WindowBounds {
+            left: 0,
+            top: 0,
+            right: 1,
+            bottom: 1,
+            display_width: 1,
+            display_height: 1,
+        })
+    }
+    async fn press_key_combo(
+        &self,
+        _combo: &smix_input::KeyCombo,
     ) -> Result<(), ExpectationFailure> {
         Ok(())
     }
@@ -777,7 +803,7 @@ fn remove_artifacts(flow: &smix_adapter_maestro::Flow) {
 const KNOWN_BROKEN: &[(&str, usize, &str)] = &[
     (
         "02-yaml-reference",
-        14,
+        15,
         "repeat.while.visible loops until the element leaves the screen; \
          a mock that always says visible never exits, and one that said \
          otherwise would be inventing a screen.",

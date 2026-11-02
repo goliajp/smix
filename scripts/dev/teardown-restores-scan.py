@@ -130,6 +130,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v20.0-c3-a-system-popup-tap-e2e.sh",
     "v20.0-posterboard-store-repair-e2e.sh",
     "v20.0-c3-desktop-window-e2e.sh",
+    "v21.0-c1-mouse-buttons-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.

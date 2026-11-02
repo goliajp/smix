@@ -17,6 +17,9 @@ data class MouseGesture(
     val toNy: Double = ny,
     val wheel: Float = 0f,
     val ctrl: Boolean = false,
+    /// A drag's distance in dp, in place of `toNx`/`toNy`: the display's
+    /// density turns it into pixels when the events are laid out.
+    val byDp: Pair<Double, Double>? = null,
 ) {
     enum class Kind(val wire: String) {
         HOVER("hover"),
@@ -53,8 +56,9 @@ data class MouseGesture(
         val ctrl: Boolean = false,
     )
 
-    /// The events for a display `width` × `height` pixels.
-    fun timeline(width: Int, height: Int): List<Event> {
+    /// The events for a display `width` × `height` pixels at `density`
+    /// pixels per dp.
+    fun timeline(width: Int, height: Int, density: Float = 1f): List<Event> {
         val x = (nx * width).toFloat()
         val y = (ny * height).toFloat()
         // A pointer arrives from somewhere: a first move a little away lets
@@ -81,8 +85,8 @@ data class MouseGesture(
                 Event(2 * STEP_MS, Action.SCROLL, x, y, wheel = wheel, ctrl = ctrl),
             )
             Kind.DRAG -> {
-                val tx = (toNx * width).toFloat()
-                val ty = (toNy * height).toFloat()
+                val tx = byDp?.let { x + (it.first * density).toFloat() } ?: (toNx * width).toFloat()
+                val ty = byDp?.let { y + (it.second * density).toFloat() } ?: (toNy * height).toFloat()
                 val moves = (1..DRAG_STEPS).map { i ->
                     val f = i.toFloat() / DRAG_STEPS
                     Event((2 + i) * STEP_MS, Action.MOVE, x + (tx - x) * f, y + (ty - y) * f, held = Button.PRIMARY)
@@ -115,9 +119,9 @@ data class MouseGesture(
         const val APPROACH_PX = 8f
         const val DRAG_STEPS = 12
 
-        /// `{"kind":"hover","nx":0.5,"ny":0.5}`, plus `toNx`/`toNy` for a
-        /// drag and `wheel`/`ctrl` for a wheel turn; `{"kind":"away"}`
-        /// takes no point.
+        /// `{"kind":"hover","nx":0.5,"ny":0.5}`, plus `toNx`/`toNy` (or
+        /// `dxDp`/`dyDp`) for a drag and `wheel`/`ctrl` for a wheel turn;
+        /// `{"kind":"away"}` takes no point.
         fun decode(body: String): MouseGesture {
             val o = try {
                 JSONObject(body)
@@ -135,12 +139,18 @@ data class MouseGesture(
             // it is sent, inside the window or outside it.
             val nx = if (kind == Kind.AWAY) share("nx", 0.0) else share("nx")
             val ny = if (kind == Kind.AWAY) share("ny", 0.0) else share("ny")
+            val byDp = if (kind == Kind.DRAG && (o.has("dxDp") || o.has("dyDp"))) {
+                require(!o.has("toNx") && !o.has("toNy")) { "a drag goes to toNx/toNy or by dxDp/dyDp, not both" }
+                o.optDouble("dxDp", 0.0) to o.optDouble("dyDp", 0.0)
+            } else {
+                null
+            }
             return MouseGesture(
                 kind = kind,
                 nx = nx,
                 ny = ny,
-                toNx = if (kind == Kind.DRAG) share("toNx") else nx,
-                toNy = if (kind == Kind.DRAG) share("toNy") else ny,
+                toNx = if (kind == Kind.DRAG && byDp == null) share("toNx") else nx,
+                toNy = if (kind == Kind.DRAG && byDp == null) share("toNy") else ny,
                 wheel = if (kind == Kind.WHEEL) {
                     require(o.has("wheel")) { "wheel is required" }
                     o.getDouble("wheel").toFloat()
@@ -148,6 +158,7 @@ data class MouseGesture(
                     0f
                 },
                 ctrl = o.optBoolean("ctrl", false),
+                byDp = byDp,
             )
         }
     }

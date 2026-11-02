@@ -72,6 +72,8 @@ enum MockCall {
     /// `App::mouse(mouse)`.
     Mouse(smix_input::Mouse),
     WindowSize(Option<String>, smix_input::WindowSize),
+    WindowBounds(Option<String>),
+    KeyCombo(smix_input::KeyCombo),
     /// `App::scroll_screen(direction)`.
     ScrollScreen(SwipeDirection),
     /// `App::assert_not_visible(selector)`. Adapter only records
@@ -745,6 +747,31 @@ impl AppLike for MockApp {
             .unwrap()
             .push(MockCall::WindowSize(app_id.map(str::to_string), size));
         Ok(())
+    }
+    async fn press_key_combo(
+        &self,
+        combo: &smix_input::KeyCombo,
+    ) -> Result<(), ExpectationFailure> {
+        self.calls.lock().unwrap().push(MockCall::KeyCombo(*combo));
+        Ok(())
+    }
+    /// A window a quarter of the mock's 64×64 capture in from each side.
+    async fn window_bounds(
+        &self,
+        app_id: Option<&str>,
+    ) -> Result<smix_input::WindowBounds, ExpectationFailure> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(MockCall::WindowBounds(app_id.map(str::to_string)));
+        Ok(smix_input::WindowBounds {
+            left: 1000,
+            top: 500,
+            right: 3000,
+            bottom: 1500,
+            display_width: 4000,
+            display_height: 2000,
+        })
     }
     async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::Mouse(*mouse));
@@ -4323,6 +4350,44 @@ async fn take_screenshot_with_crop_on_writes_only_the_element() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// `takeScreenshot` with `window: true` writes only the app's window, cut
+/// where the window sits on the display: the mock's window spans the
+/// middle half of a 4000×2000 display, so 32×32 of the 64×64 capture.
+/// The window asked for is the app last launched.
+#[tokio::test]
+async fn take_screenshot_of_the_window_writes_only_the_window_of_the_app_last_launched() {
+    let dir = std::env::temp_dir().join(format!("smix-v21-window-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join("window.png");
+    let flow = parse_inline(&format!(
+        "appId: com.t\n---\n- launchApp: {{ appId: com.u }}\n- takeScreenshot:\n    path: {}\n    window: true\n",
+        out.display()
+    ));
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter
+        .run(&flow)
+        .await
+        .expect("takeScreenshot of the window");
+    let bytes = std::fs::read(&out).expect("nothing written");
+    let reader = png::Decoder::new(std::io::Cursor::new(bytes.as_slice()))
+        .read_info()
+        .unwrap();
+    assert_eq!((reader.info().width, reader.info().height), (32, 32));
+    let asked: Vec<_> = app
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            MockCall::WindowBounds(a) => Some(a.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(asked, vec![Some("com.u".to_string())]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A `when:` whose look failed is not a `when:` that saw nothing.
 ///
 /// A consumer's release gate read a runner that answered non-JSON as a
@@ -4610,6 +4675,81 @@ async fn hover_on_a_missing_element_moves_nothing() {
         parse_flow_yaml("appId: com.t\n---\n- hoverOn: { id: \"no-such-thing\" }\n").unwrap();
     assert!(Adapter::new(&app, fixtures_dir()).run(&flow).await.is_err());
     assert!(mice(&app).is_empty(), "no hover somewhere else instead");
+}
+
+/// The mock's `fixture-input` (100, 200, 800×400 of 1000) is centred at
+/// (0.5, 0.4): each mouse step acts there, with its own button, wheel or
+/// drag end.
+#[tokio::test]
+async fn mouse_steps_act_at_the_element_centre_with_their_own_button_wheel_and_end() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- rightClickOn: { id: \"fixture-input\" }\n\
+         - mouseWheel: { on: { id: \"fixture-input\" }, direction: down, notches: 3, ctrl: true }\n\
+         - mouseWheel: { on: { id: \"fixture-input\" }, direction: up }\n\
+         - mouseDrag: { from: { id: \"fixture-input\" }, by: { x: 96, y: -8 } }\n\
+         - mouseDrag: { from: { id: \"fixture-input\" }, to: { id: \"fixture-input\" } }\n",
+    )
+    .unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect("run ok");
+    use smix_input::Mouse;
+    let c = (0.5, 0.4);
+    assert_eq!(
+        mice(&app),
+        vec![
+            Mouse::SecondaryClick { at: c },
+            Mouse::Wheel {
+                at: c,
+                notches: -3.0,
+                ctrl: true
+            },
+            Mouse::Wheel {
+                at: c,
+                notches: 1.0,
+                ctrl: false
+            },
+            Mouse::DragBy {
+                from: c,
+                by_dp: (96.0, -8.0)
+            },
+            Mouse::Drag { from: c, to: c },
+        ]
+    );
+}
+
+/// `pressKey: ctrl+s` is a combination; `pressKey: tab` stays a named key.
+#[tokio::test]
+async fn press_key_with_modifiers_sends_a_combination_and_a_bare_key_does_not() {
+    let app = MockApp::new();
+    let flow =
+        parse_flow_yaml("appId: com.t\n---\n- pressKey: Ctrl+Shift+Z\n- pressKey: tab\n").unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect("run ok");
+    let combos: Vec<_> = app
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            MockCall::KeyCombo(k) => Some(k.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(combos, vec!["ctrl+shift+z".to_string()]);
+}
+
+#[tokio::test]
+async fn a_mouse_step_on_a_missing_element_sends_nothing() {
+    let app = MockApp::new();
+    let flow =
+        parse_flow_yaml("appId: com.t\n---\n- rightClickOn: { id: \"no-such-thing\" }\n").unwrap();
+    assert!(Adapter::new(&app, fixtures_dir()).run(&flow).await.is_err());
+    assert!(mice(&app).is_empty(), "no click somewhere else instead");
 }
 
 // --- step timings --------------------------------------------------------

@@ -100,6 +100,9 @@ pub enum Slot {
     PinchTarget,
     /// `hoverOn: <selector>` — the element the mouse pointer rests on.
     HoverTarget,
+    /// `rightClickOn:`, `mouseWheel.on`, `mouseDrag.from` / `.to` — the
+    /// element a mouse button or wheel acts at the centre of.
+    MouseTarget,
     /// `rememberBounds:` / `assertBoundsUnchanged:` — the element whose
     /// box is measured.
     BoundsTarget,
@@ -143,6 +146,9 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         Step::SwipeOver { .. } => &[Slot::SwipeOverTarget],
         Step::Pinch { .. } => &[Slot::PinchTarget],
         Step::HoverOn { .. } => &[Slot::HoverTarget],
+        Step::RightClickOn { .. } | Step::MouseWheel { .. } | Step::MouseDrag { .. } => {
+            &[Slot::MouseTarget]
+        }
         Step::TapAtPoint { .. }
         | Step::HoverAway
         | Step::SetWindowSize { .. }
@@ -150,6 +156,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         | Step::WaitForAnimationToEnd { .. }
         | Step::InputText { .. }
         | Step::PressKey { .. }
+        | Step::PressKeyCombo(_)
         | Step::Back(_)
         | Step::RunFlow { .. }
         | Step::EraseText { .. }
@@ -198,7 +205,7 @@ impl Slot {
     /// this list against the `Slot::` names `slots()` actually hands
     /// out, because a list written by hand beside a list derived from
     /// the code is two truths waiting to disagree.
-    pub const ALL: [Slot; 18] = [
+    pub const ALL: [Slot; 19] = [
         Slot::TapOnTarget,
         Slot::RepeatTapTarget,
         Slot::DoubleTapTarget,
@@ -215,6 +222,7 @@ impl Slot {
         Slot::SwipeOverTarget,
         Slot::PinchTarget,
         Slot::HoverTarget,
+        Slot::MouseTarget,
         Slot::BoundsTarget,
         Slot::NeverVisibleTarget,
     ];
@@ -282,6 +290,14 @@ pub fn support(slot: Slot, form: UnreadableForm) -> Support {
         (S::HoverTarget, F::AnchorRelative) => Support::Refused(
             "an anchor plus a shift is a point, and hoverOn rests the pointer on an \
              element; name the element to hover",
+        ),
+        (S::MouseTarget, F::OcrText) => Support::Refused(
+            "a mouse step finds the element's centre in the accessibility tree and does \
+             not look for text in the pixels. Name the element by id, text, label or role",
+        ),
+        (S::MouseTarget, F::AnchorRelative) => Support::Refused(
+            "an anchor plus a shift is a point, and a mouse step acts on an element; \
+             name the element",
         ),
 
         // Tapping is where a coordinate is enough. OCR gives a box and
@@ -383,6 +399,16 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
             ..
         } => vec![(Slot::PinchTarget, selector)],
         Step::HoverOn { selector } => vec![(Slot::HoverTarget, selector)],
+        Step::RightClickOn { selector } | Step::MouseWheel { selector, .. } => {
+            vec![(Slot::MouseTarget, selector)]
+        }
+        Step::MouseDrag { from, to } => {
+            let mut v = vec![(Slot::MouseTarget, from)];
+            if let crate::MouseDragTo::Element(sel) = to {
+                v.push((Slot::MouseTarget, sel));
+            }
+            v
+        }
         Step::RepeatTap { selector, .. } => vec![(Slot::RepeatTapTarget, selector)],
         Step::DoubleTapOn { selector, .. } => vec![(Slot::DoubleTapTarget, selector)],
         Step::LongPressOn { selector, .. } => vec![(Slot::LongPressTarget, selector)],
@@ -433,6 +459,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
         | Step::WaitForAnimationToEnd { .. }
         | Step::InputText { .. }
         | Step::PressKey { .. }
+        | Step::PressKeyCombo(_)
         | Step::Back(_)
         | Step::RunFlow { .. }
         | Step::EraseText { .. }
