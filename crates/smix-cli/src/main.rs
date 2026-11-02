@@ -810,12 +810,11 @@ Documentation: docs/AI_GUIDE.md
         /// `.smix/config.yaml` `metroLog.allowlist`).
         #[arg(long = "expect-log-clean", default_value_t = false)]
         expect_log_clean: bool,
-        /// Metro log source URL, overrides `.smix/config.yaml`
-        /// `metroLog.url`. Format: `ws://127.0.0.1:8081/logs` for
-        /// expo/metro WebSocket, or `file:///path/to/log` for on-disk
-        /// tail fallback.
+        /// Metro log source URL, overrides `.smix/config.yaml` `metroLog.url`:
+        /// `ws://127.0.0.1:8081/logs` for expo/metro, or `file:///path/to/log`
         #[arg(long = "metro-log-url")]
         metro_log_url: Option<String>,
+        /// Signal sources for `expect: { signal }`: the app's log, log files
         #[command(flatten)]
         log_sources: log_sources::LogSources,
         /// Path to a fixture registry JSON file. Enables the
