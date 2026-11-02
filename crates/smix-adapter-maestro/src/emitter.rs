@@ -359,6 +359,7 @@ fn selector_to_maestro(selector: &Selector) -> Result<Value, EmitError> {
 
 fn step_verb(step: &Step) -> &'static str {
     match step {
+        Step::UntilEffect { action, .. } => step_verb(action),
         Step::TapOn { .. } => "tapOn",
         Step::TapAtPoint { .. } => "tapAtPoint",
         Step::WebViewEval { .. } => "webViewEval",

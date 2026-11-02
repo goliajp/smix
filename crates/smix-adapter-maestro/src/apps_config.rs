@@ -227,7 +227,8 @@ fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
         Step::RunFlowInline { steps, .. } => Some(steps),
         Step::Repeat { commands, .. } | Step::Retry { commands, .. } => Some(commands),
         Step::NeverVisible { during, .. } => Some(during),
-        Step::TapOn { .. }
+        Step::UntilEffect { .. }
+        | Step::TapOn { .. }
         | Step::SwipeOver { .. }
         | Step::Pinch { .. }
         | Step::HoverOn { .. }

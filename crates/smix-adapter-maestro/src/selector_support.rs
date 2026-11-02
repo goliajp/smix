@@ -129,6 +129,11 @@ pub enum Support {
 #[must_use]
 pub fn slots(step: &Step) -> &'static [Slot] {
     match step {
+        Step::UntilEffect { .. } => &[
+            Slot::TapOnTarget,
+            Slot::WaitVisibleTarget,
+            Slot::WaitNotVisibleTarget,
+        ],
         Step::TapOn { .. } => &[Slot::TapOnTarget],
         Step::RepeatTap { .. } => &[Slot::RepeatTapTarget],
         Step::DoubleTapOn { .. } => &[Slot::DoubleTapTarget],
@@ -394,6 +399,21 @@ pub fn support(slot: Slot, form: UnreadableForm) -> Support {
 #[must_use]
 pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
     match step {
+        Step::UntilEffect {
+            action,
+            until,
+            until_visible,
+            ..
+        } => {
+            let mut v = slot_selectors(action);
+            let slot = if *until_visible {
+                Slot::WaitVisibleTarget
+            } else {
+                Slot::WaitNotVisibleTarget
+            };
+            v.push((slot, until));
+            v
+        }
         Step::TapOn { selector, .. } => vec![(Slot::TapOnTarget, selector)],
         Step::SwipeOver { selector, .. } => vec![(Slot::SwipeOverTarget, selector)],
         Step::Pinch {
