@@ -337,6 +337,7 @@ fn resolve_inner<'tree>(
         .into_iter()
         .filter(|n| is_visible_enough(n, tree))
         .collect();
+    let visible = shown_first(tree, visible);
     let topmost = topmost_modal_filter(tree, visible);
     // Explicit structural intent (ancestor / spatial modifier)
     // overrides implicit interactive preference
@@ -353,6 +354,44 @@ fn resolve_inner<'tree>(
     };
     let tappable = tappable_subset_filter(after_spatial);
     apply_index(tappable, selector)
+}
+
+/// The candidates no hidden ancestor holds, when there are any; all of
+/// them otherwise.
+///
+/// A platform date picker keeps the months beside the one it shows in its
+/// tree: the page is reported not visible and its days are reported
+/// visible, inside boxes clipped to wherever the page sits. Centred on a
+/// tablet those boxes fall on the screen, and `text: "1"` found the
+/// previous month's first day before the shown one. A node under a hidden
+/// ancestor is set aside only when another candidate is not, so a match
+/// that stands alone is never lost to a container whose own flag means
+/// less.
+fn shown_first<'tree>(tree: &'tree A11yNode, found: Vec<&'tree A11yNode>) -> Vec<&'tree A11yNode> {
+    if found.len() < 2 {
+        return found;
+    }
+    let mut hidden: std::collections::HashSet<*const A11yNode> = std::collections::HashSet::new();
+    fn walk(
+        n: &A11yNode,
+        under_hidden: bool,
+        out: &mut std::collections::HashSet<*const A11yNode>,
+    ) {
+        if under_hidden {
+            out.insert(std::ptr::from_ref(n));
+        }
+        let below = under_hidden || !n.visible;
+        for c in &n.children {
+            walk(c, below, out);
+        }
+    }
+    walk(tree, false, &mut hidden);
+    let shown: Vec<&A11yNode> = found
+        .iter()
+        .copied()
+        .filter(|n| !hidden.contains(&std::ptr::from_ref(*n)))
+        .collect();
+    if shown.is_empty() { found } else { shown }
 }
 
 fn resolve_inner_no_index<'tree>(
@@ -372,6 +411,7 @@ fn resolve_inner_no_index<'tree>(
         .into_iter()
         .filter(|n| is_visible_enough(n, tree))
         .collect();
+    let visible = shown_first(tree, visible);
     let topmost = topmost_modal_filter(tree, visible);
     let Some(after_ancestor) = apply_ancestor_filter(tree, topmost, selector) else {
         return vec![];

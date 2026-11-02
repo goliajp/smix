@@ -34,6 +34,13 @@ pub struct SubscriberHandle {
 }
 
 impl SubscriberHandle {
+    pub(crate) fn new(shutdown_tx: watch::Sender<bool>, join: tokio::task::JoinHandle<()>) -> Self {
+        SubscriberHandle {
+            shutdown_tx,
+            join: Some(join),
+        }
+    }
+
     pub fn shutdown(&self) {
         let _ = self.shutdown_tx.send(true);
     }

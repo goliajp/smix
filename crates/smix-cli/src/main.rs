@@ -31,10 +31,11 @@ mod boot_record;
 mod capsule;
 mod fill_secret;
 mod hover_cmd;
+mod log_sources;
 mod pinch_cmd;
 mod platform;
 mod runner_target;
-use runner_target::{runner_dial_port, runner_dial_target};
+use runner_target::{project_key, runner_dial_port, runner_dial_target};
 mod sim_crashes;
 mod swipe_cmd;
 mod tree_cmd;
@@ -809,12 +810,13 @@ Documentation: docs/AI_GUIDE.md
         /// `.smix/config.yaml` `metroLog.allowlist`).
         #[arg(long = "expect-log-clean", default_value_t = false)]
         expect_log_clean: bool,
-        /// Metro log source URL, overrides `.smix/config.yaml`
-        /// `metroLog.url`. Format: `ws://127.0.0.1:8081/logs` for
-        /// expo/metro WebSocket, or `file:///path/to/log` for on-disk
-        /// tail fallback.
+        /// Metro log source URL, overrides `.smix/config.yaml` `metroLog.url`:
+        /// `ws://127.0.0.1:8081/logs` for expo/metro, or `file:///path/to/log`
         #[arg(long = "metro-log-url")]
         metro_log_url: Option<String>,
+        /// Signal sources for `expect: { signal }`: the app's log, log files
+        #[command(flatten)]
+        log_sources: log_sources::LogSources,
         /// Path to a fixture registry JSON file. Enables the
         /// `- fixture: <id>` yaml verb.
         #[arg(long = "fixture-registry")]
@@ -4219,6 +4221,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             gate_signal_timeout_ms,
             expect_log_clean,
             metro_log_url,
+            log_sources,
             fixture_registry,
             force_key_events,
             settle_max_ms,
@@ -4668,6 +4671,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             format: out_fmt,
                             auto_activate: activate,
                             metro_log_url: metro_log_url.clone(),
+                            app_log: log_sources.app_log,
+                            log_files: log_sources.log_files.clone(),
                             await_signal: await_signal.clone(),
                             gate_signal: gate_signal.clone(),
                             gate_signal_timeout_ms,
@@ -6765,20 +6770,6 @@ fn run_device_ref(explicit: Option<&str>, pointer: Option<String>) -> Option<Str
         Some(d) => Some(d.to_string()),
         None => pointer,
     }
-}
-
-/// The key a project's device pointer is stored under: the workspace
-/// root (the nearest ancestor with a `.smix/`), canonicalized, or the
-/// cwd when there is no workspace. Lenient on purpose — a `run` outside
-/// a workspace still resolves to a key, just one with no pointer, so it
-/// falls through to the old behaviour rather than failing.
-fn project_key() -> String {
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let root = smix_capsule::runner::workspace_root(&cwd).unwrap_or_else(|| cwd.clone());
-    std::fs::canonicalize(&root)
-        .unwrap_or(root)
-        .to_string_lossy()
-        .into_owned()
 }
 
 /// Refuse `runner up` flags that only the iOS path implements.

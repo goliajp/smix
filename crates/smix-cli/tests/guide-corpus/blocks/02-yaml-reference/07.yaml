@@ -1,26 +1,49 @@
-- pinch:
-    over: { id: "player" }               # the fingers meet at this element's centre
-    from: 1                              # zoom factor at the start
-    to: 3                                # ...and at the end: 1 → 3 zooms in threefold
-    duration: 500                        # ms, 50..10000; default 500
+- scroll                                 # scroll viewport down (default direction)
+- scroll:
+    direction: UP                        # UP / DOWN / LEFT / RIGHT
 
-- pinch:
-    at: "50%,50%"                        # a point on the screen, when nothing there has a name
-    fromSpan: 0.6                        # finger distances as shares of the screen's shorter side
-    toSpan: 0.2                          # 0.6 → 0.2 zooms out
+- scrollUntilVisible:
+    element:
+      text: "Row #5000"
+    direction: DOWN                      # UP / DOWN / LEFT / RIGHT
+    timeout: 30000                       # ms; default 20000
+    visibilityPercentage: 100            # 1-100; default 100 = wholly on screen
+    centerElement: false                 # stop once it is near the middle
+    optional: false                      # not reached -> skip, not failure
 
-# Zoom and then drag without lifting: both fingers move together by
-# `pan` (shares of the screen's width and height) after the pinch.
-- pinch:
-    over: { id: "player" }
-    from: 1
-    to: 3
-    pan: "0%,-20%"                       # a fifth of the screen up
-    panDuration: 300                     # ms; default 300
+- swipe:
+    direction: LEFT
+    duration: 400
 
-# A recognizer that counts from the touch, or begins on any movement:
-- pinch:
-    over: { id: "player" }
-    from: 1
-    to: 3
-    runUp: slide                         # spread (default) | slide | none
+- swipe:
+    start: "10%,50%"
+    end: "90%,50%"
+    duration: 400
+
+# `over:` — swipe INSIDE one element, by shares of ITS box.
+#
+# The two forms above take shares of the SCREEN, which is what you reach
+# for when there is nothing nameable to swipe between. When there is
+# something nameable, `over:` names it and the numbers stop meaning
+# anything about the display:
+- swipe:
+    over: { id: "view-timeline" }
+    from: 0.3                            # three tenths DOWN, halfway across
+    to: 0.8                              # four fifths down
+
+- swipe:
+    over: { id: "view-timeline" }
+    from: { x: 0.1, y: 0.5 }             # both axes, when the drag is not along one
+    to: { x: 0.9, y: 0.5 }
+
+# `over:` takes any selector form, `fallback:` included — which is what a
+# flow driving both platforms needs when the same element is named
+# differently on each:
+- swipe:
+    over:
+      fallback:
+        - id: "view-timeline"            # iOS accessibilityIdentifier
+        - id: "view_timeline"            # Android resource id
+    from: { x: 0.3, y: 0.5 }
+    to: { x: 0.8, y: 0.5 }
+    duration: 600

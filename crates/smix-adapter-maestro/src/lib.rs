@@ -252,6 +252,7 @@ pub(crate) fn parse_annotation_from_kind(
 mod anchored;
 mod animations;
 mod annotate_bridge;
+mod app_log;
 mod apps_config;
 mod emitter;
 mod entry;
@@ -266,6 +267,7 @@ mod popup_tap;
 mod runtime;
 pub mod selector_support;
 mod timing;
+mod until_effect;
 mod watch;
 mod window_size;
 
@@ -378,6 +380,24 @@ pub enum Step {
         /// (`dispatch: xcui | daemonProxy`). `None` = default routing.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dispatch: Option<TapDispatch>,
+    },
+    /// A `tapOn` or `pressKey` with an effect to wait for — smix's own
+    /// keys `until`, `within`, `retries`. The action is done, then `until`
+    /// is waited for `within` ms; while it has not shown and the target is
+    /// still where it was, the action is done again, at most `retries`
+    /// more times. A failure says the action landed and the screen did not
+    /// change.
+    UntilEffect {
+        /// The tap or key press.
+        action: Box<Step>,
+        /// What shows (or goes) when it worked.
+        until: Selector,
+        /// `visible:` (true) or `notVisible:` (false).
+        until_visible: bool,
+        /// How long the effect has to show after each attempt, ms.
+        within_ms: u64,
+        /// How many more times the action may be done.
+        retries: u32,
     },
     /// Tap at a normalized coordinate point (escape hatch for yaml
     /// `tapOn: { point: "X%,Y%" }`). Maps to `App::tap_at_coord(nx,

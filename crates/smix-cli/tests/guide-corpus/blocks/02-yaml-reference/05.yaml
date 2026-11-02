@@ -1,14 +1,11 @@
-- inputText: "alice@example.com"         # types into focused field, appending
-- inputText:
-    id: "form-email-input"               # names a field, so it replaces
-    text: "alice@example.com"
-- inputText:
-    id: "input-password"
-    secret: E2E_PASSWORD                 # the value comes from --env or the environment, never the flow
-
-- eraseText: 5                           # backspace N chars (default 50)
-- copyTextFrom:
-    id: "form-result-label"              # copies result to clipboard env
-- pasteText                              # paste clipboard into focused field
-- setClipboard: "hello"                  # set clipboard programmatically — on a simulator this is also the Mac's clipboard
-- hideKeyboard                           # dismiss soft keyboard
+# Tap, then wait for what the tap brings; tap again only if it did not
+# come and the button is still where it was.
+- tapOn:
+    id: "btn-open-menu"
+    until: { visible: { id: "btn-close-menu" } }
+    within: 2000                         # ms after each tap; default 2000
+    retries: 2                           # taps again at most this often; default 1
+- pressKey:
+    key: enter
+    until: { notVisible: { id: "input-email" } }
+    retries: 1

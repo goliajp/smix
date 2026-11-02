@@ -28,6 +28,8 @@ fn args_for(flow: std::path::PathBuf, port: u16, bundle_id: Option<String>) -> F
         format: OutputFormat::Human,
         auto_activate: false,
         metro_log_url: None,
+        app_log: false,
+        log_files: Vec::new(),
         await_signal: None,
         gate_signal: None,
         gate_signal_timeout_ms: 60_000,
