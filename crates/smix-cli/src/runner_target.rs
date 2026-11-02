@@ -80,3 +80,17 @@ pub(crate) fn runner_dial_target(
     let plat = crate::platform::dial_platform(dial, &holders).map_err(crate::CliError::Other)?;
     Ok((port, plat.to_driver()))
 }
+
+/// The key a project's device pointer is stored under: the workspace
+/// root (the nearest ancestor with a `.smix/`), canonicalized, or the
+/// cwd when there is no workspace. Lenient on purpose — a `run` outside
+/// a workspace still resolves to a key, just one with no pointer, so it
+/// falls through to the old behaviour rather than failing.
+pub(crate) fn project_key() -> String {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let root = smix_capsule::runner::workspace_root(&cwd).unwrap_or_else(|| cwd.clone());
+    std::fs::canonicalize(&root)
+        .unwrap_or(root)
+        .to_string_lossy()
+        .into_owned()
+}

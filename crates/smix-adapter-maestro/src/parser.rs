@@ -935,6 +935,18 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
             dispatch: None,
         }),
         // full form: `tapOn: { id|text|point, index?, optional?, dispatch? }`
+        Value::Mapping(map) if crate::until_effect::asks_for_effect(map) => {
+            let action = parse_tap_on(&Value::Mapping(crate::until_effect::action_part(map)))?;
+            if !matches!(action, Step::TapOn { .. }) {
+                return Err(ParseError::InvalidValue {
+                    field: "tapOn.until".into(),
+                    reason: "an effect is waited for after a tap on an element; a point or a \
+                             repeated tap does not take one"
+                        .into(),
+                });
+            }
+            crate::until_effect::wrap("tapOn", action, map)
+        }
         Value::Mapping(map)
             if map.contains_key(Value::String("repeat".into()))
                 || map.contains_key(Value::String("delay".into())) =>
@@ -1588,6 +1600,24 @@ fn input_method(map: &serde_norway::Mapping) -> Result<bool, ParseError> {
 }
 
 fn parse_press_key(v: &Value) -> Result<Step, ParseError> {
+    if let Some(map) = v.as_mapping() {
+        // `pressKey: { key, until, within?, retries? }`
+        reject_unknown_keys(
+            map,
+            "pressKey",
+            "pressKey",
+            &["key", "until", "within", "retries"],
+            &[],
+        )?;
+        let key = map
+            .get(Value::String("key".into()))
+            .ok_or_else(|| ParseError::InvalidValue {
+                field: "pressKey.key".into(),
+                reason: "the mapping form names the key with `key:`".into(),
+            })?;
+        let action = parse_press_key(key)?;
+        return crate::until_effect::wrap("pressKey", action, map);
+    }
     let s = v.as_str().ok_or_else(|| ParseError::InvalidValue {
         field: "pressKey".into(),
         reason: "expected a string".into(),

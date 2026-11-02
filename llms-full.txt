@@ -386,6 +386,36 @@ one that stops.
 
 ```
 
+### A tap or key with the effect it should have
+
+```yaml
+# Tap, then wait for what the tap brings; tap again only if it did not
+# come and the button is still where it was.
+- tapOn:
+    id: "btn-open-menu"
+    until: { visible: { id: "btn-close-menu" } }
+    within: 2000                         # ms after each tap; default 2000
+    retries: 2                           # taps again at most this often; default 1
+- pressKey:
+    key: enter
+    until: { notVisible: { id: "input-email" } }
+    retries: 1
+```
+
+- In place of a fixed wait and a second, optional tap "in case the first was
+  swallowed" — which taps twice when the first only took a moment to show,
+  and a second back goes one screen too far. A tap whose effect shows is
+  never repeated.
+- The action is done again only while the effect has not shown **and** the
+  target stands where it stood (same id, same box; for a key, the same
+  field still holds focus). A target that moved or left means the action
+  did something else, and it is not repeated.
+- When the effect never shows, the step fails saying how often the action
+  was done and that it landed while the screen did not change, with the
+  elements on screen and a screenshot written to `.smix/timeouts/`.
+- `until` takes `visible:` or `notVisible:` with any selector, as
+  `extendedWaitUntil` does. A point or a repeated tap does not take one.
+
 ### Text input
 
 ```yaml
@@ -662,6 +692,27 @@ display has no window of its own and is refused by name; so is iOS.
   (below 600 dp, below 840 dp, from 840 dp): `compact` is 412x800,
   `medium` 700x800, `expanded` 1024x768. These are smix's sizes, not the
   system's; write dp to land beside a breakpoint.
+
+### Waiting for a line in a log (`expect: signal`)
+
+```yaml
+- openLink: "insight-native://dev-mutate?push=type:invoice"
+- expect: { signal: { regex: "dev-mutate handled: push", timeoutMs: 5000 } }
+```
+
+The line is matched in the log sources the run reads, from the start of
+the run (`window:` narrows it). `smix run` reads:
+
+- `--app-log`: the app's own log on its device, live — the iOS unified log
+  for the app's subsystem (its bundle id), Android's logcat for the app's
+  uid. Live matters: a query of the iOS log after the fact lags the write
+  by seconds.
+- `--log-file <path>` (repeatable): a file tailed from the start of the run,
+  such as a dev server's log.
+- `--metro-log-url`: a Metro dev server, or a file.
+
+Every source feeds the same `expect: signal`, so one run can wait on the
+app and on its server.
 
 ### Keyboard / hardware keys
 
@@ -2196,6 +2247,8 @@ smix run [FLAGS] <FLOW.yaml>
 | `--retry <N>` | — | `1` | Per-flow attempt count; attempts recorded in `~/.local/share/smix/flow-attempts.json` for `smix diagnostic dump` attribution |
 | `--debug-output <DIR>` | — | (unset) | Per-step JSON as each step ends, on-fail screenshot/tree, and `run-summary.json` with every step's time (see "Where the time went") |
 | `--nodes <PATH>` | — | (unset) | Distributed run across machines; see below |
+| `--app-log` | — | (off) | Read the app's own log on the device as a source for `expect: signal`, live: the iOS unified log for the app's subsystem (its bundle id), Android's logcat for the app's uid. Needs `--device` |
+| `--log-file <PATH>` | — | (none) | Tail this file as a source for `expect: signal` too (repeatable). Every source — these, `--app-log`, `--metro-log-url` — feeds the same signal |
 
 Environment variables consumed by `smix run` (beyond the flag-bound ones above):
 

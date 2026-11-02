@@ -1,4 +1,5 @@
 mod a_chain_is_tried_in_order;
+mod a_hidden_page_yields_to_the_shown_one;
 mod a_miss_off_screen_is_named;
 mod a_tag_only_semantics_can_see;
 mod conjunction;

@@ -1,4 +1,8 @@
 import UIKit
+import os
+
+/// The app's own log, under its bundle id: what `smix run --app-log` reads.
+private let fixtureLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "fixture", category: "live")
 
 /// Controls over a picture that never stops moving — the shape of a
 /// consumer's screens, which sit over a live video view redrawn every frame.
@@ -11,10 +15,13 @@ final class LiveController: UIViewController, UITextFieldDelegate {
   private var link: CADisplayLink?
   private var frame = 0
   private let counts = UILabel()
-  private let menu = UIButton(type: .system)
+  private var menu = UIButton(type: .system)
   private let present = UIButton(type: .system)
   private let field = UITextField()
   private let secret = UITextField()
+  private let stubborn = UIButton(type: .system)
+  private let stubbornCount = UILabel()
+  private var stubbornTouches = 0
   private var menuTaps = 0
   private var modalTaps = 0
   private var submits = 0
@@ -28,10 +35,27 @@ final class LiveController: UIViewController, UITextFieldDelegate {
     counts.textColor = .white
     menu.setTitle("Menu", for: .normal)
     menu.accessibilityIdentifier = "live-menu"
-    menu.addAction(UIAction { [weak self] _ in self?.menuTaps += 1; self?.show() }, for: .touchUpInside)
+    menu.addAction(UIAction { [weak self] _ in
+      guard let self else { return }
+      self.menuTaps += 1
+      self.show()
+      fixtureLog.info("live menu \(self.menuTaps, privacy: .public)")
+    }, for: .touchUpInside)
     present.setTitle("Present", for: .normal)
     present.accessibilityIdentifier = "live-present"
     present.addAction(UIAction { [weak self] _ in self?.presentSheet() }, for: .touchUpInside)
+    // A control that takes its first touch and does nothing with it, as a
+    // control over a live picture sometimes does; the second one counts.
+    stubborn.setTitle("Stubborn", for: .normal)
+    stubborn.accessibilityIdentifier = "live-stubborn"
+    stubborn.addAction(UIAction { [weak self] _ in
+      guard let self else { return }
+      self.stubbornTouches += 1
+      self.stubbornCount.text = "stubborn \(max(0, self.stubbornTouches - 1))"
+    }, for: .touchUpInside)
+    stubbornCount.text = "stubborn 0"
+    stubbornCount.textColor = .white
+    stubbornCount.accessibilityIdentifier = "live-stubborn-count"
     field.placeholder = "type here"
     field.backgroundColor = .white
     field.accessibilityIdentifier = "live-input"
@@ -41,7 +65,7 @@ final class LiveController: UIViewController, UITextFieldDelegate {
     secret.isSecureTextEntry = true
     secret.backgroundColor = .white
     secret.accessibilityIdentifier = "live-password"
-    let stack = UIStackView(arrangedSubviews: [counts, menu, present, field, secret])
+    let stack = UIStackView(arrangedSubviews: [counts, menu, present, stubborn, stubbornCount, field, secret])
     stack.axis = .vertical
     stack.spacing = 16
     stack.translatesAutoresizingMaskIntoConstraints = false
@@ -58,6 +82,16 @@ final class LiveController: UIViewController, UITextFieldDelegate {
       secret.heightAnchor.constraint(equalToConstant: 44),
     ])
     show()
+    // `-slow-start`: what a consumer's app does as it comes up — the
+    // first screen is drawn, then the main thread is busy restoring a
+    // session, then the controls are built again. A tap in that window
+    // is what their flows padded with fixed waits.
+    if CommandLine.arguments.contains("-slow-start") {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        Thread.sleep(forTimeInterval: 1.5)
+        self?.rebuildMenu()
+      }
+    }
     let link = CADisplayLink(target: self, selector: #selector(redraw))
     link.add(to: .main, forMode: .common)
     self.link = link
@@ -68,6 +102,22 @@ final class LiveController: UIViewController, UITextFieldDelegate {
     frame += 1
     let hue = CGFloat(frame % 240) / 240
     picture.backgroundColor = UIColor(hue: hue, saturation: 0.6, brightness: 0.35, alpha: 1)
+  }
+
+  /// The menu button made again, as a screen rebuilt after a restore
+  /// makes its controls again: same id, same place, a new object.
+  private func rebuildMenu() {
+    guard let stack = menu.superview as? UIStackView,
+      let at = stack.arrangedSubviews.firstIndex(of: menu)
+    else { return }
+    let fresh = UIButton(type: .system)
+    fresh.setTitle("Menu", for: .normal)
+    fresh.accessibilityIdentifier = "live-menu"
+    fresh.addAction(UIAction { [weak self] _ in self?.menuTaps += 1; self?.show() }, for: .touchUpInside)
+    stack.removeArrangedSubview(menu)
+    menu.removeFromSuperview()
+    stack.insertArrangedSubview(fresh, at: at)
+    menu = fresh
   }
 
   private func show() {

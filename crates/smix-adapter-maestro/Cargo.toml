@@ -22,6 +22,7 @@ path = "src/bin/smix-maestro.rs"
 
 [dependencies]
 smix-lease = { path = "../smix-lease", version = "22.1.0" }
+smix-adb = { path = "../smix-adb", version = "22.1.0" }
 smix-metro-log = { path = "../smix-metro-log", version = "22.1.0" }
 smix-fixture = { path = "../smix-fixture", version = "22.1.0" }
 smix-verbs = { path = "../smix-verbs", version = "22.1.0" }

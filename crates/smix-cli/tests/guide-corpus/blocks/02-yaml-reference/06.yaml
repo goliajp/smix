@@ -1,49 +1,14 @@
-- scroll                                 # scroll viewport down (default direction)
-- scroll:
-    direction: UP                        # UP / DOWN / LEFT / RIGHT
+- inputText: "alice@example.com"         # types into focused field, appending
+- inputText:
+    id: "form-email-input"               # names a field, so it replaces
+    text: "alice@example.com"
+- inputText:
+    id: "input-password"
+    secret: E2E_PASSWORD                 # the value comes from --env or the environment, never the flow
 
-- scrollUntilVisible:
-    element:
-      text: "Row #5000"
-    direction: DOWN                      # UP / DOWN / LEFT / RIGHT
-    timeout: 30000                       # ms; default 20000
-    visibilityPercentage: 100            # 1-100; default 100 = wholly on screen
-    centerElement: false                 # stop once it is near the middle
-    optional: false                      # not reached -> skip, not failure
-
-- swipe:
-    direction: LEFT
-    duration: 400
-
-- swipe:
-    start: "10%,50%"
-    end: "90%,50%"
-    duration: 400
-
-# `over:` — swipe INSIDE one element, by shares of ITS box.
-#
-# The two forms above take shares of the SCREEN, which is what you reach
-# for when there is nothing nameable to swipe between. When there is
-# something nameable, `over:` names it and the numbers stop meaning
-# anything about the display:
-- swipe:
-    over: { id: "view-timeline" }
-    from: 0.3                            # three tenths DOWN, halfway across
-    to: 0.8                              # four fifths down
-
-- swipe:
-    over: { id: "view-timeline" }
-    from: { x: 0.1, y: 0.5 }             # both axes, when the drag is not along one
-    to: { x: 0.9, y: 0.5 }
-
-# `over:` takes any selector form, `fallback:` included — which is what a
-# flow driving both platforms needs when the same element is named
-# differently on each:
-- swipe:
-    over:
-      fallback:
-        - id: "view-timeline"            # iOS accessibilityIdentifier
-        - id: "view_timeline"            # Android resource id
-    from: { x: 0.3, y: 0.5 }
-    to: { x: 0.8, y: 0.5 }
-    duration: 600
+- eraseText: 5                           # backspace N chars (default 50)
+- copyTextFrom:
+    id: "form-result-label"              # copies result to clipboard env
+- pasteText                              # paste clipboard into focused field
+- setClipboard: "hello"                  # set clipboard programmatically — on a simulator this is also the Mac's clipboard
+- hideKeyboard                           # dismiss soft keyboard

@@ -709,6 +709,11 @@ fn guide_metro_tail() -> smix_metro_log::MetroLogTail {
         smix_metro_log::LogLevel::Info,
         "[qa] search-history primed count=5".to_string(),
     );
+    // the line the guide's `expect: signal` example waits for, as the app writes it
+    tail.push(
+        smix_metro_log::LogLevel::Info,
+        "Insight: dev-mutate handled: push".to_string(),
+    );
     tail
 }
 
@@ -806,7 +811,7 @@ fn remove_artifacts(flow: &smix_adapter_maestro::Flow) {
 const KNOWN_BROKEN: &[(&str, usize, &str)] = &[
     (
         "02-yaml-reference",
-        15,
+        17,
         "repeat.while.visible loops until the element leaves the screen; \
          a mock that always says visible never exits, and one that said \
          otherwise would be inventing a screen.",

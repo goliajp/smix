@@ -1026,7 +1026,11 @@ fn describe_box(r: smix_sdk::Rect) -> String {
 }
 
 fn summarize_step_verb(step: &Step) -> String {
+    if let Step::UntilEffect { action, .. } = step {
+        return summarize_step_verb(action);
+    }
     match step {
+        Step::UntilEffect { .. } => unreachable!("answered above"),
         Step::SwipeOver { .. } => "swipe",
         Step::Pinch { .. } => "pinch",
         Step::HoverOn { .. } => "hoverOn",
@@ -1568,6 +1572,82 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         }
     }
 
+    /// Do `action`, wait `within_ms` for `until` to show (or go); while it
+    /// has not and the target still stands where it stood, do it again, at
+    /// most `retries` more times. See [`crate::until_effect`].
+    async fn run_until_effect(
+        &mut self,
+        action: &Step,
+        until: &Selector,
+        until_visible: bool,
+        within_ms: u64,
+        retries: u32,
+        warnings: &mut Vec<String>,
+    ) -> Result<RunStepReport, RunError> {
+        let verb = summarize_step_verb(action);
+        let target = crate::until_effect::target_of(action);
+        let within = Duration::from_millis(within_ms);
+        let mut times = 0;
+        let mut moved = false;
+        loop {
+            let before = self.anchor_of(&target).await;
+            let report = Box::pin(self.run_step(action, warnings)).await?;
+            if !matches!(report, RunStepReport::Ok) {
+                // an optional action that found nothing to act on
+                return Ok(report);
+            }
+            times += 1;
+            if self.effect_shows(until, until_visible, within).await {
+                return Ok(RunStepReport::Ok);
+            }
+            if times > retries {
+                break;
+            }
+            let now = self.anchor_of(&target).await;
+            if before.is_none() || now != before {
+                moved = true;
+                break;
+            }
+            warnings.push(format!(
+                "{verb}: the effect did not show within {within_ms} ms and the target is where it \
+                 was; doing it again ({} of {retries})",
+                times
+            ));
+        }
+        let err =
+            crate::until_effect::not_seen(&verb, until, until_visible, within_ms, times, moved);
+        let hint = self.capture_timeout_dump(&verb).await;
+        let err = match self.app.tree().await {
+            Ok(tree) => {
+                let mut e = err;
+                e.visible_elements = smix_sdk::collect_visible_summaries(&tree, 10);
+                e
+            }
+            Err(_) => err,
+        };
+        Err(annotate_timeout_error(RunError::Sdk(err), hint))
+    }
+
+    /// Where `target` stands now: its id and box, or `None` when it is not
+    /// on screen.
+    async fn anchor_of(&self, target: &Selector) -> Option<crate::until_effect::Anchor> {
+        let tree = self.app.tree().await.ok()?;
+        let n = smix_selector_resolver::resolve_selector(&tree, target)?;
+        Some(crate::until_effect::Anchor {
+            id: n.identifier.clone(),
+            bounds: n.bounds,
+        })
+    }
+
+    /// Whether `until` shows (or is gone) within `within`.
+    async fn effect_shows(&self, until: &Selector, visible: bool, within: Duration) -> bool {
+        if visible {
+            self.app.wait_for(until, within).await.is_ok()
+        } else {
+            self.app.wait_for_not_visible(until, within).await.is_ok()
+        }
+    }
+
     /// `e` with every secret this run has typed masked.
     fn without_secrets(&self, e: ExpectationFailure) -> ExpectationFailure {
         self.secrets.iter().fold(e, |e, s| e.without_secret(s))
@@ -2018,6 +2098,24 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     ) -> Result<RunStepReport, RunError> {
         refuse_what_this_verb_cannot_read(step)?;
         match step {
+            Step::UntilEffect {
+                action,
+                until,
+                until_visible,
+                within_ms,
+                retries,
+            } => {
+                let until = self.desugar_localized_text(until).into_owned();
+                self.run_until_effect(
+                    action,
+                    &until,
+                    *until_visible,
+                    *within_ms,
+                    *retries,
+                    warnings,
+                )
+                .await
+            }
             Step::TapOn {
                 selector,
                 optional,
