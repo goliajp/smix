@@ -3166,7 +3166,8 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 }
             }
             Step::OpenLink(url) => {
-                self.app.open_url(url).await?;
+                let url = self.expand_template(url)?;
+                self.app.open_url(&url).await?;
                 // iOS 17+ raises a SpringBoard "Open in <App>?"
                 // confirmation alert when an external URL (here: simctl
                 // openurl) is routed to a registered custom scheme. Host
