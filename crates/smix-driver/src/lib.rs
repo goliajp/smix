@@ -542,11 +542,20 @@ impl IosDriver {
                     // fill the field says nothing, and treating silence as
                     // a refusal would take tapping away from everyone who
                     // has not upgraded.
+                    //
+                    // A cover on its way out is waited for, as a target on its
+                    // way in is: a sheet confirmed one step earlier is still
+                    // sliding away, and refusing at the first look failed the
+                    // tap after it within 150 ms over a live picture.
                     if let Some(n) = node
                         && let TouchVerdict::Refuse(why) =
                             smix_runner_client::touch_verdict(n.hittable)
                         && !self.reachable_after_all(n).await
                     {
+                        if !budget.spent_by(look) {
+                            sleep(poll::pause_after(began.elapsed())).await;
+                            continue;
+                        }
                         return Err(ExpectationFailure::new(
                             FailureInit {
                                 code: Some(FailureCode::NotVisible),

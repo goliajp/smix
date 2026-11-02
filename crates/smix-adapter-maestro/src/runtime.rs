@@ -1540,6 +1540,34 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         Ok(out)
     }
 
+    /// Whether `selector`'s element may be touched by a tap that does not
+    /// look for itself: nothing covers it (the runner does not report it
+    /// unhittable) and it stands where it stood a moment ago. A sheet
+    /// sliding in moves its buttons, and a tap computed from one frame
+    /// lands where the button was. Absent or unreadable say nothing here:
+    /// the tap that follows answers for those.
+    async fn ready_to_touch(&self, selector: &Selector) -> bool {
+        let read = |tree: smix_sdk::A11yNode| {
+            smix_selector_resolver::resolve_selector(&tree, selector)
+                .map(|n| (n.hittable != Some(false), n.bounds))
+        };
+        let Ok(first) = self.app.tree().await.map(read) else {
+            return true;
+        };
+        let Some((reachable, at)) = first else {
+            return true;
+        };
+        if !reachable {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        match self.app.tree().await.map(read) {
+            Ok(Some((true, again))) => again == at,
+            Ok(Some((false, _))) => false,
+            _ => true,
+        }
+    }
+
     /// `e` with every secret this run has typed masked.
     fn without_secrets(&self, e: ExpectationFailure) -> ExpectationFailure {
         self.secrets.iter().fold(e, |e, s| e.without_secret(s))
@@ -2016,7 +2044,34 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                                 ..Default::default()
                             })));
                         };
-                        match self.app.tap_xcui(id).await {
+                        // Waited for as the default tap waits: a sheet still
+                        // sliding away keeps the element out of the query for
+                        // a moment, and the first look failing in 64 ms is not
+                        // an element that is not there.
+                        let budget = smix_driver::poll::Budget::new(IMPLICIT_WAIT);
+                        let tapped = loop {
+                            let look = budget.look();
+                            // Not while something covers it: a sheet still
+                            // going away, or a new one coming. The default
+                            // tap waits for that; this one tapped through a
+                            // transition, answered ok, and the app saw nothing.
+                            if !self.ready_to_touch(desugared.as_ref()).await
+                                && !budget.spent_by(look)
+                            {
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                continue;
+                            }
+                            match self.app.tap_xcui(id).await {
+                                Err(e)
+                                    if e.code == FailureCode::ElementNotFound
+                                        && !budget.spent_by(look) =>
+                                {
+                                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                }
+                                other => break other,
+                            }
+                        };
+                        match tapped {
                             Ok(()) => Ok(RunStepReport::Ok),
                             Err(e) if *optional && e.code == FailureCode::ElementNotFound => {
                                 Ok(RunStepReport::Skipped {

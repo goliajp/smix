@@ -133,6 +133,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v21.0-c1-mouse-buttons-e2e.sh",
     "v22.0-c1-a-two-sims-one-runner-e2e.sh",
     "v22.0-c1-b-card-dialog-e2e.sh",
+    "v22.0-c1-c-taps-over-a-live-picture-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.
