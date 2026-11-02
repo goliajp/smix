@@ -11,7 +11,7 @@ final class LiveController: UIViewController, UITextFieldDelegate {
   private var link: CADisplayLink?
   private var frame = 0
   private let counts = UILabel()
-  private let menu = UIButton(type: .system)
+  private var menu = UIButton(type: .system)
   private let present = UIButton(type: .system)
   private let field = UITextField()
   private let secret = UITextField()
@@ -73,6 +73,16 @@ final class LiveController: UIViewController, UITextFieldDelegate {
       secret.heightAnchor.constraint(equalToConstant: 44),
     ])
     show()
+    // `-slow-start`: what a consumer's app does as it comes up — the
+    // first screen is drawn, then the main thread is busy restoring a
+    // session, then the controls are built again. A tap in that window
+    // is what their flows padded with fixed waits.
+    if CommandLine.arguments.contains("-slow-start") {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        Thread.sleep(forTimeInterval: 1.5)
+        self?.rebuildMenu()
+      }
+    }
     let link = CADisplayLink(target: self, selector: #selector(redraw))
     link.add(to: .main, forMode: .common)
     self.link = link
@@ -83,6 +93,22 @@ final class LiveController: UIViewController, UITextFieldDelegate {
     frame += 1
     let hue = CGFloat(frame % 240) / 240
     picture.backgroundColor = UIColor(hue: hue, saturation: 0.6, brightness: 0.35, alpha: 1)
+  }
+
+  /// The menu button made again, as a screen rebuilt after a restore
+  /// makes its controls again: same id, same place, a new object.
+  private func rebuildMenu() {
+    guard let stack = menu.superview as? UIStackView,
+      let at = stack.arrangedSubviews.firstIndex(of: menu)
+    else { return }
+    let fresh = UIButton(type: .system)
+    fresh.setTitle("Menu", for: .normal)
+    fresh.accessibilityIdentifier = "live-menu"
+    fresh.addAction(UIAction { [weak self] _ in self?.menuTaps += 1; self?.show() }, for: .touchUpInside)
+    stack.removeArrangedSubview(menu)
+    menu.removeFromSuperview()
+    stack.insertArrangedSubview(fresh, at: at)
+    menu = fresh
   }
 
   private func show() {
