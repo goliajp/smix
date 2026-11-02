@@ -252,6 +252,7 @@ pub(crate) fn parse_annotation_from_kind(
 mod anchored;
 mod animations;
 mod annotate_bridge;
+mod app_log;
 mod apps_config;
 mod emitter;
 mod entry;
