@@ -28,7 +28,10 @@ pub struct RunnerTarget {
 fn is_android(device: &str) -> bool {
     use smix_simctl::registry::DeviceKind;
     match crate::lookup_registered(device) {
-        Some(sim) => matches!(sim.kind, DeviceKind::Emulator | DeviceKind::PhysicalAndroid),
+        Some(sim) => match sim.kind {
+            DeviceKind::Emulator | DeviceKind::PhysicalAndroid => true,
+            DeviceKind::Simulator | DeviceKind::PhysicalIos => false,
+        },
         None => device.starts_with("emulator-"),
     }
 }

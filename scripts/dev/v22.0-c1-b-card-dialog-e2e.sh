@@ -32,8 +32,11 @@ cannot_judge() { printf '[v22.0-c1-b] cannot judge: %s\n' "$*" >&2; exit 2; }
 
 DEVICE="" UP=0 WE_BOOTED=0
 cleanup() {
-  if [ "$UP" = 1 ]; then
-    "$SMIX" runner down --platform android --device "$DEVICE" --runner-port "$PORT" >/dev/null 2>&1 || true
+  local said
+  if [ "$UP" = 1 ] \
+    && ! said="$("$SMIX" runner down --platform android --device "$DEVICE" --runner-port "$PORT" 2>&1)"; then
+    log "warning: the runner on $PORT was not stopped:"
+    printf '%s\n' "$said" | tail -3 >&2
   fi
   if [ "$WE_BOOTED" = 1 ]; then "$SMIX" sim shutdown "$DEVICE" >/dev/null 2>&1 || true; fi
   rm -rf "$WORK"
@@ -90,6 +93,7 @@ got="$(counts)"
 log "2. a button behind the open card is not reached"
 open
 printf 'appId: %s\n---\n- tapOn: { id: card_open }\n- extendedWaitUntil: { visible: { id: card_apply }, timeout: 5000 }\n- tapOn: { id: card_behind }\n' "$APP" >"$WORK/behind.yaml"
+# raw run: the refusal of this tap is what is judged
 if "$SMIX" run --device "$DEVICE" --runner-port "$PORT" "$WORK/behind.yaml" >"$WORK/behind.log" 2>&1; then
   fail "2: a tap on a button behind the open card passed"
 fi

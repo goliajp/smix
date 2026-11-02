@@ -221,6 +221,9 @@ one that stops.
 - inputText:
     id: "form-email-input"               # names a field, so it replaces
     text: "alice@example.com"
+- inputText:
+    id: "input-password"
+    secret: E2E_PASSWORD                 # the value comes from --env or the environment, never the flow
 
 - eraseText: 5                           # backspace N chars (default 50)
 - copyTextFrom:
@@ -229,6 +232,20 @@ one that stops.
 - setClipboard: "hello"                  # set clipboard programmatically — on a simulator this is also the Mac's clipboard
 - hideKeyboard                           # dismiss soft keyboard
 ```
+
+A secret is named, not written: `secret:` takes the name of an environment
+variable (`--env NAME=…` first, then the process environment), and the
+value never enters the flow. Wherever smix writes anything — a failure, its
+hint, the visible elements, `--format json`, the files under
+`--debug-output`, a saved tree — every secret the run typed is shown as
+`***`, and so is any quoted piece of one (a field that held part of it, a
+keyboard's suggestion strip). `method: setText` and a target work as with
+`text:`. A variable that is not set fails the step naming the variable.
+
+A password field is never written out with what it holds, marked or not:
+iOS secure fields and Android password fields report bullets, and a
+Compose field shown through `PasswordVisualTransformation` is recognised
+and written out as one bullet per character.
 
 ### Scrolling
 
