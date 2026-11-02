@@ -23,6 +23,10 @@ E2E_ANDROID_THIRD="${SMIX_E2E_ANDROID_THIRD:-sim-smix-android-03}"
 # android-desktop), for the scripts whose subject is a desktop window.
 E2E_ANDROID_DESKTOP="${SMIX_E2E_ANDROID_DESKTOP:-sim-smix-desktop-01}"
 E2E_ANDROID_TABLET="${SMIX_E2E_ANDROID_TABLET:-sim-smix-tablet-01}"
+# Every emulator a script boots runs with no window: a suite runs on a
+# machine somebody is using, and windows opening on their screen are not
+# the suite's to open. A caller who wants to watch sets it to 0.
+export SMIX_EMULATOR_NO_WINDOW="${SMIX_EMULATOR_NO_WINDOW:-1}"
 # All three are API 36 (google_apis) and the simulators iOS 27: the suite
 # runs on what consumers run, once, rather than on an older image with the
 # newer one as a second pass.
@@ -115,8 +119,10 @@ e2e_start_emulator() {
   local log="$1"
   shift
   local sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
+  local window=()
+  case "${SMIX_EMULATOR_NO_WINDOW:-}" in "" | 0) ;; *) window=(-no-window) ;; esac
   python3 -c 'import os, sys; os.setpgid(0, 0); os.execv(sys.argv[1], sys.argv[1:])' \
-    "$sdk/emulator/emulator" "$@" >"$log" 2>&1 &
+    "$sdk/emulator/emulator" "$@" ${window[@]+"${window[@]}"} >"$log" 2>&1 &
 }
 
 # e2e_stop_emulator <serial> [seconds] — the one way this suite stops an
