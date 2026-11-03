@@ -39,6 +39,10 @@ SYSTEM_SUBJECT = re.compile(
 # whose subject IS the platform belongs here; one that merely needed a
 # text field does not.
 EXEMPT = {
+    "v23.0-c2-a-an-app-not-in-front-e2e.sh":
+        "it needs some other app in front of the fixture, and Settings is only "
+        "launched, never touched: no Settings id is named, and the judge reads "
+        "the failure's code and the package it says is in front",
     "v11.0-c2-a-failure-says-whose-screen-e2e.sh":
         "its a11y leg needs an app with no smix probe and the system's windows "
         "above it, which the fixture (it carries the probe) cannot be; the step "

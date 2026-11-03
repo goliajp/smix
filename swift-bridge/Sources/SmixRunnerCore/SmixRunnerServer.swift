@@ -1193,17 +1193,9 @@ public actor SmixRunnerServer {
     )
   }
 
-  /// Wraps [`guardedResponse`] with per-request context
-  /// propagation. Reads `App-Bundle-Id` / `App-Activate` headers into a
-  /// [`RequestContext`] and sets it as `SmixRunnerServer.currentContext`
-  /// (task-local) for the duration of the handler.
-  ///
-  /// Every route that operates on the target app (`/tap`, `/tree`,
-  /// `/find`, `/scroll`, `/swipe-*`, `/back`, `/hide-keyboard`, etc.)
-  /// should use this wrapper. Routes that touch springboard, XCUIDevice,
-  /// or infrastructure-only surfaces (`/health`, `/shutdown`, `/system-
-  /// popups`, `/press-key`, `/set-orientation`, `/record/*`) continue
-  /// using bare [`guardedResponse`] — they don't consult context.
+  /// [`guardedResponse`] with the request's `App-Bundle-Id` /
+  /// `App-Activate` / `Session-Id` headers set as `currentContext`, and a
+  /// query on an app in the background refused at once (`ForegroundGate`).
   public static func contextGuardedResponse(
     request: HTTPRequest,
     fallback: HTTPResponse,
@@ -1211,9 +1203,11 @@ public actor SmixRunnerServer {
   ) async -> HTTPResponse {
     let ctx = RequestContext.from(headers: request.headers)
     return await Self.$currentContext.withValue(ctx) {
-      // Reuse the plain guardedResponse for the actual error trampoline —
-      // task-local is already set by .withValue above.
-      await guardedResponse(fallback: fallback, build)
+      if ForegroundGate.holds(request, context: ctx),
+         let seen = await ForegroundGate.installed?(ctx) {
+        return ForegroundGate.refusal(seen)
+      }
+      return await guardedResponse(fallback: fallback, build)
     }
   }
 

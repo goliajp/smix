@@ -93,6 +93,10 @@ pub enum FailureCode {
     /// met it: `FAIL [DRIVER_ERROR]` from `waitForAnimationToEnd`, a
     /// verb whose entire meaning is to wait.
     CaptureBackpressure,
+    /// The app has no window in front — another app or the home screen is
+    /// there — so its elements cannot be read. Unlike [`Self::AppNotRunning`]
+    /// nothing crashed: bring it back with launchApp or its notification.
+    AppNotInForeground,
 }
 
 /// Structured failure thrown by SDK matchers and driver calls. Shape
@@ -371,6 +375,7 @@ fn format_code(c: FailureCode) -> &'static str {
         FailureCode::CoordinateSpaceMismatch => "COORDINATE_SPACE_MISMATCH",
         FailureCode::DriverError => "DRIVER_ERROR",
         FailureCode::CaptureBackpressure => "CAPTURE_BACKPRESSURE",
+        FailureCode::AppNotInForeground => "APP_NOT_IN_FOREGROUND",
     }
 }
 
@@ -512,20 +517,11 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
 impl FailureCode {
     /// Every code, once.
     ///
-    /// Exported because the alternative is a second hand-written copy,
-    /// and there was one: `tests/it/sdk_failure_code_parity.rs` kept its
-    /// own `all_variants()` list, and every assertion in that file —
-    /// the three SDK declarations and the errors guide — is derived
-    /// from it. Its docstring said adding a variant would stop the file
-    /// compiling. That stopped being true when the exhaustiveness guard
-    /// moved in here, because `#[non_exhaustive]` makes an outside
-    /// `match` accept anything; adding `CaptureBackpressure` in 7.1 left
-    /// all seven of those assertions green while no SDK declared it.
-    ///
-    /// [`Self::ALL`] is the one list. The exhaustive match in
-    /// `the_vocabulary_is_pinned` guards it from in here, where
-    /// `non_exhaustive` cannot weaken the match, and everything else
-    /// reads it rather than repeating it.
+    /// The one list: the SDK parity test and the errors guide read it
+    /// rather than keeping their own (a copy outside this crate let
+    /// `CaptureBackpressure` ship in 7.1 with no SDK declaring it, since
+    /// `#[non_exhaustive]` makes an outside `match` accept anything).
+    /// `the_vocabulary_is_pinned` guards it with an exhaustive match here.
     pub const ALL: &'static [FailureCode] = &[
         FailureCode::ElementNotFound,
         FailureCode::NotVisible,
@@ -539,6 +535,7 @@ impl FailureCode {
         FailureCode::CoordinateSpaceMismatch,
         FailureCode::DriverError,
         FailureCode::CaptureBackpressure,
+        FailureCode::AppNotInForeground,
     ];
 
     /// Whether this code is a verdict about the screen, as opposed to
@@ -567,7 +564,8 @@ impl FailureCode {
             FailureCode::AppNotRunning
             | FailureCode::SimulatorNotBooted
             | FailureCode::DriverError
-            | FailureCode::CaptureBackpressure => false,
+            | FailureCode::CaptureBackpressure
+            | FailureCode::AppNotInForeground => false,
         }
     }
 }
@@ -576,7 +574,7 @@ impl FailureCode {
 mod what_a_code_is_about {
     use super::*;
 
-    /// The eight codes that say something about the screen, and the four
+    /// The eight codes that say something about the screen, and the five
     /// that say smix could not look. Named rather than counted: a code
     /// moved from one side to the other has to be moved here too.
     #[test]
@@ -596,6 +594,7 @@ mod what_a_code_is_about {
             FailureCode::SimulatorNotBooted,
             FailureCode::DriverError,
             FailureCode::CaptureBackpressure,
+            FailureCode::AppNotInForeground,
         ];
         for c in about_the_screen {
             assert!(c.judges_the_screen(), "{c:?} is a verdict about the screen");
@@ -644,7 +643,8 @@ mod vocabulary {
                 | FailureCode::TapMissed
                 | FailureCode::CoordinateSpaceMismatch
                 | FailureCode::DriverError
-                | FailureCode::CaptureBackpressure => {}
+                | FailureCode::CaptureBackpressure
+                | FailureCode::AppNotInForeground => {}
             }
             // Every code renders as a wire string, and a code whose
             // string nobody wrote would reach a consumer as whatever
@@ -653,7 +653,7 @@ mod vocabulary {
         }
         assert_eq!(
             every.len(),
-            12,
+            13,
             "counted off the list above, not remembered"
         );
     }

@@ -985,21 +985,11 @@ final class SmixRunnerUITests: XCTestCase {
       }
       return shouldActivate
     }
-    // Session table. Sessions are opened via `POST /session/open`
-    // and carry a client-supplied opaque id; every subsequent request that
-    // includes the `Session-Id` header short-circuits `resolveApp()` here
-    // to return the session's cached XCUIApplication binding — no
-    // `.activate()` on any per-request path, ever, unless the client
-    // explicitly calls `POST /session/renew-activation`.
-    //
-    // Compared with the legacy path (rate-limited to 1 activate / 5 s /
-    // bundle-id), session-backed clients get:
-    //   * zero incidental activations after the initial open
-    //   * O(1) session cache lookup
-    //   * explicit escape hatch for foreground-drift recovery (renew)
-    //
-    // The table stores each session's bundle id + XCUIApplication +
-    // last-renew timestamp for the 2 s renew rate limit.
+    // Session table: a request with `Session-Id` gets the session's cached
+    // XCUIApplication from `resolveApp()` and is never activated on the way,
+    // unless the client asks with `POST /session/renew-activation` (rate
+    // limited to one per 2 s). Without a session, activation is limited to
+    // one per 5 s per bundle id.
     struct SessionEntry: Sendable {
       let bundleId: String
       let app: XCUIApplication
@@ -1127,8 +1117,7 @@ final class SmixRunnerUITests: XCTestCase {
       if let sid = ctx.sessionId {
         sessions.lock()
         var entry = sessionTable[sid]
-        // Every hit refreshes the last-access clock so
-        // the sweep only reaps genuinely-idle sessions.
+        // every hit refreshes the clock the idle sweep reads
         if entry != nil {
           entry!.lastAccessedAt = Date()
           sessionTable[sid] = entry!
@@ -1137,8 +1126,7 @@ final class SmixRunnerUITests: XCTestCase {
         if let entry = entry {
           return entry.app
         }
-        // Unknown session id → fall through to legacy path with the
-        // provided bundleId (best-effort recovery).
+        // unknown session id: fall through to the bundle id the request named
       }
       if let b = ctx.bundleId, b != bundleId {
         let target = XCUIApplication(bundleIdentifier: b)
@@ -1151,6 +1139,16 @@ final class SmixRunnerUITests: XCTestCase {
         _ = await maybeActivate(bundleId, app)
       }
       return app
+    }
+    ForegroundGate.install { ctx in
+      let target = await resolveApp()
+      let session = ctx.sessionId.flatMap { sid -> String? in
+        sessions.lock()
+        defer { sessions.unlock() }
+        return sessionTable[sid]?.bundleId
+      }
+      let named = session ?? ctx.bundleId ?? bundleId
+      return await SmixRunnerServer.onMain { appNotInFront(target, bundleId: named) }
     }
 
     // Per-target frame lookup. Callers that used the module-scope

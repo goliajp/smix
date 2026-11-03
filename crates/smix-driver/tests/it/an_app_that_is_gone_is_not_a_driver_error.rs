@@ -56,3 +56,17 @@ fn a_reading_that_failed_stays_a_driver_error() {
         );
     }
 }
+
+/// An app in the background is neither gone nor a failed reading: it is
+/// its own code, and the runner's hint, which names the app in front, is
+/// what the reader acts on.
+#[test]
+fn an_app_in_the_background_is_app_not_in_foreground() {
+    let f = transport_to_failure(unavailable(Some("in-background")));
+    assert_eq!(f.code, FailureCode::AppNotInForeground);
+    assert_eq!(
+        f.message, "launch it again",
+        "the runner's sentence is the message"
+    );
+    assert_eq!(f.hint, None, "and is not repeated as a hint");
+}
