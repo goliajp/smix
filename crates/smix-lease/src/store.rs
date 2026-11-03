@@ -79,17 +79,10 @@ pub fn machine_root() -> Option<PathBuf> {
 
 /// The directory holding one ledger file per device.
 ///
-/// A type rather than a `&Path`, because the change that put these on
-/// the machine could not be made with a path. Every ledger function
-/// used to take a workspace root and append `.smix/leases` itself;
-/// changing what the first argument means left twenty-five call sites
-/// still compiling and still writing device facts into trees. The
-/// compiler could not see it, so it became a type it can.
-///
-/// A lease says who holds a device, what they opened on it and on which
-/// port. Every field of that is about the machine, and storing them per
-/// checkout is how a runner came to be holding port 22087 while the
-/// tree asking about it saw an empty ledger directory.
+/// A type rather than a `&Path`: when the ledgers moved from checkouts to
+/// the machine, twenty-five call sites taking a workspace root still
+/// compiled and still wrote device facts into trees. Its sibling `owners`
+/// holds whose each device's resources are.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LeaseDir(PathBuf);
 
@@ -122,13 +115,8 @@ impl LeaseDir {
 
     /// Every device this directory holds a ledger for.
     ///
-    /// One ledger is one `<device>.json`, and that suffix is the whole
-    /// definition. It was spelled out in three places before —
-    /// `survey`, [`CheckoutLedgers::device_ids`] and the CLI — and a
-    /// fourth reader would have been one more; the history of devices
-    /// that left (`vanished.jsonl`) now lives in this directory too, and
-    /// one definition is the only way to be sure no reader mistakes it
-    /// for a device.
+    /// One ledger is one `<device>.json`, and this is the one definition
+    /// of it, so `vanished.jsonl` beside them is never read as a device.
     #[must_use]
     pub fn device_ids(&self) -> Vec<String> {
         ledger_ids_in(&self.0)
@@ -459,7 +447,8 @@ pub fn write(dir: &LeaseDir, lease: &Lease) -> Result<(), LeaseError> {
         .path()
         .join(format!(".{}.{}.tmp", lease.device_id, std::process::id()));
     std::fs::write(&tmp, &json).map_err(io_err(&tmp))?;
-    std::fs::rename(&tmp, &path).map_err(io_err(&path))
+    std::fs::rename(&tmp, &path).map_err(io_err(&path))?;
+    crate::owners::keep_only(dir, lease)
 }
 
 /// The ledger on disk and the same ledger after a round trip through this
@@ -476,6 +465,7 @@ fn unknown_fields_on_disk(path: &Path) -> Option<(serde_json::Value, serde_json:
 /// Drop a device's ledger. Absent is success — release is idempotent.
 pub fn remove(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseError> {
     let path = lease_path(dir, device_id)?;
+    crate::owners::forget(dir, device_id)?;
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -612,9 +602,15 @@ pub fn add_resource(dir: &LeaseDir, device_id: &str, resource: Resource) -> Resu
         row.known()
             .is_none_or(|r| std::mem::discriminant(r) != same_kind)
     });
+    let owned = crate::owners::current().filter(|_| crate::owners::takes_an_owner(&resource));
+    let kind = crate::owners::kind_of(&resource);
     lease.resources.push(Row::Known(resource));
-    lease.heartbeat_at = now;
-    write(dir, &lease)
+    lease.heartbeat_at = now.clone();
+    write(dir, &lease)?;
+    match owned {
+        Some(owner) => crate::owners::note(dir, device_id, &kind, &owner, &now),
+        None => Ok(()),
+    }
 }
 
 /// Write down that this device was booted, without losing an earlier

@@ -47,9 +47,7 @@ pub(crate) fn app_windows_instead(tree: &A11yNode, app: &str) -> Option<Vec<Stri
     }
     let mut instead: Vec<String> = Vec::new();
     for w in tree.children.iter().filter_map(|c| c.window.as_ref()) {
-        let Some(pkg) = w.package.as_deref() else {
-            return None;
-        };
+        let pkg = w.package.as_deref()?;
         if pkg == app {
             return None;
         }
