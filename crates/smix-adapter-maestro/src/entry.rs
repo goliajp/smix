@@ -155,10 +155,8 @@ pub struct FlowArgs {
     pub launch_fresh_force_reinstall: Option<bool>,
 }
 
-/// Run a flow file end-to-end. Async because runner / sdk calls are
-/// async. Returns an [`ExitCode`] suitable for direct return from
-/// `main`. Exit codes:
-///
+/// Run a flow file end-to-end; the [`ExitCode`] goes straight back from
+/// `main`:
 /// - 0  success
 /// - 2  yaml parse error
 /// - 3  runtime SDK failure

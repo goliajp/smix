@@ -530,9 +530,10 @@ impl FailureCode {
     /// system popup or a notification banner — so those are worth a look.
     pub fn may_be_outside_the_app(self) -> bool {
         match self {
-            FailureCode::ElementNotFound | FailureCode::AppNotInForeground => true,
-            FailureCode::NotVisible
-            | FailureCode::NotEnabled
+            FailureCode::ElementNotFound
+            | FailureCode::NotVisible
+            | FailureCode::AppNotInForeground => true,
+            FailureCode::NotEnabled
             | FailureCode::Ambiguous
             | FailureCode::Timeout
             | FailureCode::AssertionFailed

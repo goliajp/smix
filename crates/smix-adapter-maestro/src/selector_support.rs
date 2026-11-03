@@ -7,14 +7,9 @@
 //! resolver by the verbs that read it at all — and matched by nothing by
 //! the verbs that do not.
 //!
-//! v6.7 spent six checkpoints on the consequences of that being written
-//! in a comment: `assertVisible` with a `fallback:` chain matched
-//! nothing on both platforms, `assertNotVisible` with `ocrText:` passed
-//! against a screen showing the words, and a locale map was rewritten by
-//! three verbs out of twelve. Every one of them was a rule that only
-//! some call sites followed, and nothing could see the gap because a
-//! verb that does not read a form fails exactly like a verb whose target
-//! is absent.
+//! v6.7 spent six checkpoints on that being only a comment: a rule some
+//! call sites followed, invisible because a verb that does not read a form
+//! fails exactly like one whose target is absent.
 //!
 //! So the cells are here, and both matches are exhaustive. A new `Step`
 //! does not compile until it says which selector slots it has; a new
@@ -532,11 +527,9 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
 /// The form this selector is, when it is one the tree cannot read and
 /// it stands alone.
 ///
-/// Deliberately not walking a `fallback:` chain. A chain with a
-/// readable layer that matches is a working flow, and refusing it
-/// because a later layer names something this verb cannot read would
-/// break flows that never needed that layer. When the whole chain
-/// misses, the failure names the layer that went unread instead.
+/// Not walking a `fallback:` chain: one with a readable layer that matches
+/// works, and when the whole chain misses the failure names the layer
+/// that went unread.
 #[must_use]
 pub fn standalone_unreadable(selector: &Selector) -> Option<UnreadableForm> {
     match selector {
