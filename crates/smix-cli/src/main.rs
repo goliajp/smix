@@ -21,6 +21,7 @@ macro_rules! println {
 }
 
 mod act;
+mod budget;
 mod cleanup_cmd;
 mod footprint;
 mod settle_flags;
@@ -1555,11 +1556,8 @@ enum RunnerAction {
     /// Every smix runner on this machine: its port, its device, and
     /// whether the ledgers know about it.
     ///
-    /// Not `list-sessions`, which asks one runner what app sessions it
-    /// has open. This asks the machine what runners it has at all —
-    /// reading the ledgers and the listening sockets and putting them
-    /// side by side, because a runner nobody wrote down is exactly the
-    /// one you cannot decide about.
+    /// Not `list-sessions` (one runner's app sessions): the machine's
+    /// runners, ledgers and listening sockets side by side.
     ///
     /// Reads only by default. It never signals a process, and without
     /// `--prune` it never writes a ledger, and always exits 0: a command
@@ -1567,10 +1565,7 @@ enum RunnerAction {
     List {
         /// Delete the rows whose recorded process is gone.
         ///
-        /// A read-mostly command gets one explicit write rather than a
-        /// tidy-up nobody asked for — the same shape as
-        /// `--include-unrecorded`: clearing up is a thing somebody says
-        /// out loud.
+        /// One explicit write, said out loud, like `--include-unrecorded`.
         ///
         /// Only `process-gone` rows, which are the ones this command can
         /// prove ended: the recorded pid, and the start time that tells
@@ -1691,6 +1686,9 @@ enum SimAction {
         /// Run an Android emulator with no window on the desktop.
         #[arg(long)]
         no_window: bool,
+        /// Wait up to this many seconds for room when the machine has none.
+        #[arg(long, default_value_t = 0)]
+        wait: u64,
     },
     /// Shutdown a simulator.
     Shutdown {
@@ -3080,14 +3078,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     device,
                     cold,
                     no_window,
+                    wait,
                 } => {
-                    // Booting asks a different question than driving does:
-                    // "where should this start" rather than "where is it".
-                    // `resolve_device` refuses an emulator alias whose AVD
-                    // is not running, which is precisely the state this
-                    // command exists to leave — so the port to start on
-                    // comes from the row, and the identity check below
-                    // decides whether starting is the right move at all.
+                    budget::check_boot(&device, wait)
+                        .await
+                        .map_err(CliError::Other)?;
+                    // "where should this start", not "where is it": the port
+                    // comes from the row, since `resolve_device` refuses an
+                    // emulator alias whose AVD is not running.
                     let registered = lookup_registered(&device);
                     let booting_emulator = registered
                         .as_ref()
@@ -3104,9 +3102,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 avd,
                                 slot_now: Some(other),
                             } => {
-                                // The identity is the AVD name; the port is only
-                                // where it answers today. The registered one is
-                                // somebody else's now, so start ours on a free one.
+                                // the registered port is somebody else's AVD now
+                                // (the identity is the name): start on a free one
                                 let serial = free_console_serial()?;
                                 eprintln!(
                                     "note: {device} was registered on {}, which is \
@@ -7045,6 +7042,7 @@ mod device_power {
             device: String::new(),
             cold: false,
             no_window: false,
+            wait: 0,
         }
     }
 
@@ -7381,6 +7379,7 @@ mod tests {
                     device: d(),
                     cold: false,
                     no_window: false,
+                    wait: 0,
                 },
             ),
             ("shutdown", SimAction::Shutdown { device: d() }),
