@@ -365,17 +365,9 @@ impl IosDriver {
         Ok(!had_handle)
     }
 
-    /// Transient `/tree` transport retry helper. Shared by
-    /// `find_one` / `find_all` / `find` (host-resolve branch). Mirrors
-    /// the transport-retry segment of `wait_for`: poll within
-    /// `TOTAL_TIMEOUT_MS` budget, pausing [`poll::pause_after`] between
-    /// attempts, surface only the last transport error on budget
-    /// exhaustion.
-    ///
-    /// Not folded into `wait_for` / `tap` because those loops have
-    /// additional in-loop logic (selector poll + ctx cache for
-    /// `wait_for`; `HostResolveError::NotFound` retry for `tap`) — DRY
-    /// here would harm clarity.
+    /// `/tree`, with transport errors retried within `TOTAL_TIMEOUT_MS`
+    /// and only the last one surfaced — the transport half of `wait_for`'s
+    /// loop, for `find_one` / `find_all` / `find`.
     async fn tree_with_retry(
         &self,
         include: Option<IncludeScope>,
@@ -391,6 +383,7 @@ impl IosDriver {
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
         let mut last_transport_err: Option<ExpectationFailure> = None;
+        let mut in_background = app_away::Away::default();
         loop {
             match self
                 .runner
@@ -400,6 +393,9 @@ impl IosDriver {
             {
                 Ok(tree) => return Ok(tree),
                 Err(e) => {
+                    if in_background.gives_up(&e) {
+                        return Err(e);
+                    }
                     if start.elapsed() >= timeout {
                         return Err(last_transport_err.unwrap_or(e));
                     }
@@ -1131,17 +1127,10 @@ impl IosDriver {
     ) -> Result<A11yNode, ExpectationFailure> {
         let start = Instant::now();
         let budget = poll::Budget::new(timeout);
-        // Transient tree() transport errors (e.g. sim still launching →
-        // /tree returns 500 snapshot_unavailable) are treated the same
-        // as selector-not-found — retry within the timeout budget,
-        // surface only the last error on timeout. This matches the
-        // semantic intent of wait_for ("wait until ready or timeout")
-        // and is required for callers that ride out sim boot transients.
-        //
-        // Build the resolver cache once outside the poll loop. None
-        // case = regex compile error → Timeout fail with an explicit
-        // compile-error hint (semantically equivalent to silent-None
-        // + budget exhaustion, but immediate and actionable).
+        // A transport error (a sim still launching answers /tree with
+        // snapshot_unavailable) is waited out like a miss, and only the last
+        // one is surfaced; an app that stays out of front ends it sooner.
+        // A pattern that does not compile fails at once, not at the timeout.
         let Some(ctx) = ResolverContext::new(selector) else {
             return Err(ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::Timeout),
@@ -1165,10 +1154,12 @@ impl IosDriver {
         // wait-pass → tap-miss pair).
         let mut tree_hit_offscreen = false;
         let mut stillness = poll::Stillness::new(self.give_up_when_still);
+        let mut in_background = app_away::Away::default();
         loop {
             let look = budget.look();
             match self.tree(include).await {
                 Ok(tree) => {
+                    in_background.seen();
                     if let Some(node) = resolve_selector_compiled(&tree, selector, &ctx) {
                         // Live on-screen confirmation.
                         // Snapshot frames drift under iOS 26.5 + RN
@@ -1229,6 +1220,9 @@ impl IosDriver {
                     last_transport_err = None;
                 }
                 Err(e) => {
+                    if in_background.gives_up(&e) {
+                        return Err(e);
+                    }
                     if start.elapsed() >= timeout {
                         return Err(last_transport_err.unwrap_or(e));
                     }
@@ -1709,18 +1703,14 @@ pub fn require_runner_resolvable_selector(
     }))
 }
 
-/// The code for a runner that could not snapshot the app, by what it said
-/// the cause was.
-///
-/// `not-running` and `crashed-during-init` come from the runner reading
-/// `XCUIApplication.state`: the app is gone, which is a fact about the
-/// app and what a caller branches on to go looking for its crash report.
-/// The rest say the reading failed, and stay a driver error. A category
-/// this side does not know is not assumed to be either — it is read as
-/// the reading failing.
+/// The code for a runner that could not snapshot the app, by the cause it
+/// read from `XCUIApplication.state`: the app gone, or not in front, is a
+/// fact about the app; any other category, known or not, is the reading
+/// failing.
 fn code_for_unavailable(category: Option<&str>) -> FailureCode {
     match category {
         Some("not-running" | "crashed-during-init") => FailureCode::AppNotRunning,
+        Some("in-background") => FailureCode::AppNotInForeground,
         _ => FailureCode::DriverError,
     }
 }
@@ -1870,9 +1860,17 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
         ),
         _ => (FailureCode::DriverError, None),
     };
+    // the runner's sentence names the app, its state and what is in front
+    let (message, hint) = match (&e, code) {
+        (
+            RunnerTransportError::AppUnavailable { hint: Some(h), .. },
+            FailureCode::AppNotInForeground,
+        ) => (h.clone(), None),
+        _ => (format!("{e}"), hint),
+    };
     ExpectationFailure::new(FailureInit {
         code: Some(code),
-        message: format!("{e}"),
+        message,
         hint,
         ..Default::default()
     })
@@ -1981,9 +1979,11 @@ mod android;
 mod android_aim;
 mod android_input;
 mod android_notes;
+mod app_away;
 mod landing;
 pub mod phases;
 pub mod poll;
+mod system_ui;
 pub(crate) use aim::{aim_in, settle_reading};
 pub use landing::{Aimed, ChainCoverage, landing_outcome, tap_landed_within, verdict_reader};
 mod ios;

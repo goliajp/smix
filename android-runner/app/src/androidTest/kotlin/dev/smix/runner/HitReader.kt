@@ -88,6 +88,16 @@ class HitReader(private val instrumentation: Instrumentation) {
             bounds = HitChain.Box(r.left, r.top, r.right, r.bottom),
             children = kids,
             drawingOrder = n.drawingOrder,
+            // the tree says which nodes act on a touch, not which ones a
+            // View's own code keeps: one that does not say is not known to
+            // take it. SystemUI's shade window holds a full-screen keyguard
+            // container over a heads-up notification, and read as taking
+            // every touch it made a tap that opened the app a miss
+            touch = if (n.isClickable || n.isLongClickable || n.isCheckable) {
+                HitChain.Touch.TAKES
+            } else {
+                HitChain.Touch.MAYBE
+            },
         )
     }
 }

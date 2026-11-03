@@ -2,11 +2,8 @@
 //!
 //! # Reviewer invariant
 //!
-//! Any new yaml verb supported by smix MUST land here first as a
-//! [`VerbEntry`] in [`VERB_TABLE`]. Both `smix-adapter-maestro` parser
-//! and `smix-migrate` codemod depend on this crate; adding an entry
-//! automatically makes the parser accept both canonical forms and the
-//! codemod handle the rename.
+//! A new yaml verb lands here first, in [`VERB_TABLE`]: the parser accepts
+//! both its names and `smix migrate` handles the rename from this entry.
 //!
 //! # Design
 //!
@@ -38,14 +35,10 @@
 
 /// Keys a selector mapping may carry in yaml.
 ///
-/// The parser refuses anything else, and `smix migrate` warns about it
-/// before a user discovers the refusal at run time — so the two must
-/// read one list. They did not: the parser owned it privately, migrate
-/// knew only about verbs, and a flow with `enabled:` migrated cleanly,
-/// exited 0, and then failed to parse.
-///
-/// Covers the selector discriminators, the spatial modifiers, and the
-/// per-verb options that ride in the same mapping.
+/// The parser refuses anything else and `smix migrate` warns about it, so
+/// both read this one list (once they did not, and a flow with `enabled:`
+/// migrated cleanly and then failed to parse). Selector discriminators,
+/// spatial modifiers, and the per-verb options riding in the same mapping.
 pub const SELECTOR_KEYS: &[&str] = &[
     // discriminators
     "text",
@@ -100,9 +93,8 @@ pub const SELECTOR_KEYS: &[&str] = &[
 /// a conjunction, which is what maestro's selectors are and what smix
 /// owes them.
 ///
-/// This list names the pieces that fix needs. `role` is absent on
-/// purpose: `role: button` + `name: "OK"` is one form spelled with two
-/// keys, and `name` is only ever a qualifier on it.
+/// `role` is absent on purpose: `role: button` + `name: "OK"` is one form
+/// in two keys, `name` only a qualifier on it.
 pub const BASE_SELECTOR_KEYS: &[&str] = &[
     "text",
     "id",
@@ -453,6 +445,12 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         "openUrl",
         VerbCategory::Device,
         ArgShape::BareString,
+    ),
+    v(
+        "sendPush",
+        "sendPush",
+        VerbCategory::Device,
+        ArgShape::Mapping,
     ),
     v(
         "setLocation",

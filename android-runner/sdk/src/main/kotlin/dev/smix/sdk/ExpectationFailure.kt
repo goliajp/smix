@@ -78,4 +78,6 @@ enum class FailureCode {
     @SerialName("DRIVER_ERROR") DRIVER_ERROR,
     /** The device's capture path is under load and refusing frames for a stated window. Not a defect and not a driver error: it means "not now, try again shortly", so a caller with time left can keep waiting rather than fail. */
     @SerialName("CAPTURE_BACKPRESSURE") CAPTURE_BACKPRESSURE,
+    /** The app has no window in front, so its elements cannot be read: another app or the home screen is there. Distinct from app-not-running: nothing crashed, and the fix is to bring it back (launchApp, or tap the notification that opens it). */
+    @SerialName("APP_NOT_IN_FOREGROUND") APP_NOT_IN_FOREGROUND,
 }

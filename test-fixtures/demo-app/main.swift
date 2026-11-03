@@ -75,17 +75,11 @@ struct DetailView: View {
 
 // The subjects `neverVisible` and a disappearing control are judged on.
 //
-// `Flash` does what a consumer's alert row does when it opens a
-// recording: the press returns, and a moment later a loading overlay
-// stands over the screen for 400 ms and goes. `Quiet` takes the same time
-// and shows nothing — the control that says a watch which never saw
-// anything was not simply blind. Both end by showing `done`, which is
-// what a flow waits for.
-//
-// `Reveal` shows a button that takes itself away after three seconds, as
-// a player's controls do after the picture is touched. It counts the
-// presses it received and how long after it appeared the press came, on
-// the app's own clock — the reading a check trusts.
+// `Flash`: the press returns, then a loading overlay stands over the
+// screen for 400 ms and goes, as a consumer's alert row does. `Quiet`
+// takes as long and shows nothing — the control. Both end showing `done`.
+// `Reveal` shows a button that removes itself after three seconds and
+// counts the presses it got and when, on the app's own clock.
 struct WatchView: View {
   @State private var overlay = false
   @State private var done = false
@@ -695,7 +689,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    true
+    // before launch finishes, so a tapped notification that launches the
+    // app is delivered too
+    UNUserNotificationCenter.current().delegate = PushReceiver.shared
+    return true
   }
 }
 
@@ -733,6 +730,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       root = BlinkController()
     } else if CommandLine.arguments.contains("-live") {
       root = LiveController()
+    } else if CommandLine.arguments.contains("-push") {
+      root = PushController()
     } else if CommandLine.arguments.contains("-toast") {
       root = ToastController()
     } else if CommandLine.arguments.contains("-sheet-over-form") {

@@ -4,8 +4,48 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- **A step on an app that is not in front fails at once, with its own
+  code: `APP_NOT_IN_FOREGROUND`.** On iOS a tap, find, fill or tree read
+  on an app in the background waited while XCUITest looked for the app's
+  window — 31 s an attempt, three attempts — and then failed as a driver
+  error. The runner now reads the app's state first and answers
+  immediately, naming the state and the app SpringBoard shows in front.
+  On Android a step that found nothing and no window of the app on screen
+  says so, naming the app windows that are there, instead of timing out
+  as `ELEMENT_NOT_FOUND`. A step that waits keeps looking for three
+  seconds first, so a notification just sent has time to show before a
+  tap on it is refused. `?include=all-windows` and system popups are not held. The code
+  is in the three SDKs' failure-code lists.
+
+- **`sendPush`: a notification delivered to the app under test.** Inline
+  (`title`, `body`, `data` for the app's own keys) or an APNs payload file
+  (`payload:`). iOS hands it to `simctl push`. Android has no local push
+  service, so smix sends the app the broadcast `dev.smix.PUSH` and a
+  receiver in the app's debug build posts the notification; the YAML
+  reference has the receiver, and a step on an app without one says so.
+- **The notification banner can be tapped by its title.** On iOS a
+  SpringBoard banner is now one of the system popups `tapOn` falls back
+  to, including over an app in the background, and `/system-popups` lists
+  it with type `notification`. `assertVisible` looks there too: words on
+  a system popup or a banner, absent from the app's tree, are on screen. On Android the heads-up was already in the
+  tree; a tap into SystemUI now waits until its target has been on screen
+  for 0.7 s, because a heads-up still sliding in drops the touch
+  (measured: no tap within 150 ms of it appearing opened the app, every
+  tap from 500 ms did).
+
 ### Changed
 
+- **Android: a tap's verdict no longer calls a miss what a non-clickable
+  layer over the target cannot decide.** Read from the accessibility
+  tree, a node that does not say it acts on a touch (clickable,
+  long-clickable, checkable) is no longer assumed to take every touch. It
+  changes nothing about where the tap is aimed; a tap that would have been
+  `TAP_MISSED` only because such a layer is on top is reported as one the
+  runner could not confirm. SystemUI's notification window holds a
+  full-screen keyguard container over the heads-up, and a tap that opened
+  the app was failing as a miss.
 - **A tap whose target moved now waits for a slow effect instead of
   failing.** With `until`, a target that moved or left after the tap means
   the tap landed; until now the step failed once the first `within` ran

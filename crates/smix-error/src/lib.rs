@@ -10,10 +10,8 @@
 //!
 //! # Why a separate stone
 //!
-//! SDK / driver / runner-client all throw / catch `ExpectationFailure`. As
-//! the canonical failure type it must live in a leaf crate that everyone
-//! can depend on. Failure messages MUST be AI-readable — `to_prompt()`
-//! is the canonical render.
+//! The canonical failure type, in a leaf crate every layer can depend on;
+//! `to_prompt()` is its AI-readable render.
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-error")]
 
@@ -28,19 +26,9 @@ use std::fmt;
 /// (SCREAMING_SNAKE_CASE wire).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-// New codes keep arriving — two in two releases — and on an exhaustive
-// enum each one is a major, because a consumer matching every arm stops
-// compiling. That is the wrong price for smix naming a failure more
-// precisely, and it was about to be paid for the second time.
-//
-// The cost lands once, here, in a major that was already owed: every
-// downstream `match` needs a catch-all arm from now on. What it buys is
-// that the next code is additive.
-//
-// The guard that made a new variant fail to compile lives inside this
-// crate now (see `the_vocabulary_is_pinned` below). From out here
-// `non_exhaustive` would have made it accept anything, so it moved
-// rather than being weakened.
+// non_exhaustive so a new code is additive rather than a major; the guard
+// that makes one fail to compile until it is thought about lives inside
+// this crate (`the_vocabulary_is_pinned`), where the match stays exhaustive.
 #[non_exhaustive]
 pub enum FailureCode {
     /// Selector matched zero elements in the visible tree.
@@ -93,6 +81,10 @@ pub enum FailureCode {
     /// met it: `FAIL [DRIVER_ERROR]` from `waitForAnimationToEnd`, a
     /// verb whose entire meaning is to wait.
     CaptureBackpressure,
+    /// The app has no window in front — another app or the home screen is
+    /// there — so its elements cannot be read. Unlike [`Self::AppNotRunning`]
+    /// nothing crashed: bring it back with launchApp or its notification.
+    AppNotInForeground,
 }
 
 /// Structured failure thrown by SDK matchers and driver calls. Shape
@@ -371,6 +363,7 @@ fn format_code(c: FailureCode) -> &'static str {
         FailureCode::CoordinateSpaceMismatch => "COORDINATE_SPACE_MISMATCH",
         FailureCode::DriverError => "DRIVER_ERROR",
         FailureCode::CaptureBackpressure => "CAPTURE_BACKPRESSURE",
+        FailureCode::AppNotInForeground => "APP_NOT_IN_FOREGROUND",
     }
 }
 
@@ -512,20 +505,11 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
 impl FailureCode {
     /// Every code, once.
     ///
-    /// Exported because the alternative is a second hand-written copy,
-    /// and there was one: `tests/it/sdk_failure_code_parity.rs` kept its
-    /// own `all_variants()` list, and every assertion in that file —
-    /// the three SDK declarations and the errors guide — is derived
-    /// from it. Its docstring said adding a variant would stop the file
-    /// compiling. That stopped being true when the exhaustiveness guard
-    /// moved in here, because `#[non_exhaustive]` makes an outside
-    /// `match` accept anything; adding `CaptureBackpressure` in 7.1 left
-    /// all seven of those assertions green while no SDK declared it.
-    ///
-    /// [`Self::ALL`] is the one list. The exhaustive match in
-    /// `the_vocabulary_is_pinned` guards it from in here, where
-    /// `non_exhaustive` cannot weaken the match, and everything else
-    /// reads it rather than repeating it.
+    /// The one list: the SDK parity test and the errors guide read it
+    /// rather than keeping their own (a copy outside this crate let
+    /// `CaptureBackpressure` ship in 7.1 with no SDK declaring it, since
+    /// `#[non_exhaustive]` makes an outside `match` accept anything).
+    /// `the_vocabulary_is_pinned` guards it with an exhaustive match here.
     pub const ALL: &'static [FailureCode] = &[
         FailureCode::ElementNotFound,
         FailureCode::NotVisible,
@@ -539,21 +523,34 @@ impl FailureCode {
         FailureCode::CoordinateSpaceMismatch,
         FailureCode::DriverError,
         FailureCode::CaptureBackpressure,
+        FailureCode::AppNotInForeground,
     ];
 
+    /// Whether the target may be outside the app's tree altogether — on a
+    /// system popup or a notification banner — so those are worth a look.
+    pub fn may_be_outside_the_app(self) -> bool {
+        match self {
+            FailureCode::ElementNotFound
+            | FailureCode::NotVisible
+            | FailureCode::AppNotInForeground => true,
+            FailureCode::NotEnabled
+            | FailureCode::Ambiguous
+            | FailureCode::Timeout
+            | FailureCode::AssertionFailed
+            | FailureCode::AppNotRunning
+            | FailureCode::SimulatorNotBooted
+            | FailureCode::TapMissed
+            | FailureCode::CoordinateSpaceMismatch
+            | FailureCode::DriverError
+            | FailureCode::CaptureBackpressure => false,
+        }
+    }
+
     /// Whether this code is a verdict about the screen, as opposed to
-    /// smix being unable to look at it.
-    ///
-    /// Two readers ask this and must get the same answer. A flow step
-    /// marked `optional` turns a verdict into a skip and lets a driver
-    /// failure fail the step; an end-to-end check judges a flow by its
-    /// own rule only when the flow failed on a verdict, and names the
-    /// driver's code otherwise. A runner that answered garbage once read,
-    /// in one of those checks, as "the scroll stopped in the wrong place"
-    /// — the red carried a verdict that was not its own.
-    ///
-    /// Exhaustive on purpose: a code added later does not compile until
-    /// somebody has said which side it is on.
+    /// smix being unable to look at it. An `optional` step skips only a
+    /// verdict, and an end-to-end check judges a flow by its own rule only
+    /// on one — a runner answering garbage once read as "the scroll stopped
+    /// in the wrong place". Exhaustive, so a new code must pick a side.
     pub fn judges_the_screen(self) -> bool {
         match self {
             FailureCode::ElementNotFound
@@ -567,7 +564,8 @@ impl FailureCode {
             FailureCode::AppNotRunning
             | FailureCode::SimulatorNotBooted
             | FailureCode::DriverError
-            | FailureCode::CaptureBackpressure => false,
+            | FailureCode::CaptureBackpressure
+            | FailureCode::AppNotInForeground => false,
         }
     }
 }
@@ -576,7 +574,7 @@ impl FailureCode {
 mod what_a_code_is_about {
     use super::*;
 
-    /// The eight codes that say something about the screen, and the four
+    /// The eight codes that say something about the screen, and the five
     /// that say smix could not look. Named rather than counted: a code
     /// moved from one side to the other has to be moved here too.
     #[test]
@@ -596,6 +594,7 @@ mod what_a_code_is_about {
             FailureCode::SimulatorNotBooted,
             FailureCode::DriverError,
             FailureCode::CaptureBackpressure,
+            FailureCode::AppNotInForeground,
         ];
         for c in about_the_screen {
             assert!(c.judges_the_screen(), "{c:?} is a verdict about the screen");
@@ -644,7 +643,8 @@ mod vocabulary {
                 | FailureCode::TapMissed
                 | FailureCode::CoordinateSpaceMismatch
                 | FailureCode::DriverError
-                | FailureCode::CaptureBackpressure => {}
+                | FailureCode::CaptureBackpressure
+                | FailureCode::AppNotInForeground => {}
             }
             // Every code renders as a wire string, and a code whose
             // string nobody wrote would reach a consumer as whatever
@@ -653,7 +653,7 @@ mod vocabulary {
         }
         assert_eq!(
             every.len(),
-            12,
+            13,
             "counted off the list above, not remembered"
         );
     }

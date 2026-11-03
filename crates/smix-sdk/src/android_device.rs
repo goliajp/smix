@@ -382,14 +382,10 @@ impl DeviceControl for AndroidDeviceControl {
     async fn send_push(
         &self,
         serial: &str,
-        _bundle_id: &str,
-        _apns_json_path: &str,
+        bundle_id: &str,
+        apns: &str,
     ) -> Result<(), DeviceControlError> {
-        // Android push = FCM not APNs. Cross-platform yaml `sendPush:` on
-        // Android requires FCM credentials + Firebase project setup —
-        // deferred. Surface an explicit error so yaml authors know it
-        // is not silently no-op.
-        Err(refused_here("send_push", android_kind(serial)))
+        crate::android_push::send(&self.client, serial, bundle_id, apns).await
     }
 
     async fn screenshot(&self, serial: &str) -> Result<Vec<u8>, DeviceControlError> {

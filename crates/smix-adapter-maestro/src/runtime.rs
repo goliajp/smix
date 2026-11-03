@@ -1,33 +1,18 @@
 //! Runtime adapter mapping [`Step`] → smix-sdk [`App`] calls.
 //!
-//! The parser produces a [`Flow`] of typed [`Step`]s. This module's
-//! [`Adapter::run`] walks the step list and dispatches each to an
-//! [`AppLike`] surface — which has a blanket impl for [`smix_sdk::App`]
-//! so production code uses the real driver, while unit tests substitute
-//! a mock that captures the call sequence.
+//! [`Adapter::run`] walks a parsed [`Flow`] and dispatches each step to an
+//! [`AppLike`] surface: a blanket impl forwards to [`smix_sdk::App`] 1:1
+//! (`#[async_trait]`, so it stays object-safe), and tests substitute a mock
+//! that records the calls.
 //!
-//! # Graceful runtime behaviors
-//!
-//! - `Step::Swipe` → dispatched via `App::swipe_at_coord`.
-//! - `Step::LaunchApp { clear_state | clear_keychain: true }` →
-//!   `App::launch_fresh` orchestration. The
-//!   `SMIX_APP_PATH_<NORMALIZED_BUNDLE>` env var (e.g.
-//!   `com.example.app` → `SMIX_APP_PATH_COM_EXAMPLE_APP`) supplies
-//!   the app bundle path for the wipe (Maestro `clearState` semantic
-//!   is `uninstall + install`). Missing env → graceful fallback to
-//!   the non-clear path (`terminate + launch`) with a warning.
-//! - `Step::TapOn { optional: true }` swallowing `ElementNotFound` →
-//!   reported as `Skipped { reason }`.
-//! - `RunFlow` / `RunFlowConditional` inner
-//!   `ParseError::UnsupportedCommand` → warn + skip the entire subflow
-//!   with graceful op semantics. Other `ParseError` variants propagate
-//!   as [`RunError::Parse`].
-//!
-//! # AppLike object-safety
-//!
-//! The trait uses `#[async_trait::async_trait]` for object-safety
-//! ergonomics. A blanket impl forwards every method to the
-//! corresponding [`smix_sdk::App`] method 1:1.
+//! - `LaunchApp { clear_state | clear_keychain }` wipes via
+//!   `App::launch_fresh`, with the bundle path from
+//!   `SMIX_APP_PATH_<NORMALIZED_BUNDLE>` (`com.example.app` →
+//!   `SMIX_APP_PATH_COM_EXAMPLE_APP`); without it, terminate + launch and a
+//!   warning.
+//! - `TapOn { optional: true }` turns `ElementNotFound` into `Skipped`.
+//! - A subflow with an unsupported command is skipped with a warning;
+//!   other parse errors propagate as [`RunError::Parse`].
 
 use crate::{Flow, FlowCondition, ParseError, Step, parse_flow_file};
 
@@ -295,6 +280,20 @@ pub trait AppLike: Send + Sync {
     ) -> Result<Vec<String>, ExpectationFailure>;
     /// Open a URL / deep link. Mirrors [`App::open_url`].
     async fn open_url(&self, url: &str) -> Result<(), ExpectationFailure>;
+    /// Deliver the APNs payload at `apns_json_path` to `bundle_id`.
+    /// Mirrors [`App::send_push`]; a backend that cannot says so.
+    async fn send_push(
+        &self,
+        bundle_id: &str,
+        apns_json_path: &str,
+    ) -> Result<(), ExpectationFailure> {
+        let _ = (bundle_id, apns_json_path);
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "sendPush is not available on this backend".into(),
+            ..Default::default()
+        }))
+    }
     /// Enumerate any system-level (SpringBoard / share-sheet)
     /// alert currently on screen. Mirrors [`App::system_popups`]. Used by
     /// the adapter to auto-dismiss the iOS 17+ "Open in `<App>`?" alert that
@@ -660,6 +659,13 @@ impl AppLike for App {
     async fn open_url(&self, url: &str) -> Result<(), ExpectationFailure> {
         App::open_url(self, url).await
     }
+    async fn send_push(
+        &self,
+        bundle_id: &str,
+        apns_json_path: &str,
+    ) -> Result<(), ExpectationFailure> {
+        App::send_push(self, bundle_id, apns_json_path).await
+    }
     async fn system_popups(&self) -> Result<Vec<smix_sdk::SystemPopup>, ExpectationFailure> {
         App::system_popups(self).await
     }
@@ -936,30 +942,12 @@ enum StepOutcome<'a> {
     Failed(&'a RunError),
 }
 
-/// Verb name for filename slugification. Kept separate from
-/// `entry::summarize_step` (which is human-readable) so the file name
-/// only carries the verb noun. Falls back to `step` on any variant we
-/// have not listed — safe against future Step additions.
-/// Say which step failed, in the failure itself.
-///
-/// The step lines already name each step as it starts, so the last one
-/// printed is the one that was in flight. That is only true of a reader
-/// who has both lines: a consumer reading the error alone attributed an
-/// `eraseText` failure to `hideKeyboard`, because the error said
-/// neither which step nor which verb.
-///
-/// Only the `Sdk` variant carries a message this can be written into,
-/// and it is the one every device and assertion failure arrives as. The
-/// others are authoring errors — an unknown key, a bad direction, a
-/// subflow cycle — which name their own cause; the stderr line above
-/// gives them their step.
-///
-/// A subflow's steps run through this same loop, so an inner failure is
-/// already attributed by the time the outer loop sees it. Attributing
-/// again would produce `step 5 (runFlow): step 3 (tapOn): …`, naming a
-/// step that did not fail — so the steps that recurse do not attribute,
-/// and they are identified by which ones they are rather than by
-/// sniffing the message for a prefix it might legitimately carry.
+/// Say which step failed, in the failure itself: a consumer reading the
+/// error alone once put an `eraseText` failure on `hideKeyboard`. Only
+/// `Sdk` failures carry a message to write into; the authoring errors name
+/// their own cause. Steps that recurse do not attribute — their inner step
+/// already did, and `step 5 (runFlow): step 3 (tapOn)` names one that did
+/// not fail.
 fn attribute_to_step(err: RunError, idx: usize, step: &Step, verb: &str) -> RunError {
     if recurses_into_steps(step) {
         return err;
@@ -1077,6 +1065,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::ExtendedWaitUntil { .. } => "extendedWaitUntil",
         Step::TakeScreenshot { .. } => "takeScreenshot",
         Step::OpenLink(_) => "openLink",
+        Step::SendPush(_) => "sendPush",
         Step::CopyTextFrom { .. } => "copyTextFrom",
         Step::RememberBounds { .. } => "rememberBounds",
         Step::AssertBoundsUnchanged { .. } => "assertBoundsUnchanged",
@@ -2034,29 +2023,12 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         Ok(())
     }
 
-    /// Sample the screen until two consecutive frames are still, or until
-    /// `ceiling_ms` runs out. Returns whether it settled.
-    ///
-    /// A screenshot that won't decode propagates rather than reading as
-    /// motion: a frame we cannot compare is a broken toolchain, and silently
-    /// treating it as "still moving" would burn the whole ceiling on every
-    /// step and look like a slow device.
-    /// Whether a stillness wait ended settled, still moving, or without
-    /// ever getting a look.
-    ///
-    /// The third one is the point. Screenshot backpressure means "not
-    /// now, shortly" — the device's capture path is under load and the
-    /// pacer is refusing frames to keep from crashing the render server.
-    /// This verb owns a budget, so it spends it waiting rather than
-    /// failing, which is what a verb whose entire meaning is "wait"
-    /// should do when told to wait. It arrived as a step failure until
-    /// 7.1 and stopped a consumer's release pipeline, while the same
-    /// verb has always treated a screen that never settles as a warning.
-    /// Those two answers could not both be right.
-    ///
-    /// Only that one code is absorbed. An undecodable frame, an
-    /// unreachable runner — everything else is still a real failure and
-    /// still ends the step.
+    /// Sample the screen until two consecutive frames are still or
+    /// `ceiling_ms` runs out: settled, still moving, or never given a look.
+    /// Screenshot backpressure ("not now, shortly") is waited through, as a
+    /// wait should; until 7.1 it failed the step and stopped a consumer's
+    /// release pipeline. An undecodable frame or an unreachable runner
+    /// still ends the step — a frame that cannot be compared is not motion.
     async fn wait_until_still(&self, ceiling_ms: u64) -> Result<Stillness, RunError> {
         // No sleep between successful samples: the capture is the
         // interval. The raw-BGRA capture path grabs a frame directly from
@@ -2327,9 +2299,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 // Desugar LocalizedText by current locale.
                 let desugared = self.desugar_localized_text(selector);
                 if matches!(&*desugared, Selector::OcrText { .. }) {
-                    // "Are these words on screen" is a question OCR can
-                    // answer; asking the tree instead answers a
-                    // different one and always says no.
+                    // OCR answers "are these words on screen"; the tree cannot
                     if self
                         .point_for_unreadable(&desugared, IMPLICIT_WAIT)
                         .await?
@@ -2347,7 +2317,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     }
                     return Ok(RunStepReport::Ok);
                 }
-                self.app.assert_visible(&desugared).await?;
+                let asserted = self.app.assert_visible(&desugared).await;
+                crate::popup_tap::or_a_popup_saying(self.app, &desugared, asserted, warnings)
+                    .await?;
                 Ok(RunStepReport::Ok)
             }
             Step::InputSecret { selector, env, set } => {
@@ -3297,6 +3269,35 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 let _ = self.dismiss_open_link_popup().await;
                 Ok(RunStepReport::Ok)
             }
+            Step::SendPush(payload) => {
+                let Some(bundle) = self.last_bundle.clone() else {
+                    return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::DriverError),
+                        message: "sendPush: no app to send it to — give the flow an appId".into(),
+                        ..Default::default()
+                    })));
+                };
+                let json = payload.apns_json(&self.base_dir).map_err(|message| {
+                    RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::DriverError),
+                        message,
+                        ..Default::default()
+                    }))
+                })?;
+                let file = std::env::temp_dir().join(format!(
+                    "smix-push-{}-{}.apns",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos())
+                        .unwrap_or_default()
+                ));
+                std::fs::write(&file, &json).map_err(|e| RunError::Io(e.to_string()))?;
+                let sent = self.app.send_push(&bundle, &file.to_string_lossy()).await;
+                let _ = std::fs::remove_file(&file);
+                sent?;
+                Ok(RunStepReport::Ok)
+            }
             Step::StopApp => {
                 match self.last_bundle.clone() {
                     Some(b) => {
@@ -4088,10 +4089,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         use tokio::time::sleep;
         const POLL: Duration = Duration::from_millis(250);
 
-        // Fast path: no OCR anywhere in the selector → delegate to
-        // driver-side `wait_for` unchanged. Detecting "OCR anywhere"
-        // covers both top-level `Selector::OcrText` and any `OcrText`
-        // hidden inside a `Fallback` chain.
+        // no OcrText anywhere, a `Fallback` chain included: the driver's wait
         fn contains_ocr(sel: &Selector) -> bool {
             match sel {
                 Selector::OcrText { .. } => true,

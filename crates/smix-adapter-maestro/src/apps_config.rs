@@ -267,6 +267,7 @@ fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
         | Step::ResetAppData { .. }
         | Step::ClearUserDefaults { .. }
         | Step::OpenLink { .. }
+        | Step::SendPush(_)
         | Step::StopApp
         | Step::Scroll
         | Step::HideKeyboard

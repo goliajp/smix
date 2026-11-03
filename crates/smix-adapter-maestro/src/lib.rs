@@ -266,6 +266,7 @@ mod pinch;
 mod popup_tap;
 mod runtime;
 pub mod selector_support;
+pub mod send_push;
 mod timing;
 mod until_effect;
 mod watch;
@@ -357,13 +358,9 @@ pub enum MouseDragTo {
 /// One parsed yaml step. See the maestro-compat command table in the
 /// module docs above for the yaml shapes each variant corresponds to.
 ///
-/// `#[non_exhaustive]` because this enum grows with every verb, and
-/// without the attribute each new verb is a semver-major change for
-/// anyone matching on it outside this crate. The attribute itself is
-/// major, so it was added in a release that was major anyway (the one
-/// that brought `rememberBounds`). Inside this crate matches stay
-/// exhaustive, which is where the compiler's "you forgot the new verb"
-/// is worth having.
+/// `#[non_exhaustive]`, so a new verb is not a major for matches outside
+/// this crate; inside it they stay exhaustive, where "you forgot the new
+/// verb" is worth having from the compiler.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -791,6 +788,8 @@ pub enum Step {
     /// Open a URL / deep link in the OS handler. Maps to
     /// `simctl openurl`.
     OpenLink(String),
+    /// Deliver a notification to the app under test. See [`send_push`].
+    SendPush(send_push::PushPayload),
     /// Terminate the foreground app. Maps to `simctl terminate`.
     StopApp,
     /// Viewport scroll one swipe (default direction = down).
