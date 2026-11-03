@@ -31,8 +31,9 @@ object HitChain {
     /// as a touch is dispatched: the highest is on top. It is not the index:
     /// a group that overrides `getChildDrawingOrder` draws in its own order.
     ///
-    /// `touch` is `TAKES` for every node read from the accessibility tree,
-    /// and for a probe too old to say: the reading these defaulted to.
+    /// `touch` read from the accessibility tree is `TAKES` for a node that
+    /// says it acts on a touch (clickable, long-clickable, checkable) and
+    /// `MAYBE` for the rest; a probe too old to say defaults to `TAKES`.
     ///
     /// `clips` is whether a touch reaches the node's children only inside
     /// its bounds. A View hands a touch only to children under it; Compose

@@ -266,6 +266,7 @@ mod pinch;
 mod popup_tap;
 mod runtime;
 pub mod selector_support;
+pub mod send_push;
 mod timing;
 mod until_effect;
 mod watch;
@@ -791,6 +792,8 @@ pub enum Step {
     /// Open a URL / deep link in the OS handler. Maps to
     /// `simctl openurl`.
     OpenLink(String),
+    /// Deliver a notification to the app under test. See [`send_push`].
+    SendPush(send_push::PushPayload),
     /// Terminate the foreground app. Maps to `simctl terminate`.
     StopApp,
     /// Viewport scroll one swipe (default direction = down).

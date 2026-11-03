@@ -20,6 +20,7 @@
     <item name="fixture_open_code" type="id" />
     <item name="fixture_code_busy" type="id" />
     <item name="fixture_hidden_waiting" type="id" />
+    <item name="push_opened" type="id" />
     <item name="fixture_hidden_hide" type="id" />
     <item name="fixture_hidden_row" type="id" />
     <item name="fixture_hidden_row_taps" type="id" />

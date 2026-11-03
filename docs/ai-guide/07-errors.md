@@ -168,8 +168,9 @@ it comes back at once, where until 23.1 the same query waited 30 s or
 more while XCUITest looked for the app's window and then failed as a
 driver error. On Android it names the app windows on screen instead, and
 cannot tell an app in the background from one that is not running. A
-step that waits keeps looking for one second first, which is the time an
-app takes to come back after its notification is tapped.
+step that waits keeps looking for three seconds first, so a notification
+just sent has time to show before a tap on it is refused (it took up to
+two seconds on an Android emulator).
 
 **Fix**:
 - Bring it back: `launchApp` (it relaunches by default; `stopApp: false`

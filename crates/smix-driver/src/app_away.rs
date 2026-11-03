@@ -7,10 +7,13 @@ use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_screen::{A11yNode, WindowKind};
 
 /// How long a poll keeps looking while the app it reads is not in front:
-/// long enough for an app a tapped notification is bringing back. Past it
-/// nothing in flight is bringing it back, and waiting out the whole budget
-/// would only delay the same answer.
-pub(crate) const APP_RETURNS_WITHIN: Duration = Duration::from_secs(1);
+/// long enough for a notification a step just sent to show, so a tap on it
+/// is not refused first (measured on an Android 16 emulator: the heads-up
+/// was in the tree 0.3 s after `sendPush`, once 1.95 s), and for an app a
+/// tapped notification is bringing back. Past it nothing in flight is
+/// bringing the app back, and waiting out the whole budget would only
+/// delay the same answer.
+pub(crate) const APP_RETURNS_WITHIN: Duration = Duration::from_secs(3);
 
 /// Since when a poll has seen its app away, without a reading of it in
 /// between.

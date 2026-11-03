@@ -455,6 +455,12 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         ArgShape::BareString,
     ),
     v(
+        "sendPush",
+        "sendPush",
+        VerbCategory::Device,
+        ArgShape::Mapping,
+    ),
+    v(
         "setLocation",
         "setLocation",
         VerbCategory::Device,

@@ -295,6 +295,20 @@ pub trait AppLike: Send + Sync {
     ) -> Result<Vec<String>, ExpectationFailure>;
     /// Open a URL / deep link. Mirrors [`App::open_url`].
     async fn open_url(&self, url: &str) -> Result<(), ExpectationFailure>;
+    /// Deliver the APNs payload at `apns_json_path` to `bundle_id`.
+    /// Mirrors [`App::send_push`]; a backend that cannot says so.
+    async fn send_push(
+        &self,
+        bundle_id: &str,
+        apns_json_path: &str,
+    ) -> Result<(), ExpectationFailure> {
+        let _ = (bundle_id, apns_json_path);
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "sendPush is not available on this backend".into(),
+            ..Default::default()
+        }))
+    }
     /// Enumerate any system-level (SpringBoard / share-sheet)
     /// alert currently on screen. Mirrors [`App::system_popups`]. Used by
     /// the adapter to auto-dismiss the iOS 17+ "Open in `<App>`?" alert that
@@ -659,6 +673,13 @@ impl AppLike for App {
     }
     async fn open_url(&self, url: &str) -> Result<(), ExpectationFailure> {
         App::open_url(self, url).await
+    }
+    async fn send_push(
+        &self,
+        bundle_id: &str,
+        apns_json_path: &str,
+    ) -> Result<(), ExpectationFailure> {
+        App::send_push(self, bundle_id, apns_json_path).await
     }
     async fn system_popups(&self) -> Result<Vec<smix_sdk::SystemPopup>, ExpectationFailure> {
         App::system_popups(self).await
@@ -1077,6 +1098,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::ExtendedWaitUntil { .. } => "extendedWaitUntil",
         Step::TakeScreenshot { .. } => "takeScreenshot",
         Step::OpenLink(_) => "openLink",
+        Step::SendPush(_) => "sendPush",
         Step::CopyTextFrom { .. } => "copyTextFrom",
         Step::RememberBounds { .. } => "rememberBounds",
         Step::AssertBoundsUnchanged { .. } => "assertBoundsUnchanged",
@@ -3295,6 +3317,35 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 // first non-cancel button. Without this, every subsequent
                 // step blocked behind a popup overlay would race-fail.
                 let _ = self.dismiss_open_link_popup().await;
+                Ok(RunStepReport::Ok)
+            }
+            Step::SendPush(payload) => {
+                let Some(bundle) = self.last_bundle.clone() else {
+                    return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::DriverError),
+                        message: "sendPush: no app to send it to — give the flow an appId".into(),
+                        ..Default::default()
+                    })));
+                };
+                let json = payload.apns_json(&self.base_dir).map_err(|message| {
+                    RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::DriverError),
+                        message,
+                        ..Default::default()
+                    }))
+                })?;
+                let file = std::env::temp_dir().join(format!(
+                    "smix-push-{}-{}.apns",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos())
+                        .unwrap_or_default()
+                ));
+                std::fs::write(&file, &json).map_err(|e| RunError::Io(e.to_string()))?;
+                let sent = self.app.send_push(&bundle, &file.to_string_lossy()).await;
+                let _ = std::fs::remove_file(&file);
+                sent?;
                 Ok(RunStepReport::Ok)
             }
             Step::StopApp => {
