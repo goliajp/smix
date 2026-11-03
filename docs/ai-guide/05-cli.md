@@ -917,6 +917,95 @@ not. It is refused while somebody else's live session holds the device:
 claiming is a statement about a device nobody is using, not a way past one
 that is.
 
+### Whose a device is, and the whole machine (`--owner`, `smix status`)
+
+Several tasks can share one machine. Give each a name, and what it boots or
+brings up is recorded as that task's:
+
+```bash
+smix --owner qa-run-2 sim boot sim-smix-02      # or SMIX_OWNER=qa-run-2 for every command
+SMIX_OWNER=qa-run-2 smix run login.yaml --device sim-smix-02
+smix status                                     # every device on the machine
+smix status --json
+```
+
+`--owner` (or `SMIX_OWNER`) takes 1 to 64 letters, digits, `.`, `_`, `-` and
+`:`; anything else is refused before the command runs. The name is written
+beside the device's ledger for each thing recorded — the boot, the runner, a
+recording, a forward — and goes when that thing does. The boot keeps the
+owner of whoever turned the device on: a later command that finds it up and
+brings its own runner owns the runner, not the device. No name given is
+recorded as none, shown as `owner —`, never guessed.
+
+`smix status` lists every simulator and emulator running here and every
+device smix keeps a ledger for: its alias, owner, whether smix booted it,
+since when, who holds it now and whether that process is still alive, the
+runner port, and the memory it takes — each process's `phys_footprint`
+summed over the simulator's process tree, or the emulator's `qemu` process.
+An idle iPhone simulator is about 8.5 GiB, an Apple TV about 3.7 GiB, an
+Android 16 phone emulator about 6.7 GiB. It reads; it sends no device a
+command.
+
+### Room to boot (`smix sim boot --wait`)
+
+`smix sim boot` first weighs what is already running on the machine — every
+simulator and emulator, smix's or not — against a budget, and refuses a
+boot there is no room for, naming each running device, its owner and since
+when:
+
+| device | counted as |
+|---|---:|
+| iPhone, iPad simulator | 9 GiB |
+| Apple TV simulator | 4 GiB |
+| Vision Pro simulator | 12 GiB |
+| Apple Watch simulator | 3 GiB |
+| Android phone emulator | 7 GiB |
+| Android tablet emulator | 8 GiB |
+
+(what each holds idle, measured on an Apple-silicon Mac; Vision Pro at what
+it reached with an app open). The budget is 60% of physical memory, or
+`SMIX_DEVICE_BUDGET_GIB`. A Vision Pro or an Apple TV runs alone — it is
+refused beside anything else, and nothing boots beside it —
+unless `SMIX_HEAVY_DEVICES_ALONE=0`. Whatever the weights say, nothing boots
+while swap in use has reached half of physical memory or less than 15% of
+memory is free. A device that is already running is not weighed again.
+
+```bash
+smix sim boot sim-smix-02 --wait 600    # queue for up to ten minutes instead of refusing
+```
+
+`--wait` looks again every ten seconds and boots as soon as there is room;
+when the time runs out it refuses with the same names.
+
+### Taking down one task's resources (`smix cleanup`)
+
+```bash
+smix --owner qa-run-2 cleanup --dry-run   # list what would be closed
+smix --owner qa-run-2 cleanup             # close it
+```
+
+Closes what was recorded under that owner — its runners, supervisors,
+recordings, forwards and the devices it booted — by the same graceful path
+`smix lease reconcile` uses, in its order: the device last, once nothing is
+talking to it. Each line says what was closed, what was left and why: a
+resource of another owner (`left booted — qa-run-1's`), one with no owner,
+or a device whose holder is still running, which gives up nothing — closing
+a runner under a live command pulls it out from under work in progress.
+Simulator runtimes and images belong to the machine and are never touched.
+The exit code is 1 when something of the owner's could not be closed.
+
+```bash
+smix cleanup --orphans --dry-run          # devices left behind, listed
+smix cleanup --orphans                    # closed
+```
+
+A device is left behind when smix booted it, nobody holds it, and no smix
+command has touched it for `SMIX_IDLE_DEVICE_SECS` — 30 minutes by default,
+`0` for never. A task between two runs holds nothing either, so the time is
+what tells a pause from a device its task forgot. `smix sim boot` reclaims
+these first, before it weighs whether there is room, and says each one it
+closed; a device somebody else booted by hand is never one of them.
+
 ### Perf regression (`smix bench`)
 
 ```bash

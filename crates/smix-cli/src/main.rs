@@ -21,7 +21,11 @@ macro_rules! println {
 }
 
 mod act;
+mod budget;
+mod cleanup_cmd;
+mod footprint;
 mod settle_flags;
+mod status_cmd;
 use settle_flags::settle_from_flags;
 mod authoring;
 mod bench;
@@ -144,6 +148,10 @@ Sim safety hook:
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
+    /// The task this command works for: what it boots or brings up is
+    /// recorded as that task's, for `smix status` and cleanup.
+    #[arg(long, global = true, env = "SMIX_OWNER")]
+    owner: Option<String>,
 }
 
 // A clap top-level command enum: parsed once, held as a single value, never
@@ -174,6 +182,25 @@ enum Cmd {
         /// a freshly registered one is shut down.
         #[arg(long)]
         app: Option<PathBuf>,
+    },
+    /// Every device running on this machine and every one smix keeps a
+    /// ledger for: owner, booted by smix or not, holder, runner, memory.
+    Status {
+        /// The same rows as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Close what one owner (`--owner` / `SMIX_OWNER`) brought up — its
+    /// runners, recordings, forwards and the devices it booted — by the
+    /// graceful path; leave everything else and say why.
+    Cleanup {
+        /// List what would be closed, and close nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Instead: close the devices smix booted that nobody holds and no
+        /// command has touched for `SMIX_IDLE_DEVICE_SECS` (30 min).
+        #[arg(long)]
+        orphans: bool,
     },
     /// Say whether this machine can drive anything yet, and if not, what
     /// to run next. `--json` for the same verdict in machine form.
@@ -290,12 +317,9 @@ enum Cmd {
         platform: Option<RunPlatform>,
         /// Write a frame to this path the moment the tap returns.
         ///
-        /// For UI that does not wait: a control bar that hides itself
-        /// after a few seconds outlives neither a second command nor the
-        /// turn between two tool calls. One call takes the picture from
-        /// the same process that tapped — measured at about 88 ms after
-        /// the tap returns, against roughly 325 ms going out to device
-        /// tooling.
+        /// For UI that does not wait, like a control bar that hides after a
+        /// few seconds: about 88 ms after the tap, against 325 ms for a
+        /// second command.
         ///
         /// A tap that fails writes nothing: a frame taken after a tap
         /// that did not land looks like evidence and is a picture of the
@@ -1218,22 +1242,14 @@ enum LeaseAction {
     Reconcile { device: String },
     /// Answer for a device this machine did not boot.
     ///
-    /// The decision every release was already making and leaving
-    /// nowhere. A dedicated emulator started by hand has no ledger, so
-    /// nothing here may drive it — and the only way through was an
-    /// environment variable that says "it is mine" to one command and is
-    /// forgotten the moment it exits. The next run makes the same
-    /// decision again, and no one can read who made it last time.
+    /// An emulator started by hand has no ledger, so nothing here may drive
+    /// it; a claim records, once, that this machine answers for it.
     ///
-    /// A claim grants exactly one of the two things a boot row grants:
-    /// this device is yours to drive, and is not yours to switch off.
-    /// `lease owner` reports it as a claim rather than a boot, so the
-    /// difference is never invisible, and the ledger ends it when the
-    /// device goes off.
+    /// It grants driving, not switching off; `lease owner` reports it as a
+    /// claim, and the ledger ends it when the device goes off.
     ///
-    /// Refused while somebody else's live session holds the device —
-    /// claiming is a statement about an unheld device, not a way past
-    /// a held one.
+    /// Refused while somebody else's live session holds the device: a
+    /// claim is about an unheld device, not a way past a held one.
     Claim { device: String },
     /// Give up a claim made by `lease claim`.
     ///
@@ -1248,21 +1264,12 @@ enum LeaseAction {
     /// Three codes rather than two: a check that answers "safe" when it
     /// means "I do not know" is the shape this cycle keeps finding.
     ///
-    /// A claim answers `0` as well, and says so in words: it is the same
-    /// entitlement to drive and deliberately not the same entitlement to
-    /// shut down. Callers that act on the exit code inherit claims
-    /// without being changed; a caller that cares which it is has the
-    /// sentence.
+    /// A claim answers `0` as well, and says so: the same entitlement to
+    /// drive, deliberately not to shut down.
     ///
-    /// Not a teardown permission. It answers "did smix boot this",
-    /// which is not "did *you* boot this" — a shell script's `smix sim
-    /// boot` exits immediately, so the session that booted the device
-    /// is never the one asking. A script that shut down whatever this
-    /// reported as smix's would take away a device another run is
-    /// using. What it is for is the question that could not be answered
-    /// on 2026-08-11: a runner was found holding port 22087, the rule
-    /// said find its owner before touching it, and the owner was
-    /// recorded in a tree nobody was standing in.
+    /// Not a teardown permission: it answers "did smix boot this", not
+    /// "did *you*" — which task a device is for is its owner, in
+    /// `smix status`.
     Owner { device: String },
     /// Fold per-checkout ledgers into this machine's.
     ///
@@ -1408,11 +1415,9 @@ enum RunnerAction {
         /// with it, it runs the fix: the same in-place cycle as
         /// `smix runner cycle`, seconds, no xcodebuild restart.
         ///
-        /// It does not reach across to a runner recorded for another
-        /// device, or to one the device ledger has no record of. Those are
-        /// refused with or without it — `runner down --include-unrecorded`
-        /// is the sanctioned way through, and it is a separate decision
-        /// on purpose.
+        /// A runner recorded for another device, or not recorded at all, is
+        /// refused either way; `runner down --include-unrecorded` is that
+        /// separate decision.
         #[arg(long = "force", default_value_t = false)]
         force: bool,
         /// Android: also replace a runner a live process other than this
@@ -1549,11 +1554,8 @@ enum RunnerAction {
     /// Every smix runner on this machine: its port, its device, and
     /// whether the ledgers know about it.
     ///
-    /// Not `list-sessions`, which asks one runner what app sessions it
-    /// has open. This asks the machine what runners it has at all —
-    /// reading the ledgers and the listening sockets and putting them
-    /// side by side, because a runner nobody wrote down is exactly the
-    /// one you cannot decide about.
+    /// Not `list-sessions` (one runner's app sessions): the machine's
+    /// runners, ledgers and listening sockets side by side.
     ///
     /// Reads only by default. It never signals a process, and without
     /// `--prune` it never writes a ledger, and always exits 0: a command
@@ -1561,10 +1563,7 @@ enum RunnerAction {
     List {
         /// Delete the rows whose recorded process is gone.
         ///
-        /// A read-mostly command gets one explicit write rather than a
-        /// tidy-up nobody asked for — the same shape as
-        /// `--include-unrecorded`: clearing up is a thing somebody says
-        /// out loud.
+        /// One explicit write, said out loud, like `--include-unrecorded`.
         ///
         /// Only `process-gone` rows, which are the ones this command can
         /// prove ended: the recorded pid, and the start time that tells
@@ -1572,21 +1571,16 @@ enum RunnerAction {
         /// not listening is left alone — that is `lease reconcile`'s
         /// question, and it has closes to perform that this does not.
         ///
-        /// Reported by a consumer: four rows, four dead pids, and
-        /// nothing that cleared them. `down` refuses a runner this
-        /// workspace never recorded, so the ledger is what decides
-        /// whether a device can be shut down — and a ledger filling with
-        /// dead rows makes that decision rest on a list nobody maintains.
+        /// The ledger decides what `down` may shut down, so dead rows left in
+        /// it (a consumer had four) make that rest on a list nobody keeps.
         #[arg(long, default_value_t = false)]
         prune: bool,
     },
     /// Extract the CLI's embedded Swift runner sources into the tree for
     /// them, `~/.local/share/smix/runner-sources/ios/<version>-<digest>/`
-    /// — one per set of sources, so another smix on this machine keeps
-    /// its own. Normally done by `smix runner up`; this verb makes it
-    /// explicit for troubleshooting or first-time setup on an air-gapped
-    /// machine. With `--path`, extracts into that directory instead,
-    /// backing any tree already there up beside it.
+    /// — one per set of sources. `smix runner up` does it; this is for
+    /// troubleshooting or an air-gapped machine. `--path` extracts there
+    /// instead, backing up any tree already there.
     Install {
         /// Destination directory. Defaults to this binary's tree under
         /// `$XDG_DATA_HOME/smix/runner-sources/ios/` (falling back to
@@ -1690,6 +1684,9 @@ enum SimAction {
         /// Run an Android emulator with no window on the desktop.
         #[arg(long)]
         no_window: bool,
+        /// Wait up to this many seconds for room when the machine has none.
+        #[arg(long, default_value_t = 0)]
+        wait: u64,
     },
     /// Shutdown a simulator.
     Shutdown {
@@ -1805,9 +1802,8 @@ enum SimAction {
     /// and the flow. It goes when `--remove` names it, when the device
     /// goes away, or when a teardown closes the ledger row this writes.
     ///
-    /// Android only. A simulator already shares this machine's loopback
-    /// and needs nothing; a physical iPhone has no such channel, and
-    /// both say so rather than doing nothing quietly.
+    /// Android only: a simulator shares this machine's loopback, an iPhone
+    /// has no such channel, and both say so.
     Reverse {
         /// Which device, by serial or registry alias.
         device: String,
@@ -2452,18 +2448,11 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
     // `simctl boot` against an emulator and sit there until it timed out
     // 120 seconds later, reporting the timeout rather than the mistake.
     //
-    // `None` means the verb takes no device, or acts on the registry
-    // rather than the device.
-    //
-    // Powering a device on and off is not an Apple-only idea, so both
-    // virtual kinds have it. Physical devices are absent on purpose:
-    // section 9 #1 gates them behind registration and a per-device
-    // opt-in, and nothing here should decide a phone's power state.
+    // `None`: no device, or the registry rather than a device. Both virtual
+    // kinds power on and off; a phone's power state is never decided here.
     const POWERABLE: &[DeviceKind] = &[Simulator, Emulator];
-    // simctl and nothing else. An emulator's counterparts exist
-    // (`emulator -avd`, `adb shell am start`, `adb shell settings`) but
-    // none of them is wired here, and pretending otherwise is how a
-    // caller ends up waiting out a 120-second timeout.
+    // simctl and nothing else: an emulator's counterparts are not wired
+    // here, and pretending otherwise ends in a 120-second timeout.
     const SIMCTL: &[DeviceKind] = &[Simulator];
     Some(
         match action {
@@ -2744,15 +2733,10 @@ static STDOUT_READER_LEFT: std::sync::atomic::AtomicBool =
 /// What `print!` and `println!` do in this crate.
 ///
 /// A reader that stops reading (`smix sim list | head -1`) is not a
-/// failure of the work: smix stops writing to stdout and finishes what it
-/// was doing, and the exit code reports that work. The two usual answers
-/// are both wrong here. Restoring SIGPIPE's default kills smix silently
-/// the same way when a child it feeds on stdin exits early (simctl,
-/// codesign, devicectl all take stdin). Exiting at once — with 0 or 141 —
-/// would leave a `smix run … | head` device halfway through a flow, and 0
-/// would call that a pass. No smix command streams forever and relies on
-/// SIGPIPE to stop (`runner forward` prints once, then holds), so carrying
-/// on cannot hang anyone.
+/// failure of the work: smix stops writing and finishes, and the exit code
+/// reports the work. SIGPIPE's default would also kill smix when a child it
+/// feeds on stdin exits early, and exiting at once would leave a device
+/// halfway through a flow. No command relies on SIGPIPE to stop.
 ///
 /// Any other write error is std's panic, unchanged.
 fn write_stdout(args: std::fmt::Arguments<'_>) {
@@ -2773,6 +2757,10 @@ fn write_stdout(args: std::fmt::Arguments<'_>) {
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() -> ExitCode {
     let cli: Cli = fill_secret::parse_or_exit();
+    if let Err(e) = status_cmd::adopt_owner(cli.owner.as_deref()) {
+        eprintln!("error: {e}");
+        return ExitCode::from(2);
+    }
     match run(cli).await {
         Ok(code) => code,
         Err(e) => {
@@ -2857,6 +2845,11 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
     match cli.cmd {
         Cmd::Init { alias, device, app } => {
             cmd_init(&simctl, alias.as_deref(), device.as_deref(), app.as_deref()).await?
+        }
+        Cmd::Status { json } => return Ok(status_cmd::run(json).await),
+        Cmd::Cleanup { dry_run, orphans } => {
+            let owner = smix_lease::owners::current();
+            return Ok(cleanup_cmd::run(owner.as_deref(), dry_run, orphans).await);
         }
         Cmd::Doctor {
             json,
@@ -3081,14 +3074,17 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     device,
                     cold,
                     no_window,
+                    wait,
                 } => {
-                    // Booting asks a different question than driving does:
-                    // "where should this start" rather than "where is it".
-                    // `resolve_device` refuses an emulator alias whose AVD
-                    // is not running, which is precisely the state this
-                    // command exists to leave — so the port to start on
-                    // comes from the row, and the identity check below
-                    // decides whether starting is the right move at all.
+                    cleanup_cmd::reclaim_left_behind(false)
+                        .await
+                        .map_err(CliError::Other)?;
+                    budget::check_boot(&device, wait)
+                        .await
+                        .map_err(CliError::Other)?;
+                    // "where should this start", not "where is it": the port
+                    // comes from the row, since `resolve_device` refuses an
+                    // emulator alias whose AVD is not running.
                     let registered = lookup_registered(&device);
                     let booting_emulator = registered
                         .as_ref()
@@ -3105,9 +3101,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 avd,
                                 slot_now: Some(other),
                             } => {
-                                // The identity is the AVD name; the port is only
-                                // where it answers today. The registered one is
-                                // somebody else's now, so start ours on a free one.
+                                // the registered port is somebody else's AVD now
+                                // (the identity is the name): start on a free one
                                 let serial = free_console_serial()?;
                                 eprintln!(
                                     "note: {device} was registered on {}, which is \
@@ -7046,6 +7041,7 @@ mod device_power {
             device: String::new(),
             cold: false,
             no_window: false,
+            wait: 0,
         }
     }
 
@@ -7382,6 +7378,7 @@ mod tests {
                     device: d(),
                     cold: false,
                     no_window: false,
+                    wait: 0,
                 },
             ),
             ("shutdown", SimAction::Shutdown { device: d() }),

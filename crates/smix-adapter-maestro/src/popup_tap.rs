@@ -57,11 +57,14 @@ pub(crate) fn button_named(selector: &Selector, popups: &[SystemPopup]) -> Popup
     }
 }
 
+/// Whether a popup's words are the ones a selector names.
+type WordsMatch = Box<dyn Fn(&str) -> bool>;
+
 /// What a bare `text:` or `label:` matches words on a popup by, or `None`
 /// for any other selector: a spatial or index modifier places the target in
 /// the app's layout, which a popup is not part of, and an id is the app's own.
-fn words_matcher(selector: &Selector) -> Option<Box<dyn Fn(&str) -> bool>> {
-    let answers: Box<dyn Fn(&str) -> bool> = match selector {
+fn words_matcher(selector: &Selector) -> Option<WordsMatch> {
+    let answers: WordsMatch = match selector {
         Selector::Text { text, modifiers } if *modifiers == Modifiers::default() => match text {
             Pattern::Text(t) if t.is_empty() => return None,
             Pattern::Text(t) => {

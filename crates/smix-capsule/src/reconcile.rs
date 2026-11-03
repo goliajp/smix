@@ -276,7 +276,54 @@ fn device_is_gone(stderr: &str) -> bool {
         || s.contains("no devices")
 }
 
+/// An emulator is stopped the one way that lets it quit cleanly, `emu
+/// kill`, and is done when adb no longer lists it. `simctl` has never heard
+/// of one: a lease reconcile, and `cleanup`, failed on every emulator smix
+/// had booted with "Invalid device".
+fn shutdown_emulator(serial: &str) -> Outcome {
+    let adb = || smix_adb::std_command();
+    let listed = || {
+        adb()
+            .ok()
+            .and_then(|mut c| c.arg("devices").output().ok())
+            .is_some_and(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .any(|l| l.split_whitespace().next() == Some(serial))
+            })
+    };
+    if !listed() {
+        return Outcome::AlreadyGone(format!("emulator {serial} was already stopped"));
+    }
+    match adb().map(|mut c| c.args(["-s", serial, "emu", "kill"]).output()) {
+        Ok(Ok(o)) if o.status.success() => {}
+        Ok(Ok(o)) => {
+            let said = String::from_utf8_lossy(&o.stderr);
+            return Outcome::Failed(format!("adb -s {serial} emu kill failed: {}", said.trim()));
+        }
+        Ok(Err(e)) => return Outcome::Failed(format!("could not run adb emu kill: {e}")),
+        Err(e) => return Outcome::Failed(e),
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        let look = std::time::Instant::now();
+        if !listed() {
+            return Outcome::Closed(format!("emulator {serial} stopped"));
+        }
+        if look >= deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    Outcome::Failed(format!(
+        "{serial} was still listed by adb 60 s after `emu kill`"
+    ))
+}
+
 fn shutdown_sim(udid: &str) -> Outcome {
+    if smix_simctl::registry::is_emulator_serial(udid) {
+        return shutdown_emulator(udid);
+    }
     let out = std::process::Command::new("xcrun")
         .args(["simctl", "shutdown", udid])
         .output();
