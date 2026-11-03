@@ -18,6 +18,14 @@ All notable changes to the `smix` workspace are documented here. The format foll
   the target "is still where it was" after the last retry without having
   looked.
 
+### Fixed
+
+- **`smix runner up <android alias>` went to simctl.** `--platform`
+  defaulted to iOS, so a registered emulator named without it failed with
+  `Invalid device` from `simctl bootstatus`. A registered device's own kind
+  now decides, as it already did for `run`, `tap`, `find` and the rest;
+  `--platform` still overrides, and an unregistered id is still iOS.
+
 ## [23.0.0] — 2026-11-03
 
 ### Added
