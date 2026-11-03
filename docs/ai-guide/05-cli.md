@@ -917,6 +917,35 @@ not. It is refused while somebody else's live session holds the device:
 claiming is a statement about a device nobody is using, not a way past one
 that is.
 
+### Whose a device is, and the whole machine (`--owner`, `smix status`)
+
+Several tasks can share one machine. Give each a name, and what it boots or
+brings up is recorded as that task's:
+
+```bash
+smix --owner qa-run-2 sim boot sim-smix-02      # or SMIX_OWNER=qa-run-2 for every command
+SMIX_OWNER=qa-run-2 smix run login.yaml --device sim-smix-02
+smix status                                     # every device on the machine
+smix status --json
+```
+
+`--owner` (or `SMIX_OWNER`) takes 1 to 64 letters, digits, `.`, `_`, `-` and
+`:`; anything else is refused before the command runs. The name is written
+beside the device's ledger for each thing recorded — the boot, the runner, a
+recording, a forward — and goes when that thing does. The boot keeps the
+owner of whoever turned the device on: a later command that finds it up and
+brings its own runner owns the runner, not the device. No name given is
+recorded as none, shown as `owner —`, never guessed.
+
+`smix status` lists every simulator and emulator running here and every
+device smix keeps a ledger for: its alias, owner, whether smix booted it,
+since when, who holds it now and whether that process is still alive, the
+runner port, and the memory it takes — each process's `phys_footprint`
+summed over the simulator's process tree, or the emulator's `qemu` process.
+An idle iPhone simulator is about 8.5 GiB, an Apple TV about 3.7 GiB, an
+Android 16 phone emulator about 6.7 GiB. It reads; it sends no device a
+command.
+
 ### Perf regression (`smix bench`)
 
 ```bash
