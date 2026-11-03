@@ -1983,6 +1983,7 @@ mod app_away;
 mod landing;
 pub mod phases;
 pub mod poll;
+mod system_ui;
 pub(crate) use aim::{aim_in, settle_reading};
 pub use landing::{Aimed, ChainCoverage, landing_outcome, tap_landed_within, verdict_reader};
 mod ios;

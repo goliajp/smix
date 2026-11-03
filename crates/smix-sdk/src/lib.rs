@@ -53,6 +53,7 @@ pub use ios_device::IosDeviceControl;
 // Android DeviceControl impl backed by smix-adb.
 mod android_animations;
 pub mod android_device;
+pub mod android_push;
 mod android_refusal;
 mod ios_permission;
 pub use android_device::{

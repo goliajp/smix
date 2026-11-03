@@ -27,9 +27,9 @@ AND_APP="dev.smix.fixture"
 FIXTURE="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
 WORK="$(mktemp -d)"
-# well under the 30 s a single XCUITest attempt took, well over the 1 s a
-# poll keeps looking for an app a notification is bringing back
-WITHIN_MS=5000
+# well under the 30 s a single XCUITest attempt took, over the 3 s a poll
+# keeps looking for an app a notification is bringing back
+WITHIN_MS=6000
 
 log()  { printf '[v23.0-c2-a] %s\n' "$*" >&2; }
 fail() { printf '[v23.0-c2-a] FAIL: %s\n' "$*" >&2; exit 1; }

@@ -695,7 +695,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    true
+    // before launch finishes, so a tapped notification that launches the
+    // app is delivered too
+    UNUserNotificationCenter.current().delegate = PushReceiver.shared
+    return true
   }
 }
 
@@ -733,6 +736,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       root = BlinkController()
     } else if CommandLine.arguments.contains("-live") {
       root = LiveController()
+    } else if CommandLine.arguments.contains("-push") {
+      root = PushController()
     } else if CommandLine.arguments.contains("-toast") {
       root = ToastController()
     } else if CommandLine.arguments.contains("-sheet-over-form") {

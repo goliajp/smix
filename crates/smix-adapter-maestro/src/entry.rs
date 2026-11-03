@@ -947,6 +947,7 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         Step::Swipe { from, to } => format!("swipe {from:?} -> {to:?}"),
         Step::LaunchApp { app_id, .. } => format!("launchApp {app_id}"),
         Step::OpenLink(url) => format!("openLink {url}"),
+        Step::SendPush(p) => p.summary(),
         Step::StopApp => "stopApp".into(),
         Step::ClearAppData { .. } => "clearAppData".into(),
         Step::ResetAppData { .. } => "resetAppData".into(),

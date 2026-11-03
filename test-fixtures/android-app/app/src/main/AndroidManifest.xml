@@ -106,5 +106,18 @@
         <activity
             android:name=".ScaleActivity"
             android:exported="true" />
+        <activity
+            android:name=".PushActivity"
+            android:exported="true" />
+        <!-- What `sendPush` reaches: smix sends this broadcast from the
+             shell, so the receiver is exported. A consumer's app puts it in
+             its debug build only. -->
+        <receiver
+            android:name=".PushReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.smix.PUSH" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

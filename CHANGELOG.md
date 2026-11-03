@@ -14,9 +14,9 @@ All notable changes to the `smix` workspace are documented here. The format foll
   immediately, naming the state and the app SpringBoard shows in front.
   On Android a step that found nothing and no window of the app on screen
   says so, naming the app windows that are there, instead of timing out
-  as `ELEMENT_NOT_FOUND`. A step that waits keeps looking for one second
-  first — the time an app takes to come back when its notification is
-  tapped. `?include=all-windows` and system popups are not held. The code
+  as `ELEMENT_NOT_FOUND`. A step that waits keeps looking for three
+  seconds first, so a notification just sent has time to show before a
+  tap on it is refused. `?include=all-windows` and system popups are not held. The code
   is in the three SDKs' failure-code lists.
 
 ### Changed

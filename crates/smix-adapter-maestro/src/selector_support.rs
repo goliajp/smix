@@ -173,6 +173,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         | Step::ResetAppData { .. }
         | Step::ClearUserDefaults { .. }
         | Step::OpenLink { .. }
+        | Step::SendPush(_)
         | Step::StopApp
         | Step::Scroll
         | Step::HideKeyboard
@@ -491,6 +492,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
         | Step::ResetAppData { .. }
         | Step::ClearUserDefaults { .. }
         | Step::OpenLink { .. }
+        | Step::SendPush(_)
         | Step::StopApp
         | Step::Scroll
         | Step::HideKeyboard

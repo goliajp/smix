@@ -3455,6 +3455,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "setWindowSize" => crate::window_size::parse(value),
         "launchApp" => parse_launch_app(value),
         "openLink" => parse_open_link(value),
+        "sendPush" => crate::send_push::parse(value),
         "stopApp" => Ok(Step::StopApp),
         // Session-scoped in-place data clear. Accepts either:
         //   - clearAppData                         (bare)

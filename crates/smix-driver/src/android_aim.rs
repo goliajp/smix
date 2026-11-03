@@ -101,6 +101,7 @@ pub(super) async fn resolve_aimed(
     let budget = crate::poll::Budget::new(Duration::from_millis(5000));
     let began = std::time::Instant::now();
     let mut away = crate::app_away::Away::default();
+    let mut entering = crate::system_ui::Entering::default();
     loop {
         let look = budget.look();
         let perceived = driver.perceive(include).await?;
@@ -119,6 +120,10 @@ pub(super) async fn resolve_aimed(
                     tokio::time::sleep(budget.pause()).await;
                     continue;
                 };
+                if let Some(wait) = entering.wait(&tree, selector) {
+                    tokio::time::sleep(wait).await;
+                    continue;
+                }
                 // Aimed only at a target that has stopped moving (the same
                 // wait as iOS). The tree is in pixels.
                 let ppp = crate::Driver::pixels_per_point(driver).await?;

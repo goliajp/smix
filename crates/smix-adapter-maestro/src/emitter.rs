@@ -390,6 +390,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::ResetAppData { .. } => "resetAppData",
         Step::ClearUserDefaults { .. } => "clearUserDefaults",
         Step::OpenLink(_) => "openLink",
+        Step::SendPush(_) => "sendPush",
         Step::StopApp => "stopApp",
         Step::Scroll => "scroll",
         Step::HideKeyboard => "hideKeyboard",
