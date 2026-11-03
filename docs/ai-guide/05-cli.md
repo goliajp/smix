@@ -946,6 +946,37 @@ An idle iPhone simulator is about 8.5 GiB, an Apple TV about 3.7 GiB, an
 Android 16 phone emulator about 6.7 GiB. It reads; it sends no device a
 command.
 
+### Room to boot (`smix sim boot --wait`)
+
+`smix sim boot` first weighs what is already running on the machine — every
+simulator and emulator, smix's or not — against a budget, and refuses a
+boot there is no room for, naming each running device, its owner and since
+when:
+
+| device | counted as |
+|---|---:|
+| iPhone, iPad simulator | 9 GiB |
+| Apple TV simulator | 4 GiB |
+| Vision Pro simulator | 12 GiB |
+| Apple Watch simulator | 3 GiB |
+| Android phone emulator | 7 GiB |
+| Android tablet emulator | 8 GiB |
+
+(what each holds idle, measured on an Apple-silicon Mac; Vision Pro at what
+it reached with an app open). The budget is 60% of physical memory, or
+`SMIX_DEVICE_BUDGET_GIB`. A Vision Pro or an Apple TV runs alone — it is
+refused beside anything else, and nothing boots beside it —
+unless `SMIX_HEAVY_DEVICES_ALONE=0`. Whatever the weights say, nothing boots
+while swap in use has reached half of physical memory or less than 15% of
+memory is free. A device that is already running is not weighed again.
+
+```bash
+smix sim boot sim-smix-02 --wait 600    # queue for up to ten minutes instead of refusing
+```
+
+`--wait` looks again every ten seconds and boots as soon as there is room;
+when the time runs out it refuses with the same names.
+
 ### Taking down one task's resources (`smix cleanup`)
 
 ```bash
