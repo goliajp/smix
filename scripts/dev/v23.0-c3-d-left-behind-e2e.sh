@@ -25,10 +25,10 @@ log()  { printf '[v23.0-c3-d] %s\n' "$*" >&2; }
 fail() { printf '[v23.0-c3-d] FAIL: %s\n' "$*" >&2; exit 1; }
 cannot_judge() { printf '[v23.0-c3-d] cannot judge: %s\n' "$*" >&2; exit 2; }
 
-UDID="" SERIAL=""
+UDID="" SERIAL="" WE_BOOTED_IOS=0 WE_BOOTED_AND=0
 cleanup() {
-  [ -n "$UDID" ] && "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true
-  [ -n "$SERIAL" ] && "$SMIX" sim shutdown "$SERIAL" >/dev/null 2>&1 || true
+  [ "$WE_BOOTED_IOS" = 1 ] && "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true
+  [ "$WE_BOOTED_AND" = 1 ] && "$SMIX" sim shutdown "$SERIAL" >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -48,10 +48,12 @@ case "$(simulator_name "$UDID")" in sim-smix-*) ;; *) cannot_judge "$UDID is not
 
 log "1. A boots the simulator; 25 s later B boots the emulator"
 with_deadline 300 "$SMIX" --owner "$A" sim boot "$UDID" >"$WORK/boot.log" 2>&1 || fail "boot: $(tail -3 "$WORK/boot.log")"
+WE_BOOTED_IOS=1
 sleep 25
 SMIX_OWNER="$B" with_deadline 300 "$SMIX" sim boot "$E2E_ANDROID" --no-window >"$WORK/aboot.log" 2>&1 \
   || fail "boot: $(tail -3 "$WORK/aboot.log")"
 SERIAL="$("$SMIX" sim resolve "$E2E_ANDROID" 2>/dev/null | tail -1)"
+WE_BOOTED_AND=1
 # an emulator boots for longer than the limit: B touches it once more, as
 # its next command would, so it is fresh when the dry run looks
 SMIX_OWNER="$B" "$SMIX" sim boot "$E2E_ANDROID" >"$WORK/touch.log" 2>&1 \
@@ -74,7 +76,7 @@ SMIX_IDLE_DEVICE_SECS=20 with_deadline 300 "$SMIX" --owner "$A" sim boot "$UDID"
   || fail "4: $(tail -3 "$WORK/boot2.log")"
 grep -q "reclaimed $SERIAL ($B)" "$WORK/boot2.log" || fail "4: the boot did not reclaim the emulator: $(cat "$WORK/boot2.log")"
 [ "$(running "$SERIAL")" = False ] || fail "4: the emulator is still running"
-SERIAL=""
+WE_BOOTED_AND=0
 [ "$(running "$UDID")" = True ] || fail "4: the simulator did not boot"
 
 log "V23.0-C3-D-LEFT-BEHIND-PASS"
