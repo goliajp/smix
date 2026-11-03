@@ -33,6 +33,7 @@ fn failure_code_serde_screaming_snake_case() {
         (FailureCode::Timeout, "\"TIMEOUT\""),
         (FailureCode::AssertionFailed, "\"ASSERTION_FAILED\""),
         (FailureCode::AppNotRunning, "\"APP_NOT_RUNNING\""),
+        (FailureCode::AppNotInForeground, "\"APP_NOT_IN_FOREGROUND\""),
         (FailureCode::SimulatorNotBooted, "\"SIMULATOR_NOT_BOOTED\""),
         (FailureCode::DriverError, "\"DRIVER_ERROR\""),
     ];

@@ -2359,19 +2359,15 @@ mod record_actions_tests {
 }
 
 /// The categories this client recognises, which must be the ones the
-/// runner emits.
-///
-/// A category not on this list falls through to the legacy free-form
-/// slot and loses its `category`, so adding one to the Swift enum and
-/// not here silently downgrades it. The test below reads the enum and
-/// checks, because a hand-kept copy of somebody else's list is a copy
-/// that goes stale without saying so.
+/// runner emits: one missing here arrives with no `category`. The test
+/// below reads the Swift enum, so this copy cannot go stale silently.
 pub const KNOWN_UNAVAILABLE_CATEGORIES: &[&str] = &[
     "crashed-during-init",
     "alive-but-tree-empty",
     "alive-but-tree-stale",
     "driver-disconnected",
     "not-running",
+    "in-background",
     "unknown",
 ];
 

@@ -53,6 +53,7 @@ pub use ios_device::IosDeviceControl;
 // Android DeviceControl impl backed by smix-adb.
 mod android_animations;
 pub mod android_device;
+pub mod android_push;
 mod android_refusal;
 mod ios_permission;
 pub use android_device::{
@@ -1975,11 +1976,10 @@ impl App {
             .map_err(simctl_to_failure)
     }
 
-    /// Deliver an APNS payload to `bundle_id` via `simctl push`.
-    /// The payload file must contain a JSON dictionary with at least an
-    /// `aps` key (per Apple's spec). Mirrors maestro yaml `sendPush:`
-    /// once that command lands upstream — there is no public maestro
-    /// yaml `sendPush` today, so this is SDK-only surface.
+    /// Deliver the APNs payload in `apns_json_path` (a JSON object with an
+    /// `aps` key) to `bundle_id`: `simctl push` on a simulator; on Android
+    /// the broadcast the app's debug receiver answers (see the flow verb
+    /// `sendPush`).
     pub async fn send_push(
         &self,
         bundle_id: &str,

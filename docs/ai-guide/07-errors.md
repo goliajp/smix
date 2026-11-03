@@ -60,7 +60,7 @@ Codes fall into two kinds, and `smix run --format json` says which in
 
 | judges the screen (`true`) | smix could not look (`false`) |
 |---|---|
-| `ELEMENT_NOT_FOUND` `NOT_VISIBLE` `NOT_ENABLED` `AMBIGUOUS` `TIMEOUT` `ASSERTION_FAILED` `TAP_MISSED` `COORDINATE_SPACE_MISMATCH` | `DRIVER_ERROR` `APP_NOT_RUNNING` `SIMULATOR_NOT_BOOTED` `CAPTURE_BACKPRESSURE` |
+| `ELEMENT_NOT_FOUND` `NOT_VISIBLE` `NOT_ENABLED` `AMBIGUOUS` `TIMEOUT` `ASSERTION_FAILED` `TAP_MISSED` `COORDINATE_SPACE_MISMATCH` | `DRIVER_ERROR` `APP_NOT_RUNNING` `APP_NOT_IN_FOREGROUND` `SIMULATOR_NOT_BOOTED` `CAPTURE_BACKPRESSURE` |
 
 The first kind is an answer about the app; the second is about the
 machinery between you and it. A flow treats them differently:
@@ -156,6 +156,27 @@ is not a verdict on whatever your script was checking.
 - Check app's crash log: `smix sim exec <udid> spawn ~/Library/Logs/CoreSimulator/<udid>/system.log | tail -50`.
 - For iOS, also `xcrun simctl spawn <udid> log show --last 5m --predicate 'eventMessage contains "<bundle-id>"'`.
 - Verify `launchApp` step ran (or that the app is installed: `smix sim list-apps <udid>`).
+
+### APP_NOT_IN_FOREGROUND
+
+**Trigger**: the app has no window in front — another app, or the home
+screen, is there — and the step needs the app's own elements.
+
+On iOS the message names the app's state (`running-background`, or
+`running-background-suspended`) and the app SpringBoard shows in front;
+it comes back at once, where until 23.1 the same query waited 30 s or
+more while XCUITest looked for the app's window and then failed as a
+driver error. On Android it names the app windows on screen instead, and
+cannot tell an app in the background from one that is not running. A
+step that waits keeps looking for three seconds first, so a notification
+just sent has time to show before a tap on it is refused (it took up to
+two seconds on an Android emulator).
+
+**Fix**:
+- Bring it back: `launchApp` (it relaunches by default; `stopApp: false`
+  only brings it forward), or tap the notification that opens it.
+- A notification banner is not the app's: `tapOn` and `assertVisible`
+  find it among the system windows.
 
 ### SIMULATOR_NOT_BOOTED
 

@@ -619,6 +619,70 @@ the device in front of you is a no-op there, not an error.
     link: "https://example.com"
 ```
 
+### Notifications
+
+```yaml
+- sendPush:
+    title: "Order shipped"
+    body: "Your parcel is on its way"
+    data: { route: "detail" }            # the app's own keys, beside `aps`
+- tapOn: "Order shipped"                 # the banner, found by its title
+- sendPush: { payload: "push/order.apns" }   # an APNs payload file, relative to the flow
+```
+
+- `sendPush` delivers a notification to the flow's app. `title` is
+  required with the inline form; `payload:` takes a whole APNs payload
+  instead and does not take `title`, `body` or `data` beside it.
+- **iOS** hands the payload to `simctl push`, simulators only. The app
+  must have asked for notification permission and been allowed; a
+  simulator does not let smix grant it, so answer the prompt in the flow
+  (`tapOn: "Allow"`).
+- **Android** has no local push service. smix sends the app an explicit
+  broadcast, `dev.smix.PUSH`, with the extras `title`, `body` and `data`
+  (the payload's other keys as a JSON object in text), and the app posts
+  the notification itself. Add a receiver to the app's **debug** build
+  (`src/debug/AndroidManifest.xml`, exported, with that action) that
+  posts on a channel of `IMPORTANCE_HIGH` so it shows as a heads-up:
+
+  ```kotlin
+  class SmixPushReceiver : BroadcastReceiver() {
+      override fun onReceive(context: Context, intent: Intent) {
+          val manager = context.getSystemService(NotificationManager::class.java)
+          manager.createNotificationChannel(
+              NotificationChannel("smix-push", "Pushes", NotificationManager.IMPORTANCE_HIGH))
+          val open = PendingIntent.getActivity(context, 0,
+              Intent(context, MainActivity::class.java)
+                  .putExtra("data", intent.getStringExtra("data"))
+                  .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+              PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+          manager.notify(1, Notification.Builder(context, "smix-push")
+              .setSmallIcon(android.R.drawable.ic_dialog_info)
+              .setContentTitle(intent.getStringExtra("title"))
+              .setContentText(intent.getStringExtra("body"))
+              .setContentIntent(open).setAutoCancel(true).build())
+      }
+  }
+  ```
+
+  Without the receiver the step fails saying the app has none. Grant
+  `POST_NOTIFICATIONS` first (`setPermissions`, or install with `-g`).
+  For about two minutes after an emulator boots, Android 16 shows no
+  heads-up at all (it throttles them as a burst); the notification is
+  still in the shade.
+- **The banner** is tapped by its title. On iOS it is a SpringBoard
+  banner, which `tapOn` reaches the way it reaches a permission prompt —
+  after the app's own tree has no match, so the tap comes a few seconds
+  in; the banner stays about seven. On Android the heads-up is in the
+  screen's tree, and a tap into it waits until it has been on screen for
+  0.7 s, since one that is still sliding in drops the touch. Tapping it
+  brings the app forward with whatever the notification opens.
+- **Asserting it**: `assertVisible: "Your parcel is on its way"` passes on
+  the words of an iOS banner (title, body) when the app's tree has none,
+  and says so in the run's warnings; on Android the heads-up's words are
+  in the tree already. Like the tap, the look at the banner comes after
+  the app's own wait, so assert it or tap it — doing both in a row can
+  outlast the banner.
+
 ### Recording (video output)
 
 ```yaml

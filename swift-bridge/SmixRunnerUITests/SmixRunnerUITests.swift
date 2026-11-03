@@ -608,6 +608,10 @@ private func collectSystemPopups(
   for el in springboard.sheets.allElementsBoundByAccessibilityElement {
     consume(el, fallbackType: "sheet", source: "com.apple.springboard")
   }
+  // an app in the background is not asked: each query on it waits 30 s.
+  // Banners go last, so the `popup-N` ids the action walk derives still
+  // count the same containers
+  guard app.state == .runningForeground else { return out + collectBanners() }
   // Bound-app side: the structural iOS modal types
   // (alert / sheet / dialog / popover). The bound-app's own modal
   // surfaces here; the legacy SpringBoard-only path missed them.
@@ -662,7 +666,7 @@ private func collectSystemPopups(
       consume(w, fallbackType: "window", source: bundleId)
     }
   }
-  return out
+  return out + collectBanners()
 }
 
 // The act side of system-popup handling. Walks the same SpringBoard /
@@ -683,16 +687,14 @@ private func findAndTapSystemPopupButton(
   app: XCUIApplication, bundleId: String,
   popupId: String, buttonId: String
 ) -> SmixRunnerServer.SystemPopupActionOutcome {
+  if let banner = tapBanner(popupId: popupId) { return banner }
   let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
   var popupIdx = 0
-  let scanSets: [XCUIElementQuery] = [
-    springboard.alerts,
-    springboard.sheets,
-    app.alerts,
-    app.sheets,
-    app.dialogs,
-    app.popovers,
-  ]
+  // an app in the background is not asked: each query on it waits 30 s
+  let appInFront = app.state == .runningForeground
+  let scanSets: [XCUIElementQuery] =
+    [springboard.alerts, springboard.sheets]
+    + (appInFront ? [app.alerts, app.sheets, app.dialogs, app.popovers] : [])
   for query in scanSets {
     for el in query.allElementsBoundByAccessibilityElement {
       // Snapshot-based: one `el.snapshot()` grabs the container subtree,
@@ -722,27 +724,7 @@ private func findAndTapSystemPopupButton(
           let bId = bn.id.isEmpty ? "b-\(i)" : bn.id
           if bId == buttonId {
             let center = CGPoint(x: bn.frame.midX, y: bn.frame.midY)
-            let popupDelivery = smixDelivery(of: center, layout: smixLayout(of: app))
-            guard let record = SmixEventRecord(orientation: popupDelivery.orientation, displayID: popupDelivery.displayID),
-                  record.addPointerTouchEvent(at: popupDelivery.point) else {
-              return .notFound
-            }
-            let sema = DispatchSemaphore(value: 0)
-            var ok = false
-            Task {
-              do {
-                try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
-                ok = true
-              } catch {
-                FileHandle.standardError.write(
-                  Data(
-                    "smix-runner: system-popup-action daemonProxy error: \(error)\n"
-                      .utf8))
-              }
-              sema.signal()
-            }
-            sema.wait()
-            return ok ? .found : .notFound
+            return tapThroughDaemon(at: center, layoutOf: appInFront ? app : springboard)
           }
         }
         return .notFound
@@ -985,21 +967,11 @@ final class SmixRunnerUITests: XCTestCase {
       }
       return shouldActivate
     }
-    // Session table. Sessions are opened via `POST /session/open`
-    // and carry a client-supplied opaque id; every subsequent request that
-    // includes the `Session-Id` header short-circuits `resolveApp()` here
-    // to return the session's cached XCUIApplication binding — no
-    // `.activate()` on any per-request path, ever, unless the client
-    // explicitly calls `POST /session/renew-activation`.
-    //
-    // Compared with the legacy path (rate-limited to 1 activate / 5 s /
-    // bundle-id), session-backed clients get:
-    //   * zero incidental activations after the initial open
-    //   * O(1) session cache lookup
-    //   * explicit escape hatch for foreground-drift recovery (renew)
-    //
-    // The table stores each session's bundle id + XCUIApplication +
-    // last-renew timestamp for the 2 s renew rate limit.
+    // Session table: a request with `Session-Id` gets the session's cached
+    // XCUIApplication from `resolveApp()` and is never activated on the way,
+    // unless the client asks with `POST /session/renew-activation` (rate
+    // limited to one per 2 s). Without a session, activation is limited to
+    // one per 5 s per bundle id.
     struct SessionEntry: Sendable {
       let bundleId: String
       let app: XCUIApplication
@@ -1127,8 +1099,7 @@ final class SmixRunnerUITests: XCTestCase {
       if let sid = ctx.sessionId {
         sessions.lock()
         var entry = sessionTable[sid]
-        // Every hit refreshes the last-access clock so
-        // the sweep only reaps genuinely-idle sessions.
+        // every hit refreshes the clock the idle sweep reads
         if entry != nil {
           entry!.lastAccessedAt = Date()
           sessionTable[sid] = entry!
@@ -1137,8 +1108,7 @@ final class SmixRunnerUITests: XCTestCase {
         if let entry = entry {
           return entry.app
         }
-        // Unknown session id → fall through to legacy path with the
-        // provided bundleId (best-effort recovery).
+        // unknown session id: fall through to the bundle id the request named
       }
       if let b = ctx.bundleId, b != bundleId {
         let target = XCUIApplication(bundleIdentifier: b)
@@ -1151,6 +1121,16 @@ final class SmixRunnerUITests: XCTestCase {
         _ = await maybeActivate(bundleId, app)
       }
       return app
+    }
+    ForegroundGate.install { ctx in
+      let target = await resolveApp()
+      let session = ctx.sessionId.flatMap { sid -> String? in
+        sessions.lock()
+        defer { sessions.unlock() }
+        return sessionTable[sid]?.bundleId
+      }
+      let named = session ?? ctx.bundleId ?? bundleId
+      return await SmixRunnerServer.onMain { appNotInFront(target, bundleId: named) }
     }
 
     // Per-target frame lookup. Callers that used the module-scope

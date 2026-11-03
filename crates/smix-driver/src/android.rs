@@ -100,23 +100,16 @@ impl Driver for AndroidDriver {
     /// Android impl: send the package of the app under test as
     /// `App-Bundle-Id` on every request.
     ///
-    /// It does not pin the runner to one app the way the iOS header
-    /// does — Android's `/tree` walks every attached window and there
-    /// is no `XCUIApplication` to rebind. What needs it is id lookup:
-    /// Compose emits `<pkg>:id/<tag>` on some layouts, and the runner
-    /// cannot construct that spelling without knowing the package.
+    /// It does not pin the runner to one app: `/tree` walks every window.
+    /// Id lookup needs it (Compose emits `<pkg>:id/<tag>` on some layouts),
+    /// and so does telling that the app has no window on screen.
     fn set_target_bundle_id(&mut self, bundle: &str) {
         self.runner.set_target_bundle_id(bundle);
     }
 
     /// Android impl: attach / clear the `Session-Id` header on every
-    /// subsequent request.
-    ///
-    /// The Kotlin runner does serve the `/session/*` routes and keeps a
-    /// `SessionTable`; sessions are optional there rather than absent,
-    /// which is what "Android drives sessionless" is shorthand for. A
-    /// flow that never opens one still works, because every action
-    /// route resolves without consulting the table.
+    /// subsequent request. The runner keeps a session table, but sessions
+    /// are optional there: every action route resolves without it.
     fn set_session_id(&mut self, id: Option<String>) {
         match id {
             Some(sid) => self.runner.set_session_id(sid),
@@ -272,26 +265,25 @@ impl Driver for AndroidDriver {
         timeout: Duration,
         include: Option<IncludeScope>,
     ) -> Result<A11yNode, ExpectationFailure> {
-        // Poll the tree up to `timeout`, return the matched node on
-        // first hit. Mirror of iOS wait_for semantics.
+        // poll the tree up to `timeout`; an app with no window on screen ends it sooner
         let budget = crate::poll::Budget::new(timeout);
         let mut stillness = crate::poll::Stillness::new(self.give_up_when_still);
+        let mut away = crate::app_away::Away::default();
+        let app = self.runner.target_bundle_id().map(str::to_string);
         loop {
             let look = budget.look();
             let tree = self.tree(include).await?;
             if let Some(node) = resolve_selector(&tree, selector) {
                 return Ok(node.clone());
             }
+            if let Some(e) = crate::app_away::check(app.as_deref(), &tree, &mut away) {
+                return Err(e);
+            }
             let still = stillness.still_for_the_limit(crate::poll::fingerprint(&tree));
             if still || budget.spent_by(look) {
-                // Suggestions scan the whole visible tree, not just the ten
-                // displayed elements: an Android window dump leads with the
-                // navigation / status bar chrome, so the first ten
-                // identity-bearing nodes are all system UI and the app's own
-                // content (which the near-miss target actually resembles)
-                // sits far deeper. Truncating the candidate set to the
-                // display limit would blind "Did you mean ...?" to every real
-                // app element.
+                // suggestions scan the whole tree: an Android dump leads with
+                // the system bars, so the first ten named nodes are all chrome
+                // and "Did you mean" would never see the app's own elements
                 let candidates = collect_visible_summaries(&tree, DEFAULT_VISIBLE_LIMIT);
                 let target = crate::base_text_or_id(selector);
                 let suggestions = smix_error::build_suggestions(target.as_deref(), &candidates);
