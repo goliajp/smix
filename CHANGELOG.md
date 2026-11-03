@@ -4,6 +4,21 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- **A step on an app that is not in front fails at once, with its own
+  code: `APP_NOT_IN_FOREGROUND`.** On iOS a tap, find, fill or tree read
+  on an app in the background waited while XCUITest looked for the app's
+  window — 31 s an attempt, three attempts — and then failed as a driver
+  error. The runner now reads the app's state first and answers
+  immediately, naming the state and the app SpringBoard shows in front.
+  On Android a step that found nothing and no window of the app on screen
+  says so, naming the app windows that are there, instead of timing out
+  as `ELEMENT_NOT_FOUND`. A step that waits keeps looking for one second
+  first — the time an app takes to come back when its notification is
+  tapped. `?include=all-windows` and system popups are not held. The code
+  is in the three SDKs' failure-code lists.
+
 ### Changed
 
 - **A tap whose target moved now waits for a slow effect instead of

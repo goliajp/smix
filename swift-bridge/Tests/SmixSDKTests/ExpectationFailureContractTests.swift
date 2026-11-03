@@ -47,7 +47,7 @@ final class ExpectationFailureContractTests: XCTestCase {
             "AMBIGUOUS", "TIMEOUT", "ASSERTION_FAILED",
             "APP_NOT_RUNNING", "SIMULATOR_NOT_BOOTED", "TAP_MISSED",
             "COORDINATE_SPACE_MISMATCH", "DRIVER_ERROR",
-            "CAPTURE_BACKPRESSURE",
+            "CAPTURE_BACKPRESSURE", "APP_NOT_IN_FOREGROUND",
         ]
         XCTAssertEqual(Set(FailureCode.allCases.map { $0.rawValue }), expected)
         // Counted off the list above rather than written out. A literal

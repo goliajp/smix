@@ -100,6 +100,7 @@ pub(super) async fn resolve_aimed(
 ) -> Result<crate::Aimed, ExpectationFailure> {
     let budget = crate::poll::Budget::new(Duration::from_millis(5000));
     let began = std::time::Instant::now();
+    let mut away = crate::app_away::Away::default();
     loop {
         let look = budget.look();
         let perceived = driver.perceive(include).await?;
@@ -145,6 +146,10 @@ pub(super) async fn resolve_aimed(
                 ));
             }
             Err(HostResolveError::NotFound) => {
+                let app = driver.runner().target_bundle_id();
+                if let Some(e) = crate::app_away::check(app, &tree, &mut away) {
+                    return Err(e);
+                }
                 if budget.spent_by(look) {
                     return Err(crate::element_not_found(&tree, selector));
                 }

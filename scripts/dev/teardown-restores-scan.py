@@ -137,6 +137,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v22.0-c2-a-a-tap-and-its-effect-e2e.sh",
     "v22.0-c2-b-the-shown-month-e2e.sh",
     "v22.0-c2-c-the-apps-own-log-e2e.sh",
+    "v23.0-c2-a-an-app-not-in-front-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.
