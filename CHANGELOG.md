@@ -2,6 +2,56 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [23.2.0] — 2026-11-03
+
+### Added
+
+- **Owners: whose a device is.** `--owner <task>` (or `SMIX_OWNER`) on any
+  command records what it boots or brings up — the boot, a runner, a
+  recording, a forward — as that task's, beside the device's ledger, and
+  the record goes when the resource does. The boot stays with whoever
+  turned the device on; a later task's runner on it is the later task's.
+  No owner given is recorded as none, never guessed. A name is 1–64
+  letters, digits, `.`, `_`, `-`, `:`; anything else is refused up front.
+- **`smix status`: the whole machine.** Every simulator and emulator
+  running here and every device smix keeps a ledger for, with its owner,
+  whether smix booted it, since when, who holds it and whether that
+  process is alive, the runner port, and its memory — `phys_footprint`
+  summed over the simulator's processes, or the emulator's `qemu`.
+  `--json` for the same rows.
+- **`smix cleanup --owner <task>`** closes one task's runners, recordings,
+  forwards and the devices it booted, by the graceful path a reconcile
+  uses, device last, and leaves everything else with the reason: another
+  owner's, no owner, or a device whose holder is still running. Runtimes
+  and images are never touched. `--dry-run` lists and closes nothing.
+- **`smix cleanup --orphans`** closes the devices smix booted that nobody
+  holds and no command has touched for `SMIX_IDLE_DEVICE_SECS` (30
+  minutes; `0` for never).
+
+### Changed
+
+- **`smix sim boot` first asks whether the machine has room.** It weighs
+  every running simulator and emulator — iPhone and iPad 9 GiB, Apple TV
+  4, Vision Pro 12, Apple Watch 3, Android phone 7, tablet 8 — against 60%
+  of physical memory (`SMIX_DEVICE_BUDGET_GIB`), keeps a Vision Pro or
+  Apple TV alone (`SMIX_HEAVY_DEVICES_ALONE=0` to share), and boots
+  nothing while swap in use has reached half of physical memory or less
+  than 15% of memory is free. Refused, it names each running device, its
+  owner and since when; `--wait <seconds>` queues instead. Before
+  weighing, it reclaims devices left behind (see `cleanup --orphans`) and
+  says each one it closed. Two tasks once booted eleven devices on one
+  64 GiB Mac and nearly stopped it.
+
+### Fixed
+
+- **A reconcile, and now a cleanup, could not stop an emulator smix
+  booted.** It shut every device down with `simctl`, which answered
+  "Invalid device" for an emulator; it now stops one with `adb emu kill`
+  and waits for adb to stop listing it.
+- **The 23.1.0 tree failed two of its own checks**: the guide gate could
+  not run the new Notifications examples, and clippy flagged two lines of
+  the not-in-front work. Neither changed what 23.1.0 does.
+
 ## [23.1.0] — 2026-11-03
 
 ### Added
