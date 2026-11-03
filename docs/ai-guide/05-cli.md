@@ -946,6 +946,23 @@ An idle iPhone simulator is about 8.5 GiB, an Apple TV about 3.7 GiB, an
 Android 16 phone emulator about 6.7 GiB. It reads; it sends no device a
 command.
 
+### Taking down one task's resources (`smix cleanup`)
+
+```bash
+smix --owner qa-run-2 cleanup --dry-run   # list what would be closed
+smix --owner qa-run-2 cleanup             # close it
+```
+
+Closes what was recorded under that owner — its runners, supervisors,
+recordings, forwards and the devices it booted — by the same graceful path
+`smix lease reconcile` uses, in its order: the device last, once nothing is
+talking to it. Each line says what was closed, what was left and why: a
+resource of another owner (`left booted — qa-run-1's`), one with no owner,
+or a device whose holder is still running, which gives up nothing — closing
+a runner under a live command pulls it out from under work in progress.
+Simulator runtimes and images belong to the machine and are never touched.
+The exit code is 1 when something of the owner's could not be closed.
+
 ### Perf regression (`smix bench`)
 
 ```bash
