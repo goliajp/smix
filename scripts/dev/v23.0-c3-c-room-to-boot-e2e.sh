@@ -29,11 +29,11 @@ log()  { printf '[v23.0-c3-c] %s\n' "$*" >&2; }
 fail() { printf '[v23.0-c3-c] FAIL: %s\n' "$*" >&2; exit 1; }
 cannot_judge() { printf '[v23.0-c3-c] cannot judge: %s\n' "$*" >&2; exit 2; }
 
-UDID="" TV_UDID="" SERIAL=""
+UDID="" TV_UDID="" SERIAL="" WE_BOOTED_IOS=0 WE_BOOTED_AND=0 WE_BOOTED_TV=0
 cleanup() {
-  [ -n "$UDID" ] && "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true
-  [ -n "$TV_UDID" ] && "$SMIX" sim shutdown "$TV_UDID" >/dev/null 2>&1 || true
-  [ -n "$SERIAL" ] && "$SMIX" sim shutdown "$SERIAL" >/dev/null 2>&1 || true
+  [ "$WE_BOOTED_IOS" = 1 ] && "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true
+  [ "$WE_BOOTED_TV" = 1 ] && "$SMIX" sim shutdown "$TV_UDID" >/dev/null 2>&1 || true
+  [ "$WE_BOOTED_AND" = 1 ] && "$SMIX" sim shutdown "$SERIAL" >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -50,9 +50,9 @@ done
 log "1. task A boots an iPhone"
 SMIX_DEVICE_BUDGET_GIB=$OPEN with_deadline 300 "$SMIX" --owner "$A" sim boot "$UDID" >"$WORK/boot.log" 2>&1 \
   || fail "boot: $(tail -3 "$WORK/boot.log")"
+WE_BOOTED_IOS=1
 
 log "2. task B's Apple TV is refused"
-# raw run: this refusal is what is judged
 if SMIX_DEVICE_BUDGET_GIB=$OPEN "$SMIX" --owner "$B" sim boot "$TV_UDID" >"$WORK/tv.log" 2>&1; then
   fail "2: an Apple TV booted beside a running iPhone"
 fi
@@ -75,5 +75,6 @@ log "4. the same emulator under the open budget boots"
 SMIX_DEVICE_BUDGET_GIB=$OPEN SMIX_OWNER="$B" with_deadline 300 "$SMIX" sim boot "$E2E_ANDROID" --no-window \
   >"$WORK/em2.log" 2>&1 || fail "4: $(tail -3 "$WORK/em2.log")"
 SERIAL="$("$SMIX" sim resolve "$E2E_ANDROID" 2>/dev/null | tail -1)"
+WE_BOOTED_AND=1
 
 log "V23.0-C3-C-ROOM-TO-BOOT-PASS"

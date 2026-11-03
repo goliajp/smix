@@ -305,9 +305,13 @@ fn shutdown_emulator(serial: &str) -> Outcome {
         Err(e) => return Outcome::Failed(e),
     }
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-    while std::time::Instant::now() < deadline {
+    loop {
+        let look = std::time::Instant::now();
         if !listed() {
             return Outcome::Closed(format!("emulator {serial} stopped"));
+        }
+        if look >= deadline {
+            break;
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
     }

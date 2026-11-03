@@ -29,11 +29,11 @@ log()  { printf '[v23.0-c3-a] %s\n' "$*" >&2; }
 fail() { printf '[v23.0-c3-a] FAIL: %s\n' "$*" >&2; exit 1; }
 cannot_judge() { printf '[v23.0-c3-a] cannot judge: %s\n' "$*" >&2; exit 2; }
 
-UDID="" SERIAL="" IOS_UP=0 IOS_ON=0 AND_ON=0
+UDID="" SERIAL="" IOS_UP=0 WE_BOOTED_IOS=0 WE_BOOTED_AND=0
 cleanup() {
   [ "$IOS_UP" = 1 ] && "$SMIX" runner down --device "$UDID" --runner-port "$IOS_PORT" >/dev/null 2>&1 || true
-  [ "$IOS_ON" = 1 ] && "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true
-  [ "$AND_ON" = 1 ] && "$SMIX" sim shutdown "$SERIAL" >/dev/null 2>&1 || true
+  [ "$WE_BOOTED_IOS" = 1 ] && "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true
+  [ "$WE_BOOTED_AND" = 1 ] && "$SMIX" sim shutdown "$SERIAL" >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -63,11 +63,11 @@ esac
 
 log "1. task A boots the simulator, task B the emulator"
 with_deadline 300 "$SMIX" --owner "$A" sim boot "$UDID" >"$WORK/boot.log" 2>&1 || fail "boot: $(tail -3 "$WORK/boot.log")"
-IOS_ON=1
+WE_BOOTED_IOS=1
 SMIX_OWNER="$B" with_deadline 300 "$SMIX" sim boot "$E2E_ANDROID" --no-window >"$WORK/aboot.log" 2>&1 \
   || fail "boot: $(tail -3 "$WORK/aboot.log")"
 SERIAL="$("$SMIX" sim resolve "$E2E_ANDROID" 2>/dev/null | tail -1)"
-AND_ON=1
+WE_BOOTED_AND=1
 [ "$(owner_of "$UDID" booted)" = "$A" ] || fail "1: the simulator's boot is not $A's: '$(owner_of "$UDID" booted)'"
 [ "$(owner_of "$SERIAL" booted)" = "$B" ] || fail "1: the emulator's boot is not $B's: '$(owner_of "$SERIAL" booted)'"
 [ "$(booted_by_smix "$UDID")" = True ] || fail "1: status does not say smix booted the simulator"
@@ -85,9 +85,9 @@ log "3. shut down, the owners go with them"
 "$SMIX" runner down --device "$UDID" --runner-port "$IOS_PORT" >/dev/null 2>&1 || fail "runner down"
 IOS_UP=0
 "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || fail "shutdown $UDID"
-IOS_ON=0
+WE_BOOTED_IOS=0
 "$SMIX" sim shutdown "$SERIAL" >/dev/null 2>&1 || fail "shutdown $SERIAL"
-AND_ON=0
+WE_BOOTED_AND=0
 for d in "$UDID" "$SERIAL"; do
   for k in booted runner; do
     [ -z "$(owner_of "$d" "$k")" ] || fail "3: $d still names an owner for $k: $(owner_of "$d" "$k")"

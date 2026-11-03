@@ -350,11 +350,14 @@ pub(crate) async fn check_boot(device_ref: &str, wait_secs: u64) -> Result<(), S
 pub(crate) async fn admit(target: Class, wait: Duration) -> Result<(), String> {
     let deadline = Instant::now() + wait;
     loop {
+        // judged by when this look began: a slow look must not count as
+        // having waited the whole time and then be refused unseen
+        let look = Instant::now();
         let m = machine();
         let verdict = decide(target, &running().await, m, limits(m.total_gib)?);
         match verdict {
             Verdict::Boot => return Ok(()),
-            Verdict::Refuse(why) if Instant::now() >= deadline => {
+            Verdict::Refuse(why) if look >= deadline => {
                 return Err(format!(
                     "not booting: {why}.\n  shut one down (`smix status` lists them, \
                      `smix cleanup --owner <task>` takes a task's), or wait with --wait <seconds>"
