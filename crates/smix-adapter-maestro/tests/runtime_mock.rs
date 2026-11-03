@@ -234,6 +234,9 @@ struct MockApp {
     /// where it starts. A tap on `move-it` adds `move_by` to it.
     input_shift: Mutex<f64>,
     move_by: Mutex<f64>,
+    /// A tap on `fixture-input` itself moves it by `move_by`: a tap that
+    /// landed and started a transition.
+    input_moves_when_tapped: Mutex<bool>,
     /// The regions the last `assert_screenshot` was handed.
     last_masks: Mutex<Vec<smix_adapter_maestro::MaskRegion>>,
     /// How the last `assert_screenshot` was to judge, and what it was
@@ -270,6 +273,7 @@ impl MockApp {
             pixels_per_point: Mutex::new(1.0),
             input_shift: Mutex::new(0.0),
             move_by: Mutex::new(0.0),
+            input_moves_when_tapped: Mutex::new(false),
             last_masks: Mutex::new(Vec::new()),
             last_screenshot_check: Mutex::new(None),
             scroll_failure: Mutex::new(None),
@@ -421,7 +425,10 @@ impl AppLike for MockApp {
         Ok(*self.pixels_per_point.lock().unwrap())
     }
     async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
-        if matches!(selector, Selector::Id { id, .. } if id == "move-it") {
+        if matches!(selector, Selector::Id { id, .. }
+            if id == "move-it"
+                || (id == "fixture-input" && *self.input_moves_when_tapped.lock().unwrap()))
+        {
             *self.input_shift.lock().unwrap() += *self.move_by.lock().unwrap();
         }
         // `overlay` appears while the app is between `show-overlay` and
@@ -4854,7 +4861,14 @@ async fn tap_until(
     misses: usize,
     retries: u32,
 ) -> (MockApp, Result<smix_adapter_maestro::RunReport, RunError>) {
-    let app = MockApp::new();
+    tap_until_on(MockApp::new(), misses, retries).await
+}
+
+async fn tap_until_on(
+    app: MockApp,
+    misses: usize,
+    retries: u32,
+) -> (MockApp, Result<smix_adapter_maestro::RunReport, RunError>) {
     app.wait_for_misses
         .lock()
         .unwrap()
@@ -4889,8 +4903,41 @@ async fn a_tap_that_changes_nothing_fails_saying_so() {
     let (app, out) = tap_until(99, 2).await;
     let e = out.expect_err("the effect never showed").to_string();
     assert_eq!(taps_on(&app, "fixture-input"), 3);
-    assert!(e.contains("did not happen within 50 ms"), "{e}");
+    assert!(
+        e.contains("did not happen within 150 ms of the first"),
+        "{e}"
+    );
     assert!(e.contains("landed and the screen did not change"), "{e}");
+}
+
+fn a_tap_that_moves_its_target() -> MockApp {
+    let app = MockApp::new();
+    *app.move_by.lock().unwrap() = 300.0;
+    *app.input_moves_when_tapped.lock().unwrap() = true;
+    app
+}
+
+/// A tap that moved its target landed: the retries left are spent waiting
+/// for a slow effect, and the tap is not done again.
+#[tokio::test]
+async fn a_tap_that_moved_its_target_waits_for_a_slow_effect() {
+    let (app, out) = tap_until_on(a_tap_that_moves_its_target(), 2, 2).await;
+    out.expect("the effect came in the third window");
+    assert_eq!(taps_on(&app, "fixture-input"), 1);
+}
+
+/// When the effect never comes after the target moved, the failure says the
+/// tap landed and the effect is late or different, not that nothing changed.
+#[tokio::test]
+async fn a_tap_that_moved_its_target_and_never_had_its_effect_says_so() {
+    let (app, out) = tap_until_on(a_tap_that_moves_its_target(), 99, 1).await;
+    let e = out.expect_err("the effect never showed").to_string();
+    assert_eq!(taps_on(&app, "fixture-input"), 1);
+    assert!(
+        e.contains("did not happen within 100 ms of the first"),
+        "{e}"
+    );
+    assert!(e.contains("target moved or left"), "{e}");
 }
 
 // --- step timings --------------------------------------------------------

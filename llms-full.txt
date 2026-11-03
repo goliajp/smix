@@ -409,10 +409,14 @@ one that stops.
 - The action is done again only while the effect has not shown **and** the
   target stands where it stood (same id, same box; for a key, the same
   field still holds focus). A target that moved or left means the action
-  did something else, and it is not repeated.
+  landed, and it is not repeated: each retry left is spent waiting another
+  `within` for an effect that is only slow, so the wait never ends earlier
+  than `within × (retries + 1)` after the first tap.
 - When the effect never shows, the step fails saying how often the action
-  was done and that it landed while the screen did not change, with the
-  elements on screen and a screenshot written to `.smix/timeouts/`.
+  was done, how long it waited, and which case it was: the target stayed
+  put and the screen did not change, or the target moved and the effect is
+  late or different. The elements on screen go with it, and a screenshot
+  is written to `.smix/timeouts/`.
 - `until` takes `visible:` or `notVisible:` with any selector, as
   `extendedWaitUntil` does. A point or a repeated tap does not take one.
 
