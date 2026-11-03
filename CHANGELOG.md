@@ -2,6 +2,22 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Changed
+
+- **A tap whose target moved now waits for a slow effect instead of
+  failing.** With `until`, a target that moved or left after the tap means
+  the tap landed; until now the step failed once the first `within` ran
+  out, and on a loaded machine a transition that was only slow failed with
+  it. Each retry left is now spent waiting another `within` without doing
+  the action again, so the step gives the effect `within × (retries + 1)`
+  either way. The failure also says which case it was — the target stayed
+  put and nothing changed, or it moved and the effect is late or different
+  — and how long it waited from the first tap. The old message could say
+  the target "is still where it was" after the last retry without having
+  looked.
+
 ## [23.0.0] — 2026-11-03
 
 ### Added

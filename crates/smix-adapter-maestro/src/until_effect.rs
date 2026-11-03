@@ -128,7 +128,7 @@ pub(crate) fn not_seen(
     verb: &str,
     until: &Selector,
     visible: bool,
-    within_ms: u64,
+    waited_ms: u64,
     times: u32,
     moved: bool,
 ) -> ExpectationFailure {
@@ -139,15 +139,17 @@ pub(crate) fn not_seen(
         format!("{what} go")
     };
     let why = if moved {
-        "its target moved or left after the last one, so it was not done again"
+        "its target moved or left after it was done, so the action landed but its effect did \
+         not come in that time (a slower screen needs a longer `within` or more `retries`; a \
+         different screen means the action did something else)"
     } else {
         "the target is still where it was, so the action landed and the screen did not change"
     };
     ExpectationFailure::new(FailureInit {
         code: Some(FailureCode::AssertionFailed),
         message: format!(
-            "{verb} was done {times} time{s} and {effect} did not happen within {within_ms} ms of \
-             any of them; {why}",
+            "{verb} was done {times} time{s} and {effect} did not happen within {waited_ms} ms of \
+             the first; {why}",
             s = if times == 1 { "" } else { "s" },
         ),
         selector: Some(until.clone()),
