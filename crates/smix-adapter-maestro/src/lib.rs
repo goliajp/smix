@@ -297,26 +297,6 @@ pub use parser::{
 pub use runtime::{Adapter, AppLike, RunError, RunReport, RunStepReport, StepDebugRecord};
 pub use timing::{RunTiming, StepTiming};
 
-/// A maestro YAML command. Each variant corresponds to one or more
-/// `smix-sdk` action calls; the enum itself is a structural
-/// representation of the parsed yaml node.
-///
-/// References to the yaml schema:
-/// - `tapOn`: `{ "tapOn": "X" }` short or `{ "tapOn": { text, id, index, ... } }` full
-/// - `waitForAnimationToEnd`: `{ "waitForAnimationToEnd": null }`
-/// - `extendedWaitUntil`: `{ "extendedWaitUntil": { visible: { text, id }, timeout } }`
-/// - `assertVisible`: `{ "assertVisible": "X" | { text|id } }`
-/// - `inputText`: `{ "inputText": "..." }`
-/// - `pressKey`: `{ "pressKey": "back" | "enter" | ... }`
-/// - `runFlow`: `{ "runFlow": "path/to/subflow.yaml" }`
-///   or `{ "runFlow": { when: { visible }, file } }`
-/// - `scrollUntilVisible`: `{ "scrollUntilVisible": { element: {...}, direction, ... } }`
-/// - `eraseText`: `{ "eraseText": <n> }`
-/// - `swipe`: `{ "swipe": { from, to, ... } }`
-/// - `launchApp`: `{ "launchApp": { clearState, clearKeychain, appId } }`
-/// - `openLink`: `{ "openLink": "<url>" }`
-/// - `stopApp`: `{ "stopApp": null }`
-///
 /// Explicit tap-dispatch override for `tapOn: { dispatch: … }`.
 ///
 /// The default tap path (host-resolve → IOHID native-event synthesize)
@@ -467,6 +447,10 @@ pub enum Step {
         /// Selector to verify.
         selector: Selector,
     },
+    /// A check written with `optional: true` (`assertVisible`,
+    /// `assertNotVisible`, `extendedWaitUntil`, `expect`): a failure on
+    /// what it checked is a skip, as on a block.
+    Optional(Box<Step>),
     /// Type literal text into the focused field. Maps to `App::fill` (chunked).
     InputText(String),
     /// Type into a specific field: yaml `inputText: { id, text }`.

@@ -73,6 +73,12 @@ fn emit_core_steps_round_trip() {
         Step::AssertNotVisible {
             selector: text("Error"),
         },
+        Step::Optional(Box::new(Step::AssertVisible {
+            selector: text("Maybe"),
+        })),
+        Step::Optional(Box::new(Step::AssertNotVisible {
+            selector: id("spinner"),
+        })),
         Step::ExtendedWaitUntil {
             selector: id("spinner"),
             timeout_ms: 5000,

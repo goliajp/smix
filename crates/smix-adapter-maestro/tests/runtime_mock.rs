@@ -5106,3 +5106,51 @@ async fn assert_visible_without_the_words_anywhere_still_fails() {
         .to_string();
     assert!(e.contains("not visible"), "{e}");
 }
+
+#[tokio::test]
+async fn an_optional_assertion_is_skipped_at_the_top_and_inside_a_run_flow() {
+    let gone = smix_sdk::describe_selector(&smix_sdk::id("gone"));
+    let missing = |key: &str| {
+        let app = MockApp::new();
+        app.assert_visible_failures
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), FailureCode::ElementNotFound);
+        app.wait_for_misses
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), usize::MAX);
+        app
+    };
+    let assert = "- assertVisible:\n    id: gone\n    optional: true\n";
+    let wait = "- extendedWaitUntil:\n    visible:\n      id: gone\n    timeout: 300\n    optional: true\n";
+    let expect =
+        "- expect:\n    visible:\n      id: gone\n    timeoutMs: 300\n    optional: true\n";
+    for step in [assert, wait, expect] {
+        let nested = format!(
+            "- runFlow:\n    commands:\n{}",
+            step.lines()
+                .map(|l| format!("      {l}\n"))
+                .collect::<String>()
+        );
+        for body in [step.to_string(), nested] {
+            let app = missing(&gone);
+            let report = run_with(&app, &body).await;
+            let report = report
+                .unwrap_or_else(|e| panic!("optional assertion failed the flow:\n{body}\n{e:?}"));
+            let reason = match &report.steps[0] {
+                RunStepReport::Skipped { reason } => reason.clone(),
+                _ => report.warnings.join("\n"),
+            };
+            assert!(
+                reason.contains("optional") && reason.contains("gone"),
+                "{body}\n{reason}"
+            );
+            let app = missing(&gone);
+            let strict = body.replace("optional: true", "label: strict");
+            run_with(&app, &strict)
+                .await
+                .expect_err("without optional the assertion fails the flow");
+        }
+    }
+}
