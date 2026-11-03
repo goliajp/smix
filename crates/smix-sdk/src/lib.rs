@@ -479,17 +479,11 @@ pub fn plan_launch_fresh_calls(
     plan_launch_fresh_calls_v2(clear_state, clear_keychain, app_path, false)
 }
 
-/// Extended planner with an explicit `force_reinstall`
-/// switch. When `false` (the new default), `clear_state=true` runs
-/// the in-place sandbox clear + privacy reset instead of
-/// `simctl uninstall + install`. This avoids the iOS 26.5 XCUITest
-/// binding loss and the ReportCrash "`<app>` quit
-/// unexpectedly" system dialog — both of which stem
-/// from the uninstall+install sequence.
-///
-/// When `force_reinstall=true` (opt-in via
-/// `SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1`), the uninstall+install path
-/// is preserved for cases where a bit-for-bit reinstall is required.
+/// Extended planner with an explicit `force_reinstall`. `false` (the
+/// default) clears the sandbox and privacy in place instead of
+/// uninstall + install, which loses the XCUITest binding and raises a
+/// "quit unexpectedly" dialog; `true` (`SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1`)
+/// reinstalls bit for bit.
 ///
 /// Since smix 1.0.4.
 #[must_use]
@@ -3209,6 +3203,11 @@ pub fn simctl_to_failure(e: DeviceControlError) -> ExpectationFailure {
                     .into(),
             ),
         ),
+        DeviceControlError::DeviceLocked { .. } => (
+            FailureCode::AppNotRunning,
+            Some("unlock the device — enter its PIN — and run again".into()),
+        ),
+        DeviceControlError::NoLauncher { .. } => (FailureCode::AppNotRunning, None),
         DeviceControlError::Spawn(_) => (
             FailureCode::DriverError,
             Some("xcrun not found — install Xcode command-line tools".into()),
