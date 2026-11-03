@@ -21,7 +21,9 @@ macro_rules! println {
 }
 
 mod act;
+mod footprint;
 mod settle_flags;
+mod status_cmd;
 use settle_flags::settle_from_flags;
 mod authoring;
 mod bench;
@@ -144,6 +146,10 @@ Sim safety hook:
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
+    /// The task this command works for: what it boots or brings up is
+    /// recorded as that task's, for `smix status` and cleanup.
+    #[arg(long, global = true, env = "SMIX_OWNER")]
+    owner: Option<String>,
 }
 
 // A clap top-level command enum: parsed once, held as a single value, never
@@ -174,6 +180,13 @@ enum Cmd {
         /// a freshly registered one is shut down.
         #[arg(long)]
         app: Option<PathBuf>,
+    },
+    /// Every device running on this machine and every one smix keeps a
+    /// ledger for: owner, booted by smix or not, holder, runner, memory.
+    Status {
+        /// The same rows as JSON.
+        #[arg(long)]
+        json: bool,
     },
     /// Say whether this machine can drive anything yet, and if not, what
     /// to run next. `--json` for the same verdict in machine form.
@@ -1218,12 +1231,8 @@ enum LeaseAction {
     Reconcile { device: String },
     /// Answer for a device this machine did not boot.
     ///
-    /// The decision every release was already making and leaving
-    /// nowhere. A dedicated emulator started by hand has no ledger, so
-    /// nothing here may drive it — and the only way through was an
-    /// environment variable that says "it is mine" to one command and is
-    /// forgotten the moment it exits. The next run makes the same
-    /// decision again, and no one can read who made it last time.
+    /// An emulator started by hand has no ledger, so nothing here may drive
+    /// it; a claim records, once, that this machine answers for it.
     ///
     /// A claim grants exactly one of the two things a boot row grants:
     /// this device is yours to drive, and is not yours to switch off.
@@ -1231,9 +1240,8 @@ enum LeaseAction {
     /// difference is never invisible, and the ledger ends it when the
     /// device goes off.
     ///
-    /// Refused while somebody else's live session holds the device —
-    /// claiming is a statement about an unheld device, not a way past
-    /// a held one.
+    /// Refused while somebody else's live session holds the device: a
+    /// claim is about an unheld device, not a way past a held one.
     Claim { device: String },
     /// Give up a claim made by `lease claim`.
     ///
@@ -1248,21 +1256,12 @@ enum LeaseAction {
     /// Three codes rather than two: a check that answers "safe" when it
     /// means "I do not know" is the shape this cycle keeps finding.
     ///
-    /// A claim answers `0` as well, and says so in words: it is the same
-    /// entitlement to drive and deliberately not the same entitlement to
-    /// shut down. Callers that act on the exit code inherit claims
-    /// without being changed; a caller that cares which it is has the
-    /// sentence.
+    /// A claim answers `0` as well, and says so: the same entitlement to
+    /// drive, deliberately not to shut down.
     ///
-    /// Not a teardown permission. It answers "did smix boot this",
-    /// which is not "did *you* boot this" — a shell script's `smix sim
-    /// boot` exits immediately, so the session that booted the device
-    /// is never the one asking. A script that shut down whatever this
-    /// reported as smix's would take away a device another run is
-    /// using. What it is for is the question that could not be answered
-    /// on 2026-08-11: a runner was found holding port 22087, the rule
-    /// said find its owner before touching it, and the owner was
-    /// recorded in a tree nobody was standing in.
+    /// Not a teardown permission: it answers "did smix boot this", not
+    /// "did *you*" — which task a device is for is its owner, in
+    /// `smix status`.
     Owner { device: String },
     /// Fold per-checkout ledgers into this machine's.
     ///
@@ -2744,15 +2743,10 @@ static STDOUT_READER_LEFT: std::sync::atomic::AtomicBool =
 /// What `print!` and `println!` do in this crate.
 ///
 /// A reader that stops reading (`smix sim list | head -1`) is not a
-/// failure of the work: smix stops writing to stdout and finishes what it
-/// was doing, and the exit code reports that work. The two usual answers
-/// are both wrong here. Restoring SIGPIPE's default kills smix silently
-/// the same way when a child it feeds on stdin exits early (simctl,
-/// codesign, devicectl all take stdin). Exiting at once — with 0 or 141 —
-/// would leave a `smix run … | head` device halfway through a flow, and 0
-/// would call that a pass. No smix command streams forever and relies on
-/// SIGPIPE to stop (`runner forward` prints once, then holds), so carrying
-/// on cannot hang anyone.
+/// failure of the work: smix stops writing and finishes, and the exit code
+/// reports the work. SIGPIPE's default would also kill smix when a child it
+/// feeds on stdin exits early, and exiting at once would leave a device
+/// halfway through a flow. No command relies on SIGPIPE to stop.
 ///
 /// Any other write error is std's panic, unchanged.
 fn write_stdout(args: std::fmt::Arguments<'_>) {
@@ -2773,6 +2767,10 @@ fn write_stdout(args: std::fmt::Arguments<'_>) {
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() -> ExitCode {
     let cli: Cli = fill_secret::parse_or_exit();
+    if let Err(e) = status_cmd::adopt_owner(cli.owner.as_deref()) {
+        eprintln!("error: {e}");
+        return ExitCode::from(2);
+    }
     match run(cli).await {
         Ok(code) => code,
         Err(e) => {
@@ -2858,6 +2856,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Init { alias, device, app } => {
             cmd_init(&simctl, alias.as_deref(), device.as_deref(), app.as_deref()).await?
         }
+        Cmd::Status { json } => return Ok(status_cmd::run(json).await),
         Cmd::Doctor {
             json,
             runner_port: port,
