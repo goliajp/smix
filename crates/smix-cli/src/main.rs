@@ -21,6 +21,7 @@ macro_rules! println {
 }
 
 mod act;
+mod cleanup_cmd;
 mod footprint;
 mod settle_flags;
 mod status_cmd;
@@ -187,6 +188,14 @@ enum Cmd {
         /// The same rows as JSON.
         #[arg(long)]
         json: bool,
+    },
+    /// Close what one owner (`--owner` / `SMIX_OWNER`) brought up — its
+    /// runners, recordings, forwards and the devices it booted — by the
+    /// graceful path; leave everything else and say why.
+    Cleanup {
+        /// List what would be closed, and close nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Say whether this machine can drive anything yet, and if not, what
     /// to run next. `--json` for the same verdict in machine form.
@@ -1407,11 +1416,9 @@ enum RunnerAction {
         /// with it, it runs the fix: the same in-place cycle as
         /// `smix runner cycle`, seconds, no xcodebuild restart.
         ///
-        /// It does not reach across to a runner recorded for another
-        /// device, or to one the device ledger has no record of. Those are
-        /// refused with or without it — `runner down --include-unrecorded`
-        /// is the sanctioned way through, and it is a separate decision
-        /// on purpose.
+        /// A runner recorded for another device, or not recorded at all, is
+        /// refused either way; `runner down --include-unrecorded` is that
+        /// separate decision.
         #[arg(long = "force", default_value_t = false)]
         force: bool,
         /// Android: also replace a runner a live process other than this
@@ -1571,21 +1578,16 @@ enum RunnerAction {
         /// not listening is left alone — that is `lease reconcile`'s
         /// question, and it has closes to perform that this does not.
         ///
-        /// Reported by a consumer: four rows, four dead pids, and
-        /// nothing that cleared them. `down` refuses a runner this
-        /// workspace never recorded, so the ledger is what decides
-        /// whether a device can be shut down — and a ledger filling with
-        /// dead rows makes that decision rest on a list nobody maintains.
+        /// The ledger decides what `down` may shut down, so dead rows left in
+        /// it (a consumer had four) make that rest on a list nobody keeps.
         #[arg(long, default_value_t = false)]
         prune: bool,
     },
     /// Extract the CLI's embedded Swift runner sources into the tree for
     /// them, `~/.local/share/smix/runner-sources/ios/<version>-<digest>/`
-    /// — one per set of sources, so another smix on this machine keeps
-    /// its own. Normally done by `smix runner up`; this verb makes it
-    /// explicit for troubleshooting or first-time setup on an air-gapped
-    /// machine. With `--path`, extracts into that directory instead,
-    /// backing any tree already there up beside it.
+    /// — one per set of sources. `smix runner up` does it; this is for
+    /// troubleshooting or an air-gapped machine. `--path` extracts there
+    /// instead, backing up any tree already there.
     Install {
         /// Destination directory. Defaults to this binary's tree under
         /// `$XDG_DATA_HOME/smix/runner-sources/ios/` (falling back to
@@ -1804,9 +1806,8 @@ enum SimAction {
     /// and the flow. It goes when `--remove` names it, when the device
     /// goes away, or when a teardown closes the ledger row this writes.
     ///
-    /// Android only. A simulator already shares this machine's loopback
-    /// and needs nothing; a physical iPhone has no such channel, and
-    /// both say so rather than doing nothing quietly.
+    /// Android only: a simulator shares this machine's loopback, an iPhone
+    /// has no such channel, and both say so.
     Reverse {
         /// Which device, by serial or registry alias.
         device: String,
@@ -2451,18 +2452,11 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
     // `simctl boot` against an emulator and sit there until it timed out
     // 120 seconds later, reporting the timeout rather than the mistake.
     //
-    // `None` means the verb takes no device, or acts on the registry
-    // rather than the device.
-    //
-    // Powering a device on and off is not an Apple-only idea, so both
-    // virtual kinds have it. Physical devices are absent on purpose:
-    // section 9 #1 gates them behind registration and a per-device
-    // opt-in, and nothing here should decide a phone's power state.
+    // `None`: no device, or the registry rather than a device. Both virtual
+    // kinds power on and off; a phone's power state is never decided here.
     const POWERABLE: &[DeviceKind] = &[Simulator, Emulator];
-    // simctl and nothing else. An emulator's counterparts exist
-    // (`emulator -avd`, `adb shell am start`, `adb shell settings`) but
-    // none of them is wired here, and pretending otherwise is how a
-    // caller ends up waiting out a 120-second timeout.
+    // simctl and nothing else: an emulator's counterparts are not wired
+    // here, and pretending otherwise ends in a 120-second timeout.
     const SIMCTL: &[DeviceKind] = &[Simulator];
     Some(
         match action {
@@ -2857,6 +2851,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             cmd_init(&simctl, alias.as_deref(), device.as_deref(), app.as_deref()).await?
         }
         Cmd::Status { json } => return Ok(status_cmd::run(json).await),
+        Cmd::Cleanup { dry_run } => {
+            return Ok(cleanup_cmd::run(
+                smix_lease::owners::current().as_deref(),
+                dry_run,
+            ));
+        }
         Cmd::Doctor {
             json,
             runner_port: port,

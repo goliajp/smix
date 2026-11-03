@@ -140,6 +140,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v23.0-c2-a-an-app-not-in-front-e2e.sh",
     "v23.0-c2-b-a-push-and-its-banner-e2e.sh",
     "v23.0-c3-a-whose-device-e2e.sh",
+    "v23.0-c3-b-cleanup-by-owner-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.
