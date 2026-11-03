@@ -608,6 +608,10 @@ private func collectSystemPopups(
   for el in springboard.sheets.allElementsBoundByAccessibilityElement {
     consume(el, fallbackType: "sheet", source: "com.apple.springboard")
   }
+  // an app in the background is not asked: each query on it waits 30 s.
+  // Banners go last, so the `popup-N` ids the action walk derives still
+  // count the same containers
+  guard app.state == .runningForeground else { return out + collectBanners() }
   // Bound-app side: the structural iOS modal types
   // (alert / sheet / dialog / popover). The bound-app's own modal
   // surfaces here; the legacy SpringBoard-only path missed them.
@@ -662,7 +666,7 @@ private func collectSystemPopups(
       consume(w, fallbackType: "window", source: bundleId)
     }
   }
-  return out
+  return out + collectBanners()
 }
 
 // The act side of system-popup handling. Walks the same SpringBoard /
@@ -683,16 +687,14 @@ private func findAndTapSystemPopupButton(
   app: XCUIApplication, bundleId: String,
   popupId: String, buttonId: String
 ) -> SmixRunnerServer.SystemPopupActionOutcome {
+  if let banner = tapBanner(popupId: popupId) { return banner }
   let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
   var popupIdx = 0
-  let scanSets: [XCUIElementQuery] = [
-    springboard.alerts,
-    springboard.sheets,
-    app.alerts,
-    app.sheets,
-    app.dialogs,
-    app.popovers,
-  ]
+  // an app in the background is not asked: each query on it waits 30 s
+  let appInFront = app.state == .runningForeground
+  let scanSets: [XCUIElementQuery] =
+    [springboard.alerts, springboard.sheets]
+    + (appInFront ? [app.alerts, app.sheets, app.dialogs, app.popovers] : [])
   for query in scanSets {
     for el in query.allElementsBoundByAccessibilityElement {
       // Snapshot-based: one `el.snapshot()` grabs the container subtree,
@@ -722,27 +724,7 @@ private func findAndTapSystemPopupButton(
           let bId = bn.id.isEmpty ? "b-\(i)" : bn.id
           if bId == buttonId {
             let center = CGPoint(x: bn.frame.midX, y: bn.frame.midY)
-            let popupDelivery = smixDelivery(of: center, layout: smixLayout(of: app))
-            guard let record = SmixEventRecord(orientation: popupDelivery.orientation, displayID: popupDelivery.displayID),
-                  record.addPointerTouchEvent(at: popupDelivery.point) else {
-              return .notFound
-            }
-            let sema = DispatchSemaphore(value: 0)
-            var ok = false
-            Task {
-              do {
-                try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
-                ok = true
-              } catch {
-                FileHandle.standardError.write(
-                  Data(
-                    "smix-runner: system-popup-action daemonProxy error: \(error)\n"
-                      .utf8))
-              }
-              sema.signal()
-            }
-            sema.wait()
-            return ok ? .found : .notFound
+            return tapThroughDaemon(at: center, layoutOf: appInFront ? app : springboard)
           }
         }
         return .notFound

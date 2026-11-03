@@ -4,6 +4,8 @@
 //! controller), not to the app, so the app's tree never holds its buttons
 //! and `tapOn: "Allow"` ended in ElementNotFound. When the app's tree has no
 //! match, the popups on screen are asked for a button with the same name.
+//! An iOS notification banner is one of them, its button named by the
+//! notification's title.
 
 use smix_sdk::{FailureCode, Modifiers, Pattern, Selector, SystemPopup};
 
@@ -82,8 +84,15 @@ pub(crate) async fn or_a_popup_button<A: AppLike + ?Sized>(
     tapped: Result<RunStepReport, RunError>,
     warnings: &mut Vec<String>,
 ) -> Result<RunStepReport, RunError> {
+    // an app that is not in front has no tree to hold it, and a notification
+    // banner over another app is exactly what such a flow taps
     let missed = match &tapped {
-        Err(RunError::Sdk(e)) => e.code == FailureCode::ElementNotFound,
+        Err(RunError::Sdk(e)) => {
+            matches!(
+                e.code,
+                FailureCode::ElementNotFound | FailureCode::AppNotInForeground
+            )
+        }
         Ok(RunStepReport::Skipped { .. }) => true,
         _ => false,
     };
