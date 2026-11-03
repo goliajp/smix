@@ -219,24 +219,38 @@ fn start_app(serial: &str, port: u16, name: &str, relaunch: bool) -> Result<(), 
              {serial} <path-to.apk>"
         )));
     }
-    let resolved = adb(serial)
-        .args([
-            "shell",
-            "cmd",
-            "package",
-            "resolve-activity",
-            "--brief",
-            "-c",
-            "android.intent.category.LAUNCHER",
-            name,
-        ])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_default();
-    let Some(activity) = smix_adb::parse_resolved_activity(&resolved, name) else {
-        return Err(Unsettled::App(format!(
-            "{name} is installed on {serial} and has no launcher activity to start"
-        )));
+    let shell = |argv: &[&str]| {
+        adb(serial)
+            .arg("shell")
+            .args(argv)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default()
+    };
+    let brief = shell(&[
+        "cmd",
+        "package",
+        "resolve-activity",
+        "--brief",
+        "-c",
+        "android.intent.category.LAUNCHER",
+        name,
+    ]);
+    // a locked user is why the package manager names nothing for most apps
+    let activity = match smix_adb::parse_resolved_activity(&brief, name) {
+        Some(activity) => activity,
+        None if smix_adb::user_is_locked(&shell(&["dumpsys", "user"])) == Some(true) => {
+            return Err(Unsettled::App(format!(
+                "{serial} is locked — its PIN has not been entered since it booted, \
+                 and {name} cannot start until it is"
+            )));
+        }
+        None => smix_adb::launcher_from_dumpsys(&shell(&["dumpsys", "package", name]), name)
+            .ok_or_else(|| {
+                Unsettled::App(format!(
+                    "{name} is installed on {serial} and has no launcher activity to start"
+                ))
+            })?,
     };
     if relaunch {
         let _ = adb(serial)
