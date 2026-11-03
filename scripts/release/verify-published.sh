@@ -80,6 +80,9 @@ PENDING=()
 say() { printf 'verify: %s\n' "$*"; }
 bad() { printf 'verify: FAIL %s\n' "$*" >&2; FAILED=1; }
 
+# A maven-only ship (SMIX_SHIP_CHANNELS=maven) put nothing on the others,
+# so they are not asked: an absent crate there is the plan, not a failure.
+if [ "${SMIX_SHIP_CHANNELS:-all}" = all ]; then
 # --- crates.io --------------------------------------------------------
 # From cargo metadata, not a list: a list is a second place to forget a
 # crate, and the publish DAG already has one gate for that.
@@ -171,6 +174,10 @@ if git -C "$ROOT" ls-remote --tags origin 2>/dev/null | grep -q "refs/tags/swift
 else
   bad "no swift-v$VERSION tag on the remote"
 fi
+
+else
+  say "crates.io, npm, Swift tag — not asked (channels: maven)"
+fi # SMIX_SHIP_CHANNELS = all
 
 # --- Maven Central ----------------------------------------------------
 # Late is normal; claimed is not. 6.5.0 took three hours.

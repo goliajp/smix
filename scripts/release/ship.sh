@@ -155,8 +155,20 @@ print(' '.join(f'{k}@{v}' for k, v in d.get('optionalDependencies', {}).items() 
   || fail "npm/smix-cli optionalDependencies point at $cli_opt_mismatch, not $VERSION"
 
 SHIP_DRY="${SMIX_SHIP_DRYRUN:-0}"
+# Which channels go out: `all`, or `maven` alone — smix-sdk and smix-probe
+# for a consumer that takes the probe from Maven Central, while crates.io,
+# npm, the Swift tag and the site wait for a later release. The gates are
+# the same either way; a maven-only ship installs nothing from a registry.
+SHIP_CHANNELS="${SMIX_SHIP_CHANNELS:-all}"
+case "$SHIP_CHANNELS" in
+  all | maven) ;;
+  *) fail "SMIX_SHIP_CHANNELS=$SHIP_CHANNELS — expected all or maven" ;;
+esac
+export SMIX_SHIP_CHANNELS="$SHIP_CHANNELS"
+note "channels: $SHIP_CHANNELS"
 
 # --- npm write preflight ---------------------------------------------
+if [ "$SHIP_CHANNELS" = all ]; then
 
 # Nine npm packages go out after crates.io, and crates.io cannot be
 # unpublished. `npm whoami` is not the predicate that matters: 6.3.0 had a
@@ -200,6 +212,8 @@ fi
 # four separate 90-minute runs discovering, at the very end, that a
 # version string was stale or a token could not write. A check that costs
 # a second belongs before the ones that cost an hour.
+
+fi # SHIP_CHANNELS = all
 
 # --- what this script judges, and what it takes from CI --------------
 #
@@ -783,6 +797,7 @@ python3 "$ROOT/scripts/dev/cheap-gates-come-first.py" "$SHIP_PROFILE" \
 # complaints, none of them about a gate. Same reason `note` exists at
 # all; this is the second kind of line that is not a gate.
 # --- publish crates.io (DAG order) -----------------------------------
+if [ "$SHIP_CHANNELS" = all ]; then
 note "publish crates.io DAG at $VERSION"
 CRATES=(
   smix-sim-health smix-runner-sources
@@ -984,6 +999,10 @@ npm_publish_dir "$CLI_DIR" "@goliapkg/smix-cli"
 ( cd "$ROOT/npm/smix-rn" && bun run build ) || fail "smix-rn build"
 npm_publish_dir "$ROOT/npm/smix-rn" "@goliapkg/smix"
 
+else
+  note "crates.io and npm — SKIPPED (channels: maven)"
+fi # SHIP_CHANNELS = all
+
 # --- publish Maven Central -------------------------------------------
 
 # In dry-run, publish to the local Maven repo (validates POM + signing +
@@ -1044,6 +1063,8 @@ GPG_KEY="$(gpg --export-secret-keys --armor FBD802632CFAD78B 2>/dev/null)" \
 
 if [ "$SHIP_DRY" = 1 ]; then
   note "tag swift-v$VERSION — SKIPPED (dry-run)"
+elif [ "$SHIP_CHANNELS" != all ]; then
+  note "tag swift-v$VERSION — SKIPPED (channels: $SHIP_CHANNELS)"
 else
   note "tag swift-v$VERSION + push"
   ( cd "$ROOT" && git tag -a "swift-v$VERSION" -m "Swift Package v$VERSION" && git push origin "swift-v$VERSION" ) \
@@ -1077,6 +1098,11 @@ The publish legs ran; this is about what the registries actually serve."
   # 9.0.0, no smix-mcp, and four different plugin versions across six
   # Claude profiles. After the registries have answered, because it
   # installs from them.
+  if [ "$SHIP_CHANNELS" != all ]; then
+    note "SHIP COMPLETE — $SHIP_CHANNELS published; the CLI is not on a registry, so put \
+the workspace build on this machine and mini (cargo build --release -p smix-cli -p smix-mcp)"
+    exit 0
+  fi
   log "install v$VERSION on this machine"
   if bash "$ROOT/scripts/release/install-on-this-machine.sh" "$VERSION" \
        2>&1 | tee /tmp/smix-ship-this-machine.log; then
