@@ -197,6 +197,10 @@ enum Cmd {
         /// List what would be closed, and close nothing.
         #[arg(long)]
         dry_run: bool,
+        /// Instead: close the devices smix booted that nobody holds and no
+        /// command has touched for `SMIX_IDLE_DEVICE_SECS` (30 min).
+        #[arg(long)]
+        orphans: bool,
     },
     /// Say whether this machine can drive anything yet, and if not, what
     /// to run next. `--json` for the same verdict in machine form.
@@ -313,12 +317,9 @@ enum Cmd {
         platform: Option<RunPlatform>,
         /// Write a frame to this path the moment the tap returns.
         ///
-        /// For UI that does not wait: a control bar that hides itself
-        /// after a few seconds outlives neither a second command nor the
-        /// turn between two tool calls. One call takes the picture from
-        /// the same process that tapped — measured at about 88 ms after
-        /// the tap returns, against roughly 325 ms going out to device
-        /// tooling.
+        /// For UI that does not wait, like a control bar that hides after a
+        /// few seconds: about 88 ms after the tap, against 325 ms for a
+        /// second command.
         ///
         /// A tap that fails writes nothing: a frame taken after a tap
         /// that did not land looks like evidence and is a picture of the
@@ -1244,11 +1245,8 @@ enum LeaseAction {
     /// An emulator started by hand has no ledger, so nothing here may drive
     /// it; a claim records, once, that this machine answers for it.
     ///
-    /// A claim grants exactly one of the two things a boot row grants:
-    /// this device is yours to drive, and is not yours to switch off.
-    /// `lease owner` reports it as a claim rather than a boot, so the
-    /// difference is never invisible, and the ledger ends it when the
-    /// device goes off.
+    /// It grants driving, not switching off; `lease owner` reports it as a
+    /// claim, and the ledger ends it when the device goes off.
     ///
     /// Refused while somebody else's live session holds the device: a
     /// claim is about an unheld device, not a way past a held one.
@@ -2849,11 +2847,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             cmd_init(&simctl, alias.as_deref(), device.as_deref(), app.as_deref()).await?
         }
         Cmd::Status { json } => return Ok(status_cmd::run(json).await),
-        Cmd::Cleanup { dry_run } => {
-            return Ok(cleanup_cmd::run(
-                smix_lease::owners::current().as_deref(),
-                dry_run,
-            ));
+        Cmd::Cleanup { dry_run, orphans } => {
+            let owner = smix_lease::owners::current();
+            return Ok(cleanup_cmd::run(owner.as_deref(), dry_run, orphans).await);
         }
         Cmd::Doctor {
             json,
@@ -3080,6 +3076,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     no_window,
                     wait,
                 } => {
+                    cleanup_cmd::reclaim_left_behind(false)
+                        .await
+                        .map_err(CliError::Other)?;
                     budget::check_boot(&device, wait)
                         .await
                         .map_err(CliError::Other)?;
