@@ -1335,11 +1335,11 @@ enum RunnerAction {
         /// The device, named rather than positional. See `device`.
         #[arg(long = "device", conflicts_with = "device")]
         device_flag: Option<String>,
-        /// Which runner to bring up. `ios` drives xcodebuild + the
-        /// XCUITest runner; `android` installs the instrumentation APK,
-        /// forwards the port, and `am instrument`s the Kotlin runner.
-        #[arg(long, value_enum, default_value_t = RunPlatform::Ios)]
-        platform: RunPlatform,
+        /// Which runner to bring up: `ios` (XCUITest via xcodebuild) or
+        /// `android` (the instrumentation APK). A registered device's own
+        /// kind decides when this is left out; an unregistered one is iOS.
+        #[arg(long, value_enum)]
+        platform: Option<RunPlatform>,
         /// The app under test: `runner up` finishes with it in front. On
         /// a fresh bring-up it is relaunched, or only brought forward with
         /// `--no-launch` — the same on both platforms. On Android it is
@@ -3750,11 +3750,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     force,
                     take_over,
                 } => {
-                    // clap has already refused the case where neither
-                    // is given, and the case where both are.
+                    // clap has refused neither and both
                     let device = device
                         .or(device_flag)
                         .expect("clap requires one of the two forms");
+                    let platform = crate::platform::runner_up_platform(
+                        platform,
+                        lookup_registered(&device).map(|s| s.kind),
+                    );
                     if platform == RunPlatform::Android {
                         reject_ios_only_up_flags(runner_project.is_some(), supervise)
                             .map_err(CliError::Other)?;
@@ -3778,18 +3781,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             .map_err(CliError::Other)?;
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
-                    // Port priority chain:
-                    //   1. `--runner-port` flag / SMIX_RUNNER_PORT env
-                    //   2. the registered `runnerPort` for this alias
-                    //   3. 22087 default (CLI convention)
+                    // port: --runner-port / SMIX_RUNNER_PORT, the registered port, 22087
                     let sims_port = lookup_registered(&device).and_then(|s| s.runner_port);
                     let port = port_flag.or(sims_port).unwrap_or(22087);
                     let udid = resolve_device(&device)?;
-                    // A physical device needs a signing team and a
-                    // different destination. Which it is comes from the
-                    // registry, not from a guess about the identifier —
-                    // §9#1 requires registration precisely so this
-                    // question has a recorded answer.
+                    // a physical device needs a signing team and another
+                    // destination; the registry says which, never the id's shape
                     let physical_team = match lookup_registered(&device) {
                         Some(sim) if sim.kind.is_physical() => {
                             let facts = smix_capsule::signing::collect_facts(&udid);
