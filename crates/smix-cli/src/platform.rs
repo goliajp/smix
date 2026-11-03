@@ -35,6 +35,22 @@ pub(crate) fn resolve_run_platform(
     }
 }
 
+/// The runner `runner up` brings up: `--platform` when given, else the
+/// registered device's kind, else iOS — a raw simulator UDID has always
+/// been accepted here without registering it.
+pub(crate) fn runner_up_platform(
+    explicit: Option<RunPlatform>,
+    device_kind: Option<smix_simctl::registry::DeviceKind>,
+) -> RunPlatform {
+    match (explicit, device_kind) {
+        (Some(p), _) => p,
+        (None, Some(_)) => {
+            resolve_run_platform(None, device_kind).expect("a known kind always maps")
+        }
+        (None, None) => RunPlatform::Ios,
+    }
+}
+
 impl RunPlatform {
     pub(crate) fn to_flow(self) -> smix_adapter_maestro::FlowPlatform {
         match self {
@@ -109,5 +125,28 @@ pub(crate) fn dial_platform(
                     .to_string()),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use smix_simctl::registry::DeviceKind;
+
+    #[test]
+    fn runner_up_takes_a_registered_device_s_own_kind() {
+        assert_eq!(
+            runner_up_platform(None, Some(DeviceKind::Emulator)),
+            RunPlatform::Android
+        );
+        assert_eq!(
+            runner_up_platform(None, Some(DeviceKind::Simulator)),
+            RunPlatform::Ios
+        );
+        assert_eq!(runner_up_platform(None, None), RunPlatform::Ios);
+        assert_eq!(
+            runner_up_platform(Some(RunPlatform::Ios), Some(DeviceKind::Emulator)),
+            RunPlatform::Ios
+        );
     }
 }
