@@ -7,7 +7,7 @@
 //! An iOS notification banner is one of them, its button named by the
 //! notification's title.
 
-use smix_sdk::{FailureCode, Modifiers, Pattern, Selector, SystemPopup};
+use smix_sdk::{Modifiers, Pattern, Selector, SystemPopup};
 
 use crate::runtime::{AppLike, RunError, RunStepReport};
 
@@ -84,15 +84,8 @@ pub(crate) async fn or_a_popup_button<A: AppLike + ?Sized>(
     tapped: Result<RunStepReport, RunError>,
     warnings: &mut Vec<String>,
 ) -> Result<RunStepReport, RunError> {
-    // an app that is not in front has no tree to hold it, and a notification
-    // banner over another app is exactly what such a flow taps
     let missed = match &tapped {
-        Err(RunError::Sdk(e)) => {
-            matches!(
-                e.code,
-                FailureCode::ElementNotFound | FailureCode::AppNotInForeground
-            )
-        }
+        Err(RunError::Sdk(e)) => e.code.may_be_outside_the_app(),
         Ok(RunStepReport::Skipped { .. }) => true,
         _ => false,
     };

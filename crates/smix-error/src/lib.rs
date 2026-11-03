@@ -10,10 +10,8 @@
 //!
 //! # Why a separate stone
 //!
-//! SDK / driver / runner-client all throw / catch `ExpectationFailure`. As
-//! the canonical failure type it must live in a leaf crate that everyone
-//! can depend on. Failure messages MUST be AI-readable — `to_prompt()`
-//! is the canonical render.
+//! The canonical failure type, in a leaf crate every layer can depend on;
+//! `to_prompt()` is its AI-readable render.
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-error")]
 
@@ -28,19 +26,9 @@ use std::fmt;
 /// (SCREAMING_SNAKE_CASE wire).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-// New codes keep arriving — two in two releases — and on an exhaustive
-// enum each one is a major, because a consumer matching every arm stops
-// compiling. That is the wrong price for smix naming a failure more
-// precisely, and it was about to be paid for the second time.
-//
-// The cost lands once, here, in a major that was already owed: every
-// downstream `match` needs a catch-all arm from now on. What it buys is
-// that the next code is additive.
-//
-// The guard that made a new variant fail to compile lives inside this
-// crate now (see `the_vocabulary_is_pinned` below). From out here
-// `non_exhaustive` would have made it accept anything, so it moved
-// rather than being weakened.
+// non_exhaustive so a new code is additive rather than a major; the guard
+// that makes one fail to compile until it is thought about lives inside
+// this crate (`the_vocabulary_is_pinned`), where the match stays exhaustive.
 #[non_exhaustive]
 pub enum FailureCode {
     /// Selector matched zero elements in the visible tree.
@@ -538,19 +526,30 @@ impl FailureCode {
         FailureCode::AppNotInForeground,
     ];
 
+    /// Whether the target may be outside the app's tree altogether — on a
+    /// system popup or a notification banner — so those are worth a look.
+    pub fn may_be_outside_the_app(self) -> bool {
+        match self {
+            FailureCode::ElementNotFound | FailureCode::AppNotInForeground => true,
+            FailureCode::NotVisible
+            | FailureCode::NotEnabled
+            | FailureCode::Ambiguous
+            | FailureCode::Timeout
+            | FailureCode::AssertionFailed
+            | FailureCode::AppNotRunning
+            | FailureCode::SimulatorNotBooted
+            | FailureCode::TapMissed
+            | FailureCode::CoordinateSpaceMismatch
+            | FailureCode::DriverError
+            | FailureCode::CaptureBackpressure => false,
+        }
+    }
+
     /// Whether this code is a verdict about the screen, as opposed to
-    /// smix being unable to look at it.
-    ///
-    /// Two readers ask this and must get the same answer. A flow step
-    /// marked `optional` turns a verdict into a skip and lets a driver
-    /// failure fail the step; an end-to-end check judges a flow by its
-    /// own rule only when the flow failed on a verdict, and names the
-    /// driver's code otherwise. A runner that answered garbage once read,
-    /// in one of those checks, as "the scroll stopped in the wrong place"
-    /// — the red carried a verdict that was not its own.
-    ///
-    /// Exhaustive on purpose: a code added later does not compile until
-    /// somebody has said which side it is on.
+    /// smix being unable to look at it. An `optional` step skips only a
+    /// verdict, and an end-to-end check judges a flow by its own rule only
+    /// on one — a runner answering garbage once read as "the scroll stopped
+    /// in the wrong place". Exhaustive, so a new code must pick a side.
     pub fn judges_the_screen(self) -> bool {
         match self {
             FailureCode::ElementNotFound

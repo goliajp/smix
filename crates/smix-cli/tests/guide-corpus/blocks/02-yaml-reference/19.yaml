@@ -1,2 +1,63 @@
-- addMedia:                              # iOS Photos / Android Gallery seed
-  - "/path/to/test-photo.jpg"
+# Fixed sleep — NOT an XCTest quiescence wait. smix no-ops XCTest's
+# internal idle-wait for performance (SmixQuiescenceSwizzle); this verb
+# has always been a bounded pause at the runtime layer.
+#
+# On an Android emulator a run zeroes the three animation scales before
+# it starts, so this verb has little left to wait for, and puts them
+# back to exactly what they were when it ends — a scale the emulator
+# never had is deleted, not set to 1. A run that is killed before it
+# can put them back is made good by the next run on that emulator. A
+# physical Android device is left as it is, and the run says so.
+# `--animations` leaves every device's own settings alone, and with
+# them the original reason for this verb.
+#
+# On iOS nothing is quietened — no host-side lever exists — so this
+# verb keeps its full value there.
+- waitForAnimationToEnd                  # bare form: ceiling 400 ms (maestro-compat)
+- waitForAnimationToEnd: 500             # integer: ceiling 500 ms
+- waitForAnimationToEnd:
+    timeout: 5000                        # map form: ceiling 5000 ms (maestro-canonical)
+
+# The number is a CEILING in all three forms, never a sleep. The verb
+# samples the screen and returns as soon as two frames match, so a still
+# screen costs two captures and not the number written here. It used to
+# sleep, which charged for an animation whether or not one ran; this note
+# said "sleep N ms" for longer than that was true, and a consumer wrote
+# `waitForAnimationToEnd: 500` meaning "pause here" on the strength of it.
+#
+# There is no bare sleep verb, deliberately. To wait for something, name
+# it: `extendedWaitUntil` for an element. The keyboard is an element —
+# `extendedWaitUntil: { visible: { role: "keyboard" } }` — which is the
+# wait people most often reach for a pause instead of, because the keys
+# are not in the tree and `describe` leaves the keyboard out of its
+# summary. See "role: keyboard" in the selectors guide.
+#
+# If the thing you are waiting for really is not in the tree, that is a
+# gap worth reporting rather than routing around with a pause.
+#
+# A screen that never settles is a warning, not a failure — so is a window
+# in which the device refused every capture (see CAPTURE_BACKPRESSURE in
+# the errors guide). The verb waits refusals out inside its own ceiling.
+
+- extendedWaitUntil:
+    visible: "Loading complete"
+    timeout: 30000
+
+- extendedWaitUntil:
+    notVisible: "Spinner"
+    timeout: 10000
+
+# On timeout, extendedWaitUntil auto-captures a screenshot + tree JSON
+# to `.smix/timeouts/` (or `--debug-output` dir when set) and appends
+# the written paths to the failure hint — no flag needed.
+
+# Inside a flow, this is the verb. Driving the runner from OUTSIDE one —
+# a shell harness deciding whether the app is up before it starts —
+# reach for `smix wait-for` instead (see 05-cli):
+#
+#     smix wait-for --device <d> --port <p> --timeout 30 id:tab-device
+#
+# Same question, no yaml. A consumer wrote a one-step `ready.yaml` and
+# ran `smix run` on it before finding `wait-for` in `--help`; the two
+# belong beside each other because the choice is "am I in a flow or
+# around one", not "which is better".

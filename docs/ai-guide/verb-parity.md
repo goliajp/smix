@@ -111,6 +111,7 @@ that is why.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `openLink` / `openUrl` | ✅ | ✅ | System URL handler |
+| `sendPush` | ✅ | ⚠️ | smix's own verb (maestro has none). iOS: `simctl push` on a simulator; a physical iPhone refuses by name. Android has no local push service: smix sends the app the broadcast `dev.smix.PUSH` and a receiver in the app's debug build posts the notification — without one the step says so. See "Notifications" in the YAML reference |
 | `setLocation` | ✅ | ✅ | Android sends `geo fix` on the emulator console. The fix persists and replays when an app starts listening, so setting it early is not a race. On a registered physical iPhone it needs Xcode 27, and the location stays until `xcrun devicectl device simulate location clear --device <UDID>` |
 | `travel` | ✅ | ⚠️ | iOS hands the route to CoreSimulator. Android has no route primitive — the emulator console takes one position at a time — so smix walks it from the host, one `geo fix` a second. Both return immediately and travel in the background. A registered physical iPhone takes the route through `devicectl` (Xcode 27), with the same caveat as `setLocation` |
 | `setPermissions` | ✅ | ✅ | `pm grant` / `pm revoke` per permission on Android; `simctl privacy` on iOS |
