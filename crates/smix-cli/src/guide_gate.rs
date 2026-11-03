@@ -407,6 +407,9 @@ impl AppLike for MockApp {
     async fn open_url(&self, _url: &str) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn send_push(&self, _bundle_id: &str, _apns: &str) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     async fn system_popups(&self) -> Result<Vec<smix_sdk::SystemPopup>, ExpectationFailure> {
         Ok(vec![])
     }
@@ -811,7 +814,7 @@ fn remove_artifacts(flow: &smix_adapter_maestro::Flow) {
 const KNOWN_BROKEN: &[(&str, usize, &str)] = &[
     (
         "02-yaml-reference",
-        17,
+        18,
         "repeat.while.visible loops until the element leaves the screen; \
          a mock that always says visible never exits, and one that said \
          otherwise would be inventing a screen.",
