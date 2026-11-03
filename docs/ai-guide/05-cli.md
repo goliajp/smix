@@ -994,6 +994,18 @@ a runner under a live command pulls it out from under work in progress.
 Simulator runtimes and images belong to the machine and are never touched.
 The exit code is 1 when something of the owner's could not be closed.
 
+```bash
+smix cleanup --orphans --dry-run          # devices left behind, listed
+smix cleanup --orphans                    # closed
+```
+
+A device is left behind when smix booted it, nobody holds it, and no smix
+command has touched it for `SMIX_IDLE_DEVICE_SECS` — 30 minutes by default,
+`0` for never. A task between two runs holds nothing either, so the time is
+what tells a pause from a device its task forgot. `smix sim boot` reclaims
+these first, before it weighs whether there is room, and says each one it
+closed; a device somebody else booted by hand is never one of them.
+
 ### Perf regression (`smix bench`)
 
 ```bash

@@ -78,10 +78,21 @@ fn ok(o: &smix_capsule::reconcile::Outcome) -> Result<String, String> {
     }
 }
 
-pub(crate) fn run(owner: Option<&str>, dry_run: bool) -> ExitCode {
+pub(crate) async fn run(owner: Option<&str>, dry_run: bool, orphans: bool) -> ExitCode {
+    if orphans {
+        return match reclaim_left_behind(dry_run).await {
+            Ok(0) => ExitCode::SUCCESS,
+            Ok(_) => ExitCode::from(1),
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::from(2)
+            }
+        };
+    }
     let Some(owner) = owner else {
         eprintln!(
-            "error: cleanup takes down one owner's resources: give --owner <task> or SMIX_OWNER"
+            "error: cleanup takes down one owner's resources (--owner <task> or SMIX_OWNER), \
+             or the devices left behind (--orphans)"
         );
         return ExitCode::from(2);
     };
@@ -151,6 +162,93 @@ pub(crate) fn run(owner: Option<&str>, dry_run: bool) -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// How long a device smix booted may sit with nobody holding it and no
+/// command touching it before it counts as left behind:
+/// `SMIX_IDLE_DEVICE_SECS`, 30 minutes when unset, `0` for never. A task
+/// between two runs holds nothing either, so the time is what tells a
+/// pause from a device its task forgot.
+pub(crate) fn idle_limit() -> Result<Option<u64>, String> {
+    match std::env::var("SMIX_IDLE_DEVICE_SECS") {
+        Err(_) => Ok(Some(30 * 60)),
+        Ok(v) => match v.parse::<u64>() {
+            Ok(0) => Ok(None),
+            Ok(n) => Ok(Some(n)),
+            Err(_) => Err(format!(
+                "SMIX_IDLE_DEVICE_SECS={v:?}: expected a whole number of seconds"
+            )),
+        },
+    }
+}
+
+/// Seconds `lease`'s device has sat idle, when it is left behind: running,
+/// booted by smix, its holder gone, and untouched for `limit` seconds.
+pub(crate) fn left_behind(
+    lease: &Lease,
+    running: bool,
+    holder_alive: bool,
+    now: &str,
+    limit: u64,
+) -> Option<u64> {
+    let booted_by_us = lease
+        .known_resources()
+        .any(|r| matches!(r, Resource::Booted { by_us: true }));
+    if !running || !booted_by_us || holder_alive {
+        return None;
+    }
+    let at = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok();
+    let idle = (at(now)? - at(&lease.heartbeat_at)?).num_seconds();
+    u64::try_from(idle).ok().filter(|s| *s >= limit)
+}
+
+/// Close every device left behind, as a cleanup closes an owner's: the
+/// lease's own plan, device last. Says each one, returns how many could
+/// not be closed.
+pub(crate) async fn reclaim_left_behind(dry_run: bool) -> Result<usize, String> {
+    let Some(limit) = idle_limit()? else {
+        return Ok(0);
+    };
+    let leases = smix_capsule::runner::machine_leases()?;
+    let running = crate::status_cmd::running_ids().await;
+    let now = smix_lease::store::now_rfc3339();
+    let mut failed = 0;
+    for id in leases.device_ids() {
+        let Ok(Some(lease)) = smix_lease::store::read(&leases, &id) else {
+            continue;
+        };
+        let held = smix_lease::store::probe(&lease.holder);
+        let alive = held.pid_exists && held.identity_matches;
+        let Some(idle) = left_behind(&lease, running.contains(&id), alive, &now, limit) else {
+            continue;
+        };
+        let whose = owners::read(&leases, &id)
+            .ok()
+            .and_then(|o| o.names().first().map(|n| (*n).to_string()))
+            .unwrap_or_else(|| "no owner".into());
+        let idle = if idle < 120 {
+            format!("{idle} s")
+        } else {
+            format!("{} min", idle / 60)
+        };
+        let what = format!("{id} ({whose}), idle {idle} with nobody holding it");
+        if dry_run {
+            println!("would reclaim {what}");
+            continue;
+        }
+        let outcomes = smix_capsule::reconcile::execute(&smix_lease::plan_cleanup(&lease));
+        let bad: Vec<String> = outcomes.iter().filter_map(|o| ok(o).err()).collect();
+        if bad.is_empty() {
+            eprintln!("reclaimed {what}");
+            if let Err(e) = smix_lease::store::remove(&leases, &id) {
+                eprintln!("warning: {id} was reclaimed and its ledger stays: {e}");
+            }
+        } else {
+            failed += 1;
+            eprintln!("could not reclaim {what}: {}", bad.join("; "));
+        }
+    }
+    Ok(failed)
 }
 
 #[cfg(test)]
@@ -234,6 +332,31 @@ mod tests {
                 .any(|(k, why)| k == "runner" && why.contains("still running")),
             "{:?}",
             sel.keep
+        );
+    }
+
+    #[test]
+    fn left_behind_is_running_booted_by_smix_unheld_and_idle_long_enough() {
+        let mut l = lease();
+        l.heartbeat_at = "2026-11-03T07:00:00+00:00".into();
+        let now = "2026-11-03T07:40:00+00:00";
+        assert_eq!(left_behind(&l, true, false, now, 1800), Some(2400));
+        assert_eq!(
+            left_behind(&l, true, true, now, 1800),
+            None,
+            "somebody holds it"
+        );
+        assert_eq!(left_behind(&l, false, false, now, 1800), None, "it is off");
+        assert_eq!(
+            left_behind(&l, true, false, now, 3600),
+            None,
+            "not idle long enough"
+        );
+        l.resources = vec![Row::Known(Resource::Booted { by_us: false })];
+        assert_eq!(
+            left_behind(&l, true, false, now, 1800),
+            None,
+            "smix did not boot it"
         );
     }
 

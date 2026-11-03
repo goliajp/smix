@@ -77,7 +77,7 @@ fn ledger_rows(rows: &mut BTreeMap<String, DeviceRow>) {
     }
 }
 
-async fn running_ids() -> Vec<String> {
+pub(crate) async fn running_ids() -> Vec<String> {
     let mut ids = Vec::new();
     if let Ok(devices) = smix_simctl::SimctlClient::new().list_devices().await {
         ids.extend(
