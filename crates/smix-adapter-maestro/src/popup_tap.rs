@@ -31,26 +31,10 @@ pub(crate) enum PopupButton {
 /// looked up: a spatial or index modifier places the target in the app's
 /// layout, which a popup is not part of, and an id is the app's own.
 pub(crate) fn button_named(selector: &Selector, popups: &[SystemPopup]) -> PopupButton {
-    let answers: Box<dyn Fn(&str) -> bool> = match selector {
-        Selector::Text { text, modifiers } if *modifiers == Modifiers::default() => match text {
-            Pattern::Text(t) if t.is_empty() => return PopupButton::Nothing,
-            Pattern::Text(t) => {
-                let t = straight(t);
-                Box::new(move |l: &str| straight(l).eq_ignore_ascii_case(&t))
-            }
-            Pattern::Regex { .. } => match text.compile() {
-                Ok(smix_selector::CompiledPattern::Regex(re)) => {
-                    Box::new(move |l: &str| re.is_match(l))
-                }
-                _ => return PopupButton::Nothing,
-            },
-        },
-        Selector::Label { label, modifiers } if *modifiers == Modifiers::default() => {
-            let label = label.clone();
-            Box::new(move |l: &str| l == label)
-        }
-        _ => return PopupButton::Nothing,
+    let Some(answers) = words_matcher(selector) else {
+        return PopupButton::Nothing;
     };
+
     let hits: Vec<(&SystemPopup, usize)> = popups
         .iter()
         .flat_map(|p| (0..p.buttons.len()).map(move |i| (p, i)))
@@ -70,6 +54,67 @@ pub(crate) fn button_named(selector: &Selector, popups: &[SystemPopup]) -> Popup
             said: describe(one),
         },
         many => PopupButton::Several(many.iter().map(describe).collect()),
+    }
+}
+
+/// What a bare `text:` or `label:` matches words on a popup by, or `None`
+/// for any other selector: a spatial or index modifier places the target in
+/// the app's layout, which a popup is not part of, and an id is the app's own.
+fn words_matcher(selector: &Selector) -> Option<Box<dyn Fn(&str) -> bool>> {
+    let answers: Box<dyn Fn(&str) -> bool> = match selector {
+        Selector::Text { text, modifiers } if *modifiers == Modifiers::default() => match text {
+            Pattern::Text(t) if t.is_empty() => return None,
+            Pattern::Text(t) => {
+                let t = straight(t);
+                Box::new(move |l: &str| straight(l).eq_ignore_ascii_case(&t))
+            }
+            Pattern::Regex { .. } => match text.compile() {
+                Ok(smix_selector::CompiledPattern::Regex(re)) => {
+                    Box::new(move |l: &str| re.is_match(l))
+                }
+                _ => return None,
+            },
+        },
+        Selector::Label { label, modifiers } if *modifiers == Modifiers::default() => {
+            let label = label.clone();
+            Box::new(move |l: &str| l == label)
+        }
+        _ => return None,
+    };
+    Some(answers)
+}
+
+/// An `assertVisible` that came back empty from the app's tree, given the
+/// popups on screen — a notification banner among them — to find the words
+/// on: a title, a body or a button. Found, the step passes and says where.
+pub(crate) async fn or_a_popup_saying<A: AppLike + ?Sized>(
+    app: &A,
+    selector: &Selector,
+    asserted: Result<(), smix_sdk::ExpectationFailure>,
+    warnings: &mut Vec<String>,
+) -> Result<(), smix_sdk::ExpectationFailure> {
+    let Err(e) = asserted else { return Ok(()) };
+    let Some(answers) = words_matcher(selector).filter(|_| e.code.may_be_outside_the_app()) else {
+        return Err(e);
+    };
+    let Ok(popups) = app.system_popups().await else {
+        return Err(e);
+    };
+    let hit = popups.iter().find(|p| {
+        answers(&p.title) || answers(&p.body) || p.buttons.iter().any(|b| answers(&b.label))
+    });
+    match hit {
+        Some(p) => {
+            warnings.push(format!(
+                "assertVisible {}: not in the app's tree; on {}'s {} \"{}\"",
+                smix_sdk::describe_selector(selector),
+                p.source,
+                p.kind,
+                p.title
+            ));
+            Ok(())
+        }
+        None => Err(e),
     }
 }
 

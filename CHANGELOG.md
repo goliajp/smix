@@ -28,7 +28,8 @@ All notable changes to the `smix` workspace are documented here. The format foll
 - **The notification banner can be tapped by its title.** On iOS a
   SpringBoard banner is now one of the system popups `tapOn` falls back
   to, including over an app in the background, and `/system-popups` lists
-  it with type `notification`. On Android the heads-up was already in the
+  it with type `notification`. `assertVisible` looks there too: words on
+  a system popup or a banner, absent from the app's tree, are on screen. On Android the heads-up was already in the
   tree; a tap into SystemUI now waits until its target has been on screen
   for 0.7 s, because a heads-up still sliding in drops the touch
   (measured: no tap within 150 ms of it appearing opened the app, every

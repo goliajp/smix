@@ -237,6 +237,11 @@ struct MockApp {
     /// A tap on `fixture-input` itself moves it by `move_by`: a tap that
     /// landed and started a transition.
     input_moves_when_tapped: Mutex<bool>,
+    /// What `system_popups` answers.
+    popups: Mutex<Vec<smix_sdk::SystemPopup>>,
+    /// `assert_visible` on these selectors (by description) fails with
+    /// this code: the words are not in the app's tree.
+    assert_visible_failures: Mutex<HashMap<String, FailureCode>>,
     /// The regions the last `assert_screenshot` was handed.
     last_masks: Mutex<Vec<smix_adapter_maestro::MaskRegion>>,
     /// How the last `assert_screenshot` was to judge, and what it was
@@ -274,6 +279,8 @@ impl MockApp {
             input_shift: Mutex::new(0.0),
             move_by: Mutex::new(0.0),
             input_moves_when_tapped: Mutex::new(false),
+            popups: Mutex::new(Vec::new()),
+            assert_visible_failures: Mutex::new(HashMap::new()),
             last_masks: Mutex::new(Vec::new()),
             last_screenshot_check: Mutex::new(None),
             scroll_failure: Mutex::new(None),
@@ -664,7 +671,19 @@ impl AppLike for MockApp {
             .lock()
             .unwrap()
             .push(MockCall::AssertVisible(selector.clone()));
-        Ok(())
+        match self
+            .assert_visible_failures
+            .lock()
+            .unwrap()
+            .get(&smix_sdk::describe_selector(selector))
+        {
+            Some(code) => Err(ExpectationFailure::new(FailureInit {
+                code: Some(*code),
+                message: "not visible".into(),
+                ..Default::default()
+            })),
+            None => Ok(()),
+        }
     }
     async fn find(&self, selector: &Selector) -> Result<bool, ExpectationFailure> {
         self.calls
@@ -752,7 +771,7 @@ impl AppLike for MockApp {
         Ok(())
     }
     async fn system_popups(&self) -> Result<Vec<smix_sdk::SystemPopup>, ExpectationFailure> {
-        Ok(Vec::new())
+        Ok(self.popups.lock().unwrap().clone())
     }
     async fn system_popup_action(
         &self,
@@ -5025,4 +5044,65 @@ async fn set_window_size_resizes_the_window_of_the_app_last_launched() {
             (Some("com.u".into()), size(839, 768))
         ]
     );
+}
+
+// --- notification banners ---------------------------------------------
+
+fn banner(title: &str) -> smix_sdk::SystemPopup {
+    serde_json::from_value(serde_json::json!({
+        "id": "notification-0", "type": "notification", "source": "com.apple.springboard",
+        "title": title, "body": "Your parcel is on its way",
+        "buttons": [{"id": "open", "label": title, "role": "default", "dangerous": false}]
+    }))
+    .unwrap()
+}
+
+async fn assert_words(
+    code: FailureCode,
+    popups: Vec<smix_sdk::SystemPopup>,
+) -> Result<smix_adapter_maestro::RunReport, RunError> {
+    let app = MockApp::new();
+    app.assert_visible_failures
+        .lock()
+        .unwrap()
+        .insert("{ text=\"Order shipped\" }".into(), code);
+    *app.popups.lock().unwrap() = popups;
+    let flow = parse_flow_yaml("appId: com.t\n---\n- assertVisible: \"Order shipped\"\n").unwrap();
+    Adapter::new(&app, fixtures_dir()).run(&flow).await
+}
+
+/// Words not in the app's tree but on a notification banner are on screen.
+#[tokio::test]
+async fn assert_visible_finds_the_words_on_a_banner() {
+    let out = assert_words(FailureCode::NotVisible, vec![banner("Order shipped")]).await;
+    let report = out.expect("the banner holds the words");
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("com.apple.springboard's notification \"Order shipped\"")),
+        "{:?}",
+        report.warnings
+    );
+    let out = assert_words(
+        FailureCode::AppNotInForeground,
+        vec![banner("Order shipped")],
+    )
+    .await;
+    out.expect("an app in the background, the banner over the home screen");
+}
+
+/// Words that are nowhere still fail, with the app's own failure.
+#[tokio::test]
+async fn assert_visible_without_the_words_anywhere_still_fails() {
+    let e = assert_words(FailureCode::NotVisible, vec![banner("Something else")])
+        .await
+        .expect_err("not on screen")
+        .to_string();
+    assert!(e.contains("not visible"), "{e}");
+    let e = assert_words(FailureCode::DriverError, vec![banner("Order shipped")])
+        .await
+        .expect_err("a broken reading is not answered by a popup")
+        .to_string();
+    assert!(e.contains("not visible"), "{e}");
 }

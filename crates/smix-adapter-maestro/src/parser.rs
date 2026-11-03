@@ -1,12 +1,9 @@
 //! Hand-written maestro yaml → [`Flow`] parser.
 //!
-//! Why hand-written (vs `serde(untagged)` derive): each command key is
-//! the discriminator, and the same key (e.g. `tapOn`) accepts both a
-//! scalar and a map. `untagged` enums would either become ambiguous or
-//! silently swallow malformed input — both unacceptable. Walking the
-//! `serde_norway::Value` tree by hand keeps the dispatch explicit,
-//! lets us surface a precise [`ParseError`] for every malformed shape,
-//! and mirrors the maestro Kotlin parser layout 1:1.
+//! Hand-written because each command key is the discriminator and one key
+//! (`tapOn`) takes a scalar or a map: `serde(untagged)` would be ambiguous
+//! or swallow malformed input, where walking the `serde_norway::Value`
+//! gives a precise [`ParseError`] for every bad shape.
 
 use crate::{BlockOptions, Flow, FlowCondition, MaestroPermissionAction, ParseError, Step};
 use serde::Deserialize;

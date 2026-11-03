@@ -7,6 +7,8 @@
 #   1. iOS, the app in the background: sendPush, tapOn the banner, and the
 #      app comes forward showing the route
 #   2. iOS, the app in front: the banner over it is tapped the same way
+#   2b. iOS: the banner's body is asserted visible — the app's tree does not
+#      hold it, SpringBoard's banner does
 #   3. Android, the app in the background, three times: the app posts the
 #      heads-up from its receiver, and a tap into it lands. A heads-up still
 #      sliding in drops a touch, and how long it slides grows with the
@@ -101,6 +103,14 @@ log "2. iOS: the banner over the app itself"
 sleep 8 # the first banner leaves the screen
 "$SMIX_RUN" --device "$UDID" --runner-port "$IOS_PORT" "$WORK/ios-fg.yaml" >"$WORK/ios-fg.log" 2>&1 \
   || fail "2: $(grep -m1 FAIL "$WORK/ios-fg.log")"
+
+log "2b. iOS: the banner's words are on screen"
+sleep 8
+printf 'appId: %s\n---\n- launchApp: { arguments: ["-push"] }\n%s\n- assertVisible: "Your parcel is on its way"\n' \
+  "$IOS_APP" "$PUSH" >"$WORK/ios-assert.yaml"
+"$SMIX_RUN" --device "$UDID" --runner-port "$IOS_PORT" "$WORK/ios-assert.yaml" >"$WORK/ios-assert.log" 2>&1 \
+  || fail "2b: $(grep -m1 FAIL "$WORK/ios-assert.log")"
+grep -q "notification \"Order shipped\"" "$WORK/ios-assert.log" || fail "2b: the run does not say the banner held the words"
 
 # --- Android
 command -v adb >/dev/null 2>&1 || cannot_judge "no adb"

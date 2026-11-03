@@ -676,6 +676,12 @@ the device in front of you is a no-op there, not an error.
   screen's tree, and a tap into it waits until it has been on screen for
   0.7 s, since one that is still sliding in drops the touch. Tapping it
   brings the app forward with whatever the notification opens.
+- **Asserting it**: `assertVisible: "Your parcel is on its way"` passes on
+  the words of an iOS banner (title, body) when the app's tree has none,
+  and says so in the run's warnings; on Android the heads-up's words are
+  in the tree already. Like the tap, the look at the banner comes after
+  the app's own wait, so assert it or tap it — doing both in a row can
+  outlast the banner.
 
 ### Recording (video output)
 

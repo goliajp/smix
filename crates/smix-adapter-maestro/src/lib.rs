@@ -358,13 +358,9 @@ pub enum MouseDragTo {
 /// One parsed yaml step. See the maestro-compat command table in the
 /// module docs above for the yaml shapes each variant corresponds to.
 ///
-/// `#[non_exhaustive]` because this enum grows with every verb, and
-/// without the attribute each new verb is a semver-major change for
-/// anyone matching on it outside this crate. The attribute itself is
-/// major, so it was added in a release that was major anyway (the one
-/// that brought `rememberBounds`). Inside this crate matches stay
-/// exhaustive, which is where the compiler's "you forgot the new verb"
-/// is worth having.
+/// `#[non_exhaustive]`, so a new verb is not a major for matches outside
+/// this crate; inside it they stay exhaustive, where "you forgot the new
+/// verb" is worth having from the compiler.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
