@@ -1574,7 +1574,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
 
     /// Do `action`, wait `within_ms` for `until` to show (or go); while it
     /// has not and the target still stands where it stood, do it again, at
-    /// most `retries` more times. See [`crate::until_effect`].
+    /// most `retries` more times. Once the target has moved or left, the
+    /// action landed, so each retry left is spent waiting another
+    /// `within_ms` instead. See [`crate::until_effect`].
     async fn run_until_effect(
         &mut self,
         action: &Step,
@@ -1588,34 +1590,51 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         let target = crate::until_effect::target_of(action);
         let within = Duration::from_millis(within_ms);
         let mut times = 0;
+        let mut windows = 0;
         let mut moved = false;
+        let mut before = self.anchor_of(&target).await;
         loop {
-            let before = self.anchor_of(&target).await;
-            let report = Box::pin(self.run_step(action, warnings)).await?;
-            if !matches!(report, RunStepReport::Ok) {
-                // an optional action that found nothing to act on
-                return Ok(report);
+            if !moved {
+                let report = Box::pin(self.run_step(action, warnings)).await?;
+                if !matches!(report, RunStepReport::Ok) {
+                    // an optional action that found nothing to act on
+                    return Ok(report);
+                }
+                times += 1;
             }
-            times += 1;
+            windows += 1;
             if self.effect_shows(until, until_visible, within).await {
                 return Ok(RunStepReport::Ok);
             }
-            if times > retries {
+            if !moved {
+                let now = self.anchor_of(&target).await;
+                moved = before.is_none() || now != before;
+                before = now;
+            }
+            if windows > retries {
                 break;
             }
-            let now = self.anchor_of(&target).await;
-            if before.is_none() || now != before {
-                moved = true;
-                break;
-            }
-            warnings.push(format!(
-                "{verb}: the effect did not show within {within_ms} ms and the target is where it \
-                 was; doing it again ({} of {retries})",
-                times
-            ));
+            warnings.push(if moved {
+                format!(
+                    "{verb}: the effect did not show within {within_ms} ms, and the target moved \
+                     or left, so the action landed; waiting another {within_ms} ms without doing \
+                     it again ({windows} of {retries})"
+                )
+            } else {
+                format!(
+                    "{verb}: the effect did not show within {within_ms} ms and the target is \
+                     where it was; doing it again ({windows} of {retries})"
+                )
+            });
         }
-        let err =
-            crate::until_effect::not_seen(&verb, until, until_visible, within_ms, times, moved);
+        let err = crate::until_effect::not_seen(
+            &verb,
+            until,
+            until_visible,
+            within_ms * u64::from(windows),
+            times,
+            moved,
+        );
         let hint = self.capture_timeout_dump(&verb).await;
         let err = match self.app.tree().await {
             Ok(tree) => {
