@@ -3108,7 +3108,6 @@ impl App {
         failure
     }
 
-
     /// Assert that the selector matches a visible element. Re-uses
     /// `wait_for` semantics (5s default budget) with `NotVisible`
     /// failure code.
@@ -3185,7 +3184,6 @@ impl App {
         self.assert_visible(&text(literal)).await
     }
 }
-
 
 /// Map a device-control failure into the AI-readable failure shape.
 /// Public because it IS the contract between the simctl layer's typed
