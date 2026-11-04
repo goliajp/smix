@@ -216,6 +216,7 @@ smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is take
 smix sim boot <ALIAS> --no-window  # an Android emulator runs with no window on the desktop, driven as usual; refused on an emulator already running and on a phone
 SMIX_EMULATOR_NO_WINDOW=1 smix sim boot <ALIAS>   # the same for every boot under this setting; an emulator already running is left as it is
 smix sim boot <ALIAS> --cold   # an Android emulator boots from scratch instead of its Quick Boot snapshot, which keeps whatever state the device stopped in (a system UI that died stays dead); refused on anything else, and on an emulator already running
+smix sim boot <ALIAS> --unlock-pin 1357   # an Android emulator with a lock-screen PIN (or a password of letters and digits) is unlocked once it is up, with no window, before `booted` is printed; SMIX_UNLOCK_PIN is the default. Without one, a locked emulator fails the boot with "is locked"; a pattern cannot be entered. The PIN is never written down
 smix sim shutdown <ALIAS|UDID> # shutdown; for an emulator, returns once adb no longer lists it
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
 smix sim repair <ALIAS|UDID>   # rebuild PosterBoard's store when PosterBoard cannot load it; a running simulator is shut down and booted again, refused unless smix booted it and nobody holds it

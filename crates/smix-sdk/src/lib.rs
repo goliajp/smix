@@ -3108,7 +3108,6 @@ impl App {
         failure
     }
 
-    // ---- assertion matchers -------------------------------------------
 
     /// Assert that the selector matches a visible element. Re-uses
     /// `wait_for` semantics (5s default budget) with `NotVisible`
@@ -3180,15 +3179,13 @@ impl App {
         Ok(())
     }
 
-    /// Assert that the screen contains at least one element whose text /
-    /// label / 6-field OR scan matches the literal. Useful for "page
-    /// rendered" smoke checks without crafting a full selector tree.
+    /// Assert that some element's text, label or other text field matches
+    /// the literal: a "page rendered" check without a selector tree.
     pub async fn assert_text(&self, literal: &str) -> Result<(), ExpectationFailure> {
         self.assert_visible(&text(literal)).await
     }
 }
 
-// -------------------- error mapping -----------------------------------
 
 /// Map a device-control failure into the AI-readable failure shape.
 /// Public because it IS the contract between the simctl layer's typed
@@ -3205,7 +3202,11 @@ pub fn simctl_to_failure(e: DeviceControlError) -> ExpectationFailure {
         ),
         DeviceControlError::DeviceLocked { .. } => (
             FailureCode::AppNotRunning,
-            Some("unlock the device — enter its PIN — and run again".into()),
+            Some(
+                "boot it with `smix sim boot <device> --unlock-pin <pin>` (or \
+                 SMIX_UNLOCK_PIN), or enter its PIN, and run again"
+                    .into(),
+            ),
         ),
         DeviceControlError::NoLauncher { .. } => (FailureCode::AppNotRunning, None),
         DeviceControlError::Spawn(_) => (

@@ -4,6 +4,16 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [23.2.1] — 2026-11-04
 
+### Added
+
+- **`smix sim boot --unlock-pin <pin>`** (`SMIX_UNLOCK_PIN` as the
+  default): an Android emulator with a lock-screen PIN or password is
+  unlocked once it is up — the bouncer raised, the PIN typed, no window on
+  the host — and `booted` is printed only when its user is unlocked. A
+  locked emulator booted without one fails with "is locked" and what to
+  pass; a wrong one fails with "still locked"; a pattern is refused by
+  name. The PIN is never written to the ledger or anywhere else.
+
 ### Fixed
 
 - **`optional: true` on `assertVisible`, `assertNotVisible`,
@@ -23,6 +33,12 @@ All notable changes to the `smix` workspace are documented here. The format foll
   entered since the boot, no app that is not direct-boot aware can start,
   and the launch failed with `am start … exited 1`. It now fails with
   `APP_NOT_RUNNING`, "<device> is locked", and the hint to unlock it.
+- **The Android runner no longer guesses `.MainActivity` either.**
+  `launchApp` with `stopApp: false`, and the session routes, started
+  `<package>/.MainActivity` when `getLaunchIntentForPackage` had no answer —
+  always, for an app that only has a TV launcher. The runner now starts the
+  `LAUNCHER` activity, else the `LEANBACK_LAUNCHER` one, and with neither
+  refuses with `no_launcher`, which reaches a flow as `APP_NOT_RUNNING`.
 
 ## [23.2.0] — 2026-11-03
 
