@@ -102,7 +102,7 @@ dependencies {
 
 val mavenCentralGroupId = "jp.golia.smix" // reverse DNS of smix.golia.jp
 val mavenCentralArtifactId = "smix-sdk"
-val mavenCentralVersion = "23.2.0"
+val mavenCentralVersion = "23.3.0"
 
 mavenPublishing {
     publishToMavenCentral(automaticRelease = true)

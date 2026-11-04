@@ -1052,6 +1052,11 @@ the device in front of you is a no-op there, not an error.
     notVisible: "Spinner"
     timeout: 10000
 
+- extendedWaitUntil:
+    visible: "Rate this app"
+    timeout: 3000
+    optional: true                       # never came: skipped, not failed
+
 # On timeout, extendedWaitUntil auto-captures a screenshot + tree JSON
 # to `.smix/timeouts/` (or `--debug-output` dir when set) and appends
 # the written paths to the failure hint — no flag needed.
@@ -1105,7 +1110,7 @@ Full selector taxonomy is in [03-selectors.md](03-selectors.md).
 
 ## Conditional + optional patterns
 
-- `optional: true` on tapOn/assertVisible: step never fails the flow; it is skipped silently if the element is absent (used for cross-platform yamls where a step is iOS-only or Android-only).
+- `optional: true` on tapOn, assertVisible, assertNotVisible, extendedWaitUntil and expect: an absent element (or one still there) is reported as skipped, naming the element, instead of failing the flow — at the top of a flow and inside a `runFlow` or `repeat` alike. A skip inside a block is listed among the run's warnings. Used for cross-platform yamls where a step is iOS-only or Android-only.
 - `runFlow` with `when: { visible: ... }`: include a sub-flow only when a condition holds at runtime (e.g., "if Need Login is shown, run the login subflow").
 - `runFlow` with `when: { notVisible: ... }` (v1.0.24): inverse gate — enter only when the selector is NOT visible ("run the ceremony unless its end state is already on screen").
 - `runFlow` with `when: { platform: Android }`: a block for one platform in a flow written for both. The platform is checked first, so a block for the other platform never looks at the screen.
@@ -2505,6 +2510,7 @@ smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is take
 smix sim boot <ALIAS> --no-window  # an Android emulator runs with no window on the desktop, driven as usual; refused on an emulator already running and on a phone
 SMIX_EMULATOR_NO_WINDOW=1 smix sim boot <ALIAS>   # the same for every boot under this setting; an emulator already running is left as it is
 smix sim boot <ALIAS> --cold   # an Android emulator boots from scratch instead of its Quick Boot snapshot, which keeps whatever state the device stopped in (a system UI that died stays dead); refused on anything else, and on an emulator already running
+smix sim boot <ALIAS> --unlock-pin 1357   # an Android emulator with a lock-screen PIN (or a password of letters and digits) is unlocked once it is up, with no window, before `booted` is printed; SMIX_UNLOCK_PIN is the default. Without one, a locked emulator fails the boot with "is locked"; a pattern cannot be entered. The PIN is never written down
 smix sim shutdown <ALIAS|UDID> # shutdown; for an emulator, returns once adb no longer lists it
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
 smix sim repair <ALIAS|UDID>   # rebuild PosterBoard's store when PosterBoard cannot load it; a running simulator is shut down and booted again, refused unless smix booted it and nobody holds it
@@ -3566,7 +3572,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:23.2.0")
+    debugImplementation("jp.golia.smix:smix-probe:23.3.0")
 }
 ```
 
@@ -4229,6 +4235,12 @@ is not a verdict on whatever your script was checking.
 - Check app's crash log: `smix sim exec <udid> spawn ~/Library/Logs/CoreSimulator/<udid>/system.log | tail -50`.
 - For iOS, also `xcrun simctl spawn <udid> log show --last 5m --predicate 'eventMessage contains "<bundle-id>"'`.
 - Verify `launchApp` step ran (or that the app is installed: `smix sim list-apps <udid>`).
+- On Android, a message that says the device "is locked" means a PIN,
+  pattern or password is set and has not been entered since the device
+  booted: until it is, no app that is not direct-boot aware can start.
+  Unlock the device and run again. A message that the package declares no
+  launcher means the app has neither a `LAUNCHER` nor a `LEANBACK_LAUNCHER`
+  entry; name one with `activity:` in the apps config.
 
 ### APP_NOT_IN_FOREGROUND
 
@@ -4750,7 +4762,11 @@ apps:
 ```
 
 `activity` is an override, and most apps do not need it: omitted, smix
-asks the device's package manager which activity the launcher starts.
+asks the device's package manager which activity the launcher starts —
+a phone's launcher entry first, a TV's (`LEANBACK_LAUNCHER`) when there is
+none. A device with a PIN that has not been unlocked since it booted
+cannot start the app at all, and the launch says so (`APP_NOT_RUNNING`,
+"is locked") rather than naming a missing activity.
 Set it when an app has more than one entry point and a flow wants a
 particular one.
 
