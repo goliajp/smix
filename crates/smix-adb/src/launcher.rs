@@ -97,7 +97,7 @@ mod tests {
         assert_eq!(launcher_from_dumpsys(LOCKED, "dev.smix.other"), None);
     }
 
-    // the shape insight read off com.qualcomm.insight on API 36: a phone
+    // the shape of a consumer app's table on API 36: a phone
     // entry and a TV entry, neither called `.MainActivity`
     const TWO_ENTRIES: &str = "Activity Resolver Table:
   Non-Data Actions:
