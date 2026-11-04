@@ -113,7 +113,7 @@ e2e_stop_emulator "emulator-$OURS_PORT" || fail "the registration boot of $OURS_
 
 # ---------------------------------------------------------------- Android
 step "A1. ours through smix, theirs by hand"
-"$SMIX" sim boot "$OURS_ALIAS" > "$WORK/boot.log" 2>&1 || { cat "$WORK/boot.log" >&2; fail "smix could not boot $OURS_ALIAS"; }
+"$SMIX" sim boot "$OURS_ALIAS" --wait 600 > "$WORK/boot.log" 2>&1 || { cat "$WORK/boot.log" >&2; fail "smix could not boot $OURS_ALIAS"; }
 OURS_SERIAL="$("$SMIX" sim resolve "$OURS_ALIAS" 2>/dev/null | tr -d '[:space:]')"
 [ -n "$OURS_SERIAL" ] || fail "smix booted $OURS_ALIAS and cannot say which serial it is on"
 ready_android "$OURS_SERIAL" || fail "$OURS_SERIAL did not finish booting"

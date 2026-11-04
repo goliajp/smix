@@ -130,6 +130,7 @@ LOCAL = {
     "the this-tree gate can still go red": "a-script-drives-this-tree.test",
     "an e2e leaves the phones alone": "an-e2e-leaves-the-phones-alone.py",
     "the phones gate can still go red": "an-e2e-leaves-the-phones-alone.test",
+    "an extra device waits for room": "an-extra-device-waits-for-room.py",
     "every device gate keeps the crash evidence": "a-device-gate-keeps-crash-evidence.py",
     "the crash-evidence gate can still go red": "a-device-gate-keeps-crash-evidence.test",
     "the crash-evidence collector's self-test": "crash-evidence.sh --selftest",
