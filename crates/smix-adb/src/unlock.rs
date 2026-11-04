@@ -186,13 +186,14 @@ impl AdbClient {
         let deadline = Instant::now() + BOUNCER_UP_WITHIN;
         let read = format!("uiautomator dump {DUMP} >/dev/null && cat {DUMP}; rm -f {DUMP}");
         loop {
+            let looked = Instant::now();
             self.shell(serial, &["input", "keyevent", "KEYCODE_WAKEUP"])
                 .await?;
             self.shell(serial, &["wm", "dismiss-keyguard"]).await?;
             if bouncer_is_up(&self.shell(serial, &[read.as_str()]).await?) {
                 return Ok(());
             }
-            if Instant::now() >= deadline {
+            if looked >= deadline {
                 return Err(UnlockError::NoBouncer {
                     serial: serial.to_string(),
                     after: BOUNCER_UP_WITHIN,
@@ -211,10 +212,11 @@ impl AdbClient {
     async fn unlocked_within(&self, serial: &str, within: Duration) -> Result<bool, AdbError> {
         let deadline = Instant::now() + within;
         loop {
+            let looked = Instant::now();
             if self.user_locked(serial).await? == Some(false) {
                 return Ok(true);
             }
-            if Instant::now() >= deadline {
+            if looked >= deadline {
                 return Ok(false);
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
