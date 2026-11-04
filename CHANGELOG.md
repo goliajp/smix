@@ -2,6 +2,28 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [23.2.1] — 2026-11-04
+
+### Fixed
+
+- **`optional: true` on `assertVisible`, `assertNotVisible`,
+  `extendedWaitUntil` and `expect` was dropped when the flow was read**, so
+  a miss failed the flow — at the top of a flow and inside `runFlow` alike.
+  A miss on an optional check is now a skip that names the element it
+  looked for. A skip inside a block, `optional` `tapOn` included, is listed
+  among the run's warnings; it used to leave no trace in the report.
+  `optional` that is not `true` or `false` is refused.
+- **An Android `launchApp` no longer guesses `<package>/.MainActivity`.**
+  An apps config without `activity:` named `.MainActivity` on the app's
+  behalf, so the device was never asked; omitted now means the device
+  says. When the package manager cannot resolve the launcher, smix reads
+  the package's own filter table (`dumpsys package`): a phone's `LAUNCHER`
+  entry first, a TV's `LEANBACK_LAUNCHER` when there is none.
+- **A locked Android device says it is locked.** With a PIN set and not
+  entered since the boot, no app that is not direct-boot aware can start,
+  and the launch failed with `am start … exited 1`. It now fails with
+  `APP_NOT_RUNNING`, "<device> is locked", and the hint to unlock it.
+
 ## [23.2.0] — 2026-11-03
 
 ### Added
