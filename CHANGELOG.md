@@ -2,6 +2,21 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [23.3.1] — 2026-11-05
+
+The first release on any registry since 23.0.0: 23.1.0, 23.2.0 and
+23.3.0 were not published, so their entries below are part of what this
+one brings to crates.io, npm, Maven Central and the Swift package.
+
+### Fixed
+
+- **A runner that does not answer is no longer met with a script you do
+  not have.** The hint said `bash scripts/smix-runner-health.sh`, which is
+  in no install. It now says to start one with `smix runner up <device>`,
+  or, when one is up on another port, to set `SMIX_RUNNER_PORT` to it —
+  the usual way to reach this error is a verb reading the default port
+  while the runner listens elsewhere.
+
 ## [23.3.0] — 2026-11-04
 
 ### Added
