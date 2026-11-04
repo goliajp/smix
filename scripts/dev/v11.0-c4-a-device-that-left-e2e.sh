@@ -109,9 +109,18 @@ wait_for_boot "$BLOCKER_SERIAL" || cannot_judge "$BLOCKER_AVD did not come up on
 log "$BLOCKER_SERIAL is $BLOCKER_AVD"
 
 step "smix sim boot $ALIAS — its port is taken, so it has to go elsewhere"
-out="$(with_deadline 240 "$SMIX" sim boot "$ALIAS" 2>&1)"
+# This subject is three emulators at once (the release's, the blocker and
+# this one) beside the release's simulator, which is more than smix's default
+# device budget (60% of memory) admits — correctly, for an ordinary caller.
+# The gate says what it needs instead: 75% of memory for this one boot, and
+# only while the system itself reports room; otherwise it does not judge.
+free_pct="$(memory_pressure -Q 2>/dev/null | sed -n 's/.*free percentage: \([0-9]*\)%.*/\1/p')"
+[ -n "$free_pct" ] || cannot_judge "memory_pressure gave no free percentage"
+[ "$free_pct" -ge 30 ] || cannot_judge "the system reports $free_pct% of memory free; three emulators need at least 30%"
+mem_gib=$(( $(sysctl -n hw.memsize) / 1073741824 ))
+out="$(SMIX_DEVICE_BUDGET_GIB=$(( mem_gib * 3 / 4 )) with_deadline 900 "$SMIX" sim boot "$ALIAS" --wait 600 2>&1)"
 rc=$?
-[ "$rc" = "$DEADLINE_STATUS" ] && cannot_judge "sim boot did not return in 240 s"
+[ "$rc" = "$DEADLINE_STATUS" ] && cannot_judge "sim boot did not return in 900 s"
 [ "$rc" = 0 ] || fail "sim boot refused or failed with its registered port taken (exit $rc):
 $out"
 SERIAL="$(printf '%s\n' "$out" | sed -n 's/^booted: \(emulator-[0-9]*\).*/\1/p' | tail -1)"
