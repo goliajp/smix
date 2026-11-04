@@ -41,7 +41,11 @@ apps:
 ```
 
 `activity` is an override, and most apps do not need it: omitted, smix
-asks the device's package manager which activity the launcher starts.
+asks the device's package manager which activity the launcher starts —
+a phone's launcher entry first, a TV's (`LEANBACK_LAUNCHER`) when there is
+none. A device with a PIN that has not been unlocked since it booted
+cannot start the app at all, and the launch says so (`APP_NOT_RUNNING`,
+"is locked") rather than naming a missing activity.
 Set it when an app has more than one entry point and a flow wants a
 particular one.
 

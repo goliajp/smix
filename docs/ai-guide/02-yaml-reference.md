@@ -880,6 +880,11 @@ the device in front of you is a no-op there, not an error.
     notVisible: "Spinner"
     timeout: 10000
 
+- extendedWaitUntil:
+    visible: "Rate this app"
+    timeout: 3000
+    optional: true                       # never came: skipped, not failed
+
 # On timeout, extendedWaitUntil auto-captures a screenshot + tree JSON
 # to `.smix/timeouts/` (or `--debug-output` dir when set) and appends
 # the written paths to the failure hint — no flag needed.
@@ -933,7 +938,7 @@ Full selector taxonomy is in [03-selectors.md](03-selectors.md).
 
 ## Conditional + optional patterns
 
-- `optional: true` on tapOn/assertVisible: step never fails the flow; it is skipped silently if the element is absent (used for cross-platform yamls where a step is iOS-only or Android-only).
+- `optional: true` on tapOn, assertVisible, assertNotVisible, extendedWaitUntil and expect: an absent element (or one still there) is reported as skipped, naming the element, instead of failing the flow — at the top of a flow and inside a `runFlow` or `repeat` alike. A skip inside a block is listed among the run's warnings. Used for cross-platform yamls where a step is iOS-only or Android-only.
 - `runFlow` with `when: { visible: ... }`: include a sub-flow only when a condition holds at runtime (e.g., "if Need Login is shown, run the login subflow").
 - `runFlow` with `when: { notVisible: ... }` (v1.0.24): inverse gate — enter only when the selector is NOT visible ("run the ceremony unless its end state is already on screen").
 - `runFlow` with `when: { platform: Android }`: a block for one platform in a flow written for both. The platform is checked first, so a block for the other platform never looks at the screen.

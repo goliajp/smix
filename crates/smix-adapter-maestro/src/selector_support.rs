@@ -7,11 +7,8 @@
 //! resolver by the verbs that read it at all — and matched by nothing by
 //! the verbs that do not.
 //!
-//! v6.7 spent six checkpoints on that being only a comment: a rule some
-//! call sites followed, invisible because a verb that does not read a form
-//! fails exactly like one whose target is absent.
-//!
-//! So the cells are here, and both matches are exhaustive. A new `Step`
+//! As a comment it was followed by some call sites, unseen: a verb that
+//! does not read a form fails like one whose target is absent. So the cells are here, and both matches are exhaustive. A new `Step`
 //! does not compile until it says which selector slots it has; a new
 //! slot does not compile until it says what it does with each form.
 //! There is no third answer: a slot either reads the form or refuses it
@@ -124,6 +121,7 @@ pub enum Support {
 #[must_use]
 pub fn slots(step: &Step) -> &'static [Slot] {
     match step {
+        Step::Optional(inner) => slots(inner),
         Step::UntilEffect { .. } => &[
             Slot::TapOnTarget,
             Slot::WaitVisibleTarget,
@@ -395,6 +393,7 @@ pub fn support(slot: Slot, form: UnreadableForm) -> Support {
 #[must_use]
 pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
     match step {
+        Step::Optional(inner) => slot_selectors(inner),
         Step::UntilEffect {
             action,
             until,

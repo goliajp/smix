@@ -92,17 +92,20 @@ class RunnerWireTransformTest {
         )
     }
 
-    /// Only when nobody knows better.
-    ///
-    /// This used to be the sole behaviour, which is right for an app
-    /// generated from a template and wrong for every AOSP one. The
-    /// caller resolves the real entry point through the package
-    /// manager; this is what remains when even that answers nothing.
+    // insight's two entries: neither is `.MainActivity`, and the phone's
+    // launcher is tried before the TV's
     @Test
-    fun foregroundCommandFallsBackToTheConvention() {
+    fun launcherActivityIsRelativeUnderThePackageAndFullOutsideIt() {
         assertEquals(
-            "am start --activity-single-top -n com.example.app/.MainActivity",
-            RunnerWire.foregroundCommand("com.example.app", null),
+            ".nativeapp.tv.TvActivity",
+            RunnerWire.launcherActivity("com.x", "com.x.nativeapp.tv.TvActivity"),
+        )
+        assertEquals("org.other.Main", RunnerWire.launcherActivity("com.x", "org.other.Main"))
+        // a package whose name is a prefix of another's is not under it
+        assertEquals("com.xy.Main", RunnerWire.launcherActivity("com.x", "com.xy.Main"))
+        assertEquals(
+            listOf("android.intent.category.LAUNCHER", "android.intent.category.LEANBACK_LAUNCHER"),
+            RunnerWire.LAUNCHER_CATEGORIES,
         )
     }
 
