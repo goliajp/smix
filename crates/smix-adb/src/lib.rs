@@ -21,6 +21,7 @@ mod binary;
 mod crash;
 mod launch;
 mod launcher;
+mod unlock;
 pub mod wait;
 
 pub use binary::{
@@ -32,6 +33,7 @@ pub use crash::{
 };
 pub use launch::{LAUNCH_DRAWS_WITHIN, Launched};
 pub use launcher::{launcher_from_dumpsys, user_is_locked};
+pub use unlock::{Unlock, UnlockError, credential_type, typeable_credential};
 
 use std::path::Path;
 use thiserror::Error;

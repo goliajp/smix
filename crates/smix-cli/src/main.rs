@@ -32,6 +32,7 @@ mod bench;
 mod boot_avd;
 mod boot_cold;
 mod boot_record;
+mod boot_unlock;
 mod capsule;
 mod fill_secret;
 mod hover_cmd;
@@ -1687,6 +1688,11 @@ enum SimAction {
         /// Wait up to this many seconds for room when the machine has none.
         #[arg(long, default_value_t = 0)]
         wait: u64,
+        /// An Android emulator's lock-screen PIN (or a password of letters
+        /// and digits), entered with no window once it is up so that apps
+        /// can start. `SMIX_UNLOCK_PIN` is the default. Never written down.
+        #[arg(long)]
+        unlock_pin: Option<String>,
     },
     /// Shutdown a simulator.
     Shutdown {
@@ -3075,6 +3081,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     cold,
                     no_window,
                     wait,
+                    unlock_pin,
                 } => {
                     cleanup_cmd::reclaim_left_behind(false)
                         .await
@@ -3122,10 +3129,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     } else {
                         resolve_device(&device)?
                     };
-                    // An emulator is started by name, not by serial: the
-                    // serial is what answers once it is up. The AVD name was
-                    // written down at registration, when the device was
-                    // provably running and could be asked.
+                    // an emulator starts by AVD name (written at registration);
+                    // the serial is what answers once it is up
                     let kind = device_kind_of(&device);
                     let running =
                         kind == smix_simctl::registry::DeviceKind::Emulator && adb_knows(&udid);
@@ -3134,6 +3139,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     {
                         return Err(CliError::Other(why));
                     }
+                    let unlock_pin = boot_unlock::credential(&device, kind, unlock_pin)
+                        .map_err(CliError::Other)?;
                     if kind == smix_simctl::registry::DeviceKind::Emulator {
                         let already = running;
                         let claim = boot_claim(if already {
@@ -3166,16 +3173,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 adb.start_emulator_on_with(&avd, &udid, &console, from)
                             };
                             started.map_err(|e| CliError::Other(format!("{e}")))?;
-                            // Recorded as soon as the process is started,
-                            // before the wait. The emulator has a process
-                            // group of its own and outlives this command, so
-                            // a Ctrl-C during the wait left it running with
-                            // no record that smix started it — and smix then
-                            // refused to stop it (2026-09-25). The record is
-                            // withdrawn below, after stopping the emulator,
-                            // when it never comes up: the ledger still never
-                            // claims a device that is not there once this
-                            // command has answered.
+                            // recorded before the wait, which a Ctrl-C the emulator
+                            // outlives may cut; withdrawn below if it never comes up
                             record_emulator_boot(
                                 &udid,
                                 claim,
@@ -3209,9 +3208,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 )));
                             }
                         } else {
-                            // Found running: its console is not ours to keep,
-                            // but its name is what tells this ledger apart
-                            // from the next AVD to take the same port.
+                            // found running: its name tells this ledger from the next AVD on the port
                             let identity = match smix_adb::AdbClient::new().avd_name(&udid).await {
                                 Ok(avd) if !avd.is_empty() => {
                                     Some(smix_lease::Resource::Emulator {
@@ -3223,13 +3220,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             };
                             record_emulator_boot(&udid, claim, identity);
                         }
+                        boot_unlock::leave_unlocked(&udid, unlock_pin.as_deref())
+                            .await
+                            .map_err(CliError::Other)?;
                         println!("booted: {udid}");
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
-                    // Whether this command is the one that brought the device
-                    // up decides, later, whether smix may shut it down. A
-                    // device someone else booted is not ours to turn off as
-                    // the price of cleaning up after ourselves.
+                    // whether this command brought the device up decides
+                    // later whether smix may shut it down
                     let claim = boot_record::claim_before_boot(&simctl, &udid).await;
                     // Wait for the device to finish booting, not just to accept
                     // the boot. `simctl boot` returns while CoreSimulator is
@@ -7042,6 +7040,7 @@ mod device_power {
             cold: false,
             no_window: false,
             wait: 0,
+            unlock_pin: None,
         }
     }
 
@@ -7379,6 +7378,7 @@ mod tests {
                     cold: false,
                     no_window: false,
                     wait: 0,
+                    unlock_pin: None,
                 },
             ),
             ("shutdown", SimAction::Shutdown { device: d() }),
