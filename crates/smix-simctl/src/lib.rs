@@ -79,6 +79,30 @@ pub enum DeviceControlError {
         /// The device it is missing from.
         udid: String,
     },
+    /// An Android device whose user is still locked: a PIN, pattern or
+    /// password is set and has not been entered since it booted, and until
+    /// it is, an app that is not direct-boot aware cannot start.
+    #[error(
+        "{udid} is locked — its PIN, pattern or password has not been entered \
+         since it booted, and {bundle_id} cannot start until it is"
+    )]
+    DeviceLocked {
+        /// The app that was to start.
+        bundle_id: String,
+        /// The locked device.
+        udid: String,
+    },
+    /// The package has no activity a launcher starts.
+    #[error(
+        "{bundle_id} on {udid} has no MAIN activity in LAUNCHER or LEANBACK_LAUNCHER \
+         — name the one to start with `activity:` in the flow's apps config"
+    )]
+    NoLauncher {
+        /// The package.
+        bundle_id: String,
+        /// The device it is installed on.
+        udid: String,
+    },
     /// The device-control command exited non-zero.
     ///
     /// Carries the full `argv` and `wall_ms` so the `Display` impl
@@ -90,14 +114,8 @@ pub enum DeviceControlError {
         /// Subcommand name (e.g. `"boot"`, `"launch"`).
         subcommand: String,
         /// The full command as invoked, binary first — `["xcrun", "simctl",
-        /// "boot", …]` from simctl, `["adb", …]` from the Android side.
-        ///
-        /// The binary belongs here rather than in the `Display` format
-        /// string: this error type serves both platforms, and hard-coding
-        /// `xcrun simctl` made every Android failure name a tool that never
-        /// ran, sending the reader to the wrong toolchain.
-        ///
-        /// Since smix 1.0.7.
+        /// "boot", …]` or `["adb", …]`: the type serves both platforms, so
+        /// the binary is data, not part of the message. Since smix 1.0.7.
         argv: Vec<String>,
         /// Exit code from `xcrun simctl`.
         code: i32,
@@ -378,17 +396,9 @@ mod diag_store {
 
     /// Read a singleton from disk the first time someone needs it.
     ///
-    /// The three diagnostic singletons used to load at startup: every
-    /// smix command called all three `set_*_persist_path` functions,
-    /// and each one read its value immediately. Measured with a
-    /// backtrace probe on `Store::open`, a plain `smix sim list` opened
-    /// the store four times — three eager loads plus the one write the
-    /// command actually needed. Two of those three were for state that
-    /// command never touches: it runs no flow and resets no app data.
-    ///
-    /// Each open replays the AOF and takes the store's *blocking*
-    /// advisory lock, so the cost is not only work — it is three extra
-    /// chances to queue behind another smix process for nothing.
+    /// Loading all three at startup opened the store four times for a
+    /// plain `smix sim list`; each open replays the AOF and takes the
+    /// store's blocking lock, a chance to queue behind another smix.
     ///
     /// The flag is only latched once a path exists. A read that happens
     /// before `set_persist_path` must leave it alone: latching there
@@ -1560,23 +1570,11 @@ impl SimctlClient {
         }
     }
 
-    /// Delete a single key from an app's NSUserDefaults domain via
-    /// `simctl spawn <udid> defaults delete <bundleId> <key>`.
-    /// Running `defaults` INSIDE the sim (spawn) goes through
-    /// the sim's cfprefsd, so the deletion is coherent with what the
-    /// app reads on next launch (editing the container plist from the
-    /// host would race cfprefsd's cache).
-    ///
-    /// Returns `Ok(true)` when the key existed and was deleted,
-    /// `Ok(false)` when the key (or the whole domain) was absent —
-    /// the verb contract is "ensure key absent", so an already-absent
-    /// key is success, not an error. Any other failure surfaces as
-    /// the underlying [`DeviceControlError`].
-    ///
-    /// Motivating case: expo-dev-launcher
-    /// persists the most recent deep link and re-delivers it after
-    /// every JS bundle load; deleting its storage key between
-    /// terminate and relaunch neutralizes the replay at the source.
+    /// Delete a single key from an app's NSUserDefaults domain with
+    /// `defaults delete` run inside the sim, through its cfprefsd (a
+    /// host-side plist edit would race that cache). `Ok(false)` when the
+    /// key or domain was already absent: the contract is "key absent".
+    /// (expo-dev-launcher replays its last deep link from such a key.)
     ///
     /// **Terminate the app first** — a running process has its
     /// defaults cached in-memory and may rewrite the key at exit.

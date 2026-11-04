@@ -27,7 +27,7 @@ use smix_selector_resolver::{resolve_selector, resolve_selector_all};
 
 use crate::Orientation;
 use crate::android_aim::{resolve_aimed, resolve_rect_with_implicit_wait};
-use crate::android_input::Entry;
+use crate::android_input::{Entry, foreground_failure};
 use crate::android_notes::dispatch_unsupported_err;
 use crate::traits::{Driver, Platform};
 
@@ -749,16 +749,12 @@ impl Driver for AndroidDriver {
     }
 
     async fn foreground(&self, bundle_id: &str) -> Result<(), ExpectationFailure> {
-        // Kotlin /foreground runs `am start --activity-single-top
-        // -n pkg/.MainActivity` (mirror iOS XCUIDevice activate semantic
-        // without launching a new instance).
-        self.runner.foreground(bundle_id).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::foreground: {e}"),
-                ..Default::default()
-            })
-        })
+        // the runner starts the package's launcher activity with
+        // `--activity-single-top`, the iOS activate semantic
+        self.runner
+            .foreground(bundle_id)
+            .await
+            .map_err(|e| foreground_failure(&e))
     }
 
     async fn webview_eval(&self, js: &str) -> Result<serde_json::Value, ExpectationFailure> {

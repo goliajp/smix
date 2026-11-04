@@ -63,14 +63,10 @@ pub struct AndroidApp {
     /// Package name (e.g. `com.example.app`).
     pub package: String,
     /// Activity name (e.g. `.MainActivity` or fully-qualified
-    /// `com.example.app.MainActivity`). Defaults to `.MainActivity` if
-    /// omitted in yaml.
-    #[serde(default = "default_activity")]
+    /// `com.example.app.MainActivity`). Empty when omitted: the launch
+    /// then asks the device for the package's launcher.
+    #[serde(default)]
     pub activity: String,
-}
-
-fn default_activity() -> String {
-    ".MainActivity".to_string()
 }
 
 /// Resolved platform-specific app identifier returned by
@@ -82,12 +78,11 @@ pub enum ResolvedApp {
         /// Bundle identifier.
         bundle_id: String,
     },
-    /// Android package + activity — `App::launch(package)` works for
-    /// `DeviceControl::launch` paths that default to `.MainActivity`.
+    /// Android package + activity (empty when the config named none).
     Android {
         /// Package name.
         package: String,
-        /// Activity name (relative `.MainActivity` or fully-qualified).
+        /// Activity name (relative `.MainActivity` or fully-qualified), or empty.
         activity: String,
     },
 }
@@ -191,11 +186,9 @@ pub fn resolve_app_into_flow(
     let resolved = apps.resolve(&logical, platform)?;
     let primary = resolved.primary_id().to_string();
     flow.app_id = primary.clone();
-    // The activity used to stop here: read from the yaml, defaulted,
-    // and never looked at again, so `activity: .SomethingElse` was
-    // accepted and ignored.
+    // only a named activity: a guessed one would skip asking the device
     if let ResolvedApp::Android { activity, .. } = &resolved {
-        flow.launch_activity = Some(activity.clone());
+        flow.launch_activity = Some(activity.clone()).filter(|a| !a.is_empty());
     }
     // Patch inherited LaunchApp steps (those with empty app_id) so the
     // runtime dispatch path stays oblivious to the logical resolve.
@@ -247,6 +240,7 @@ fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
         | Step::RememberBounds { .. }
         | Step::AssertBoundsUnchanged { .. }
         | Step::AssertVisible { .. }
+        | Step::Optional(_)
         | Step::AssertNotVisible { .. }
         | Step::ExtendedWaitUntil { .. }
         | Step::ScrollUntilVisible { .. }
@@ -352,15 +346,25 @@ apps:
     }
 
     #[test]
-    fn resolve_default_activity_when_omitted() {
+    fn an_omitted_activity_is_left_for_the_device_to_name() {
         let cfg = AppsConfig::from_yaml(SAMPLE).unwrap();
         let r = cfg.resolve("simpleApp", Platform::Android).unwrap();
-        match r {
-            ResolvedApp::Android { activity, .. } => {
-                assert_eq!(activity, ".MainActivity");
-            }
-            _ => panic!("expected Android"),
-        }
+        assert!(
+            matches!(&r, ResolvedApp::Android { activity, .. } if activity.is_empty()),
+            "{r:?}"
+        );
+        let flow = |app: &str| {
+            let mut flow = crate::Flow {
+                app_id: String::new(),
+                app: Some(app.to_string()),
+                launch_activity: None,
+                steps: vec![],
+            };
+            resolve_app_into_flow(&mut flow, &cfg, Platform::Android).unwrap();
+            flow.launch_activity
+        };
+        assert_eq!(flow("simpleApp"), None);
+        assert_eq!(flow("demoApp").as_deref(), Some(".DemoActivity"));
     }
 
     #[test]

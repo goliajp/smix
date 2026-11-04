@@ -193,16 +193,9 @@ fn parse_role_name_yaml(
 // Parse a single chain element of `fallback: [...]`: any selector, plus
 // `point`.
 //
-// This used to be a parser of its own — a hand-kept subset of
-// `visible_to_selector` that read `id` / `text` / `localized_text` /
-// `ocrText` / `anchored` / `point` and nothing else, with a second
-// hand-kept list in its refusal. So `label` (how smix reaches an
-// Android contentDescription, the only name an icon button has there),
-// `role` and every modifier could not appear in a chain, and nothing said
-// why beyond "expected one of". A consumer's two-phone flow needed
-// exactly that: "this control, under either name the phones give it".
-// One parser now; the chain adds `point`, the one form that only makes
-// sense as a last resort.
+// The same parser as every selector (a hand-kept subset once left
+// `label`, `role` and modifiers out of chains); the chain adds `point`,
+// a form that only makes sense as a last resort.
 fn parse_fallback_element(v: &Value, field: &str) -> Result<Selector, ParseError> {
     let map = match v {
         Value::Mapping(m) => m,
@@ -418,12 +411,8 @@ fn parse_localized_table(
 /// `{regex, flags}` — the shape `smix_selector::Pattern` has always
 /// serialized to — says so explicitly.
 ///
-/// The explicit form exists because there was no way to ask for a
-/// regex on purpose: 03-selectors documented meta-character detection
-/// that only `|` ever triggered, so `^Help$` was matched as the literal
-/// eight characters and found nothing, silently. Widening the
-/// detection instead would have made `Delete?` and `3.5` into patterns,
-/// which fails in the direction that does not announce itself.
+/// The mapping is how a regex is asked for on purpose: widening the
+/// detection would turn `Delete?` and `3.5` into patterns, silently.
 ///
 /// `None` means the key is absent or not one of the two forms, which
 /// leaves the caller's other selector arms to try.
@@ -658,58 +647,23 @@ pub(crate) fn selector_under(v: &Value, field: &str) -> Result<Selector, ParseEr
 /// Convert a `visible:` value (scalar string or map with a selector
 /// sub-key) into a [`Selector`].
 ///
-/// Accepted map keys mirror the base selector table:
-/// - `text` — literal or `|`-alternation regex
-/// - `id` — accessibilityIdentifier
-/// - `label` — accessibilityLabel (strict equal)
-/// - `role` — semantic role (+ optional `name:` pattern)
-/// - `ocrText` — Vision (iOS) / ML Kit (Android) OCR match
-/// - `localized_text` — per-locale text table
-/// - `fallback` — sequential selector chain, first hit wins
+/// Map keys: `text`, `id`, `label`, `role` (+ `name:`), `ocrText`,
+/// `localized_text`, `fallback`. Every verb that takes a selector
+/// resolves it here, so narrowing the set drops forms from all of them.
 ///
 /// # Errors
 ///
-/// Returns [`ParseError::InvalidValue`] if the value is neither a
-/// scalar string nor a map containing one of the accepted keys.
-///
-/// This helper is the single resolution point for
-/// `extendedWaitUntil.visible: {ocrText}`, `assertVisible: {role,
-/// name}`, `scrollUntilVisible: {label}` and every other verb that
-/// takes a selector, so the full accepted key set must live here —
-/// narrowing it silently drops selector forms from ~8 verbs at once.
+/// [`ParseError::InvalidValue`] for neither a string nor such a map.
 pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
     match v {
         Value::String(s) => {
-            // Bare-string `visible: 'X'` optionally auto-lifts to
-            // `visible: fallback: [text: X, ocrText: X]` when
-            // `SMIX_AUTO_OCR_FALLBACK=1`. Spelling out the 3-line
-            // fallback form in every flow is tedious, so this
-            // env-opt-in lets callers keep bare strings and still get
-            // the OCR safety net. Tier order: text first (cheap, hits
-            // when the tree exposes text), OCR after (~500 ms Vision
-            // call, hits when the tree is degraded).
-            //
-            // When the bare string contains `|`, `text_to_pattern`
-            // treats it as a regex OR (`/A|B/i`). That is right for
-            // the tree tier but WRONG for the OCR tier: Apple Vision
-            // does not interpret pipes, so it would search for the
-            // literal string `"A|B"`, which is never on screen — and
-            // the OCR tier would miss every time. So split on
-            // top-level `|` and emit one `OcrText` per alternative
-            // AFTER the single regex text tier:
-            //   `fallback: [Text('/A|B/i'), OcrText('A'), OcrText('B')]`
-            // The tree tier still covers "either A or B" in one
-            // probe; OCR now has real strings to search for.
-            //
-            // "Top-level `|`" means we don't try to parse
-            // `[A|B]` character classes or `\|` escapes — those
-            // stay as-is on the text tier and don't split. Any
-            // string containing `|` under normal user yaml intent
-            // is a simple `A|B|C` OR, and that's what we handle.
-            //
-            // Non-empty check: an empty selector doesn't get auto-
-            // lifted — bubbles to the same Selector::Text as before
-            // and gets rejected by validators downstream.
+            // With `SMIX_AUTO_OCR_FALLBACK=1` a bare string becomes
+            // `fallback: [text, ocrText]`: the tree first, OCR (~500 ms)
+            // when the tree is degraded. OCR does not read `A|B` as an
+            // alternation, so a top-level `|` splits into one `OcrText`
+            // per alternative after the single regex text tier
+            // (`[A|B]` classes and `\|` escapes are not split). An empty
+            // string is not lifted; validators reject it downstream.
             if auto_ocr_fallback_enabled() && !s.is_empty() {
                 let text_layer = Selector::Text {
                     text: text_to_pattern(s),
@@ -3417,7 +3371,46 @@ fn normalize_verb_name(key: &str) -> &str {
     key // unknown; leave verbatim → dispatch_step will emit UnsupportedCommand
 }
 
+/// `optional:` on a check with no field for it: parsed without it, wrapped.
+fn optional_check(key: &str, value: &Value) -> Result<Option<Step>, ParseError> {
+    const CHECKS: &[&str] = &[
+        "expect",
+        "assertVisible",
+        "assertNotVisible",
+        "extendedWaitUntil",
+    ];
+    let optional = Value::String("optional".into());
+    let Some(map) = value
+        .as_mapping()
+        .filter(|m| CHECKS.contains(&key) && m.contains_key(&optional))
+    else {
+        return Ok(None);
+    };
+    let on = map[&optional]
+        .as_bool()
+        .ok_or_else(|| ParseError::InvalidValue {
+            field: format!("{key}.optional"),
+            reason: format!("expected true or false, got {:?}", map[&optional]),
+        })?;
+    let mut rest = map.clone();
+    rest.remove(&optional);
+    let step = dispatch_step(key, &Value::Mapping(rest))?;
+    Ok(Some(if on {
+        Step::Optional(Box::new(step))
+    } else {
+        step
+    }))
+}
+
 fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
+    let check = if key == "expect" {
+        key
+    } else {
+        normalize_verb_name(key)
+    };
+    if let Some(step) = optional_check(check, value)? {
+        return Ok(step);
+    }
     // Polymorphic-dispatch keys must route BEFORE
     // verb-name normalization. `expect` maps to `assertVisible` in
     // smix_verbs but the parser routes it based on subkeys

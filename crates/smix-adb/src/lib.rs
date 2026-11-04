@@ -20,6 +20,8 @@ use std::io;
 mod binary;
 mod crash;
 mod launch;
+mod launcher;
+mod unlock;
 pub mod wait;
 
 pub use binary::{
@@ -30,6 +32,8 @@ pub use crash::{
     CrashLoop, CrashReport, ENDED_AT_SHUTDOWN, crash_loops, crash_loops_at, crash_time,
 };
 pub use launch::{LAUNCH_DRAWS_WITHIN, Launched};
+pub use launcher::{launcher_from_dumpsys, user_is_locked};
+pub use unlock::{Unlock, UnlockError, credential_type, typeable_credential};
 
 use std::path::Path;
 use thiserror::Error;
@@ -353,13 +357,9 @@ pub fn parse_stay_awake(stdout: &str) -> Option<bool> {
 /// 2026-07-22; the fixtures under `tests/fixtures/` are that output
 /// verbatim, so this stays checkable without a device.
 ///
-/// `None` means "the device did not name one", which the caller reads
-/// as the old `.MainActivity` convention: a shell whose output format
-/// this does not recognise leaves every caller exactly where it was
-/// before the query existed, rather than launching something wrong.
+/// `None`: the device named none — a locked user does that for most
+/// apps — and the caller reads [`launcher_from_dumpsys`] next.
 ///
-/// Separate from the method that runs the shell, because the shell is
-/// the part needing a device and this is the part that can be wrong.
 /// The activity comes back relative (`.Settings`) because
 /// `AdbClient::start_activity` prefixes the package itself; returning
 /// the fully-qualified form would produce `<pkg>/<pkg>.Settings`.

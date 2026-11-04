@@ -840,12 +840,11 @@ fn block_label(opts: &crate::BlockOptions) -> String {
         .unwrap_or_default()
 }
 
-/// A step's one-line description, richer than its verb.
-///
-/// `runtime::run_steps` writes it as each step starts; the debug record
-/// keys off the bare verb next door.
+/// A step's one-line description, richer than its verb; `run_steps` writes
+/// it as each step starts, the debug record keys off the bare verb.
 pub(crate) fn summarize_step(step: &Step) -> String {
     match step {
+        Step::Optional(inner) => format!("{} (optional)", summarize_step(inner)),
         Step::UntilEffect {
             action,
             until,

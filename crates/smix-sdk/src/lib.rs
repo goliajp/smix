@@ -479,17 +479,11 @@ pub fn plan_launch_fresh_calls(
     plan_launch_fresh_calls_v2(clear_state, clear_keychain, app_path, false)
 }
 
-/// Extended planner with an explicit `force_reinstall`
-/// switch. When `false` (the new default), `clear_state=true` runs
-/// the in-place sandbox clear + privacy reset instead of
-/// `simctl uninstall + install`. This avoids the iOS 26.5 XCUITest
-/// binding loss and the ReportCrash "`<app>` quit
-/// unexpectedly" system dialog — both of which stem
-/// from the uninstall+install sequence.
-///
-/// When `force_reinstall=true` (opt-in via
-/// `SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1`), the uninstall+install path
-/// is preserved for cases where a bit-for-bit reinstall is required.
+/// Extended planner with an explicit `force_reinstall`. `false` (the
+/// default) clears the sandbox and privacy in place instead of
+/// uninstall + install, which loses the XCUITest binding and raises a
+/// "quit unexpectedly" dialog; `true` (`SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1`)
+/// reinstalls bit for bit.
 ///
 /// Since smix 1.0.4.
 #[must_use]
@@ -3114,7 +3108,6 @@ impl App {
         failure
     }
 
-    // ---- assertion matchers -------------------------------------------
 
     /// Assert that the selector matches a visible element. Re-uses
     /// `wait_for` semantics (5s default budget) with `NotVisible`
@@ -3186,15 +3179,13 @@ impl App {
         Ok(())
     }
 
-    /// Assert that the screen contains at least one element whose text /
-    /// label / 6-field OR scan matches the literal. Useful for "page
-    /// rendered" smoke checks without crafting a full selector tree.
+    /// Assert that some element's text, label or other text field matches
+    /// the literal: a "page rendered" check without a selector tree.
     pub async fn assert_text(&self, literal: &str) -> Result<(), ExpectationFailure> {
         self.assert_visible(&text(literal)).await
     }
 }
 
-// -------------------- error mapping -----------------------------------
 
 /// Map a device-control failure into the AI-readable failure shape.
 /// Public because it IS the contract between the simctl layer's typed
@@ -3209,6 +3200,15 @@ pub fn simctl_to_failure(e: DeviceControlError) -> ExpectationFailure {
                     .into(),
             ),
         ),
+        DeviceControlError::DeviceLocked { .. } => (
+            FailureCode::AppNotRunning,
+            Some(
+                "boot it with `smix sim boot <device> --unlock-pin <pin>` (or \
+                 SMIX_UNLOCK_PIN), or enter its PIN, and run again"
+                    .into(),
+            ),
+        ),
+        DeviceControlError::NoLauncher { .. } => (FailureCode::AppNotRunning, None),
         DeviceControlError::Spawn(_) => (
             FailureCode::DriverError,
             Some("xcrun not found — install Xcode command-line tools".into()),

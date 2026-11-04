@@ -86,6 +86,27 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
             Ok(single("inputText", Value::Mapping(inner)))
         }
         Step::SetText { .. } => Err(EmitError::Unsupported { verb: "inputText" }),
+        Step::Optional(inner) => {
+            let Value::Mapping(mut step) = emit_step(inner)? else {
+                return Err(EmitError::Unsupported {
+                    verb: step_verb(inner),
+                });
+            };
+            for (_, body) in step.iter_mut() {
+                if let Value::String(text) = body {
+                    let mut m = Mapping::new();
+                    m.insert(Value::String("text".into()), Value::String(text.clone()));
+                    *body = Value::Mapping(m);
+                }
+                let Value::Mapping(m) = body else {
+                    return Err(EmitError::Unsupported {
+                        verb: step_verb(inner),
+                    });
+                };
+                m.insert(Value::String("optional".into()), Value::Bool(true));
+            }
+            Ok(Value::Mapping(step))
+        }
         Step::AssertVisible { selector } => {
             Ok(single("assertVisible", selector_to_maestro(selector)?))
         }
@@ -359,7 +380,7 @@ fn selector_to_maestro(selector: &Selector) -> Result<Value, EmitError> {
 
 fn step_verb(step: &Step) -> &'static str {
     match step {
-        Step::UntilEffect { action, .. } => step_verb(action),
+        Step::UntilEffect { action, .. } | Step::Optional(action) => step_verb(action),
         Step::TapOn { .. } => "tapOn",
         Step::TapAtPoint { .. } => "tapAtPoint",
         Step::WebViewEval { .. } => "webViewEval",

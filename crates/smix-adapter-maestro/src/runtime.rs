@@ -10,7 +10,7 @@
 //!   `SMIX_APP_PATH_<NORMALIZED_BUNDLE>` (`com.example.app` →
 //!   `SMIX_APP_PATH_COM_EXAMPLE_APP`); without it, terminate + launch and a
 //!   warning.
-//! - `TapOn { optional: true }` turns `ElementNotFound` into `Skipped`.
+//! - `TapOn { optional: true }` and [`Step::Optional`] turn a miss into `Skipped`.
 //! - A subflow with an unsupported command is skipped with a warning;
 //!   other parse errors propagate as [`RunError::Parse`].
 
@@ -35,22 +35,10 @@ use smix_sdk::{
     PermissionAction, Selector, SwipeDirection, device_control::Permission,
 };
 
-/// SwiftUI modal dismiss id classifier. Returns true when the
-/// accessibility id encodes a fixture modal dismiss button (sheet /
-/// alert / confirmationDialog / fullScreenCover). `Step::TapOn`
-/// routes matching selectors through [`App::tap_xcui`] for capability
-/// parity with the SDK self-path. The match is a prefix + suffix
-/// conjunction — the prefix filters to the modal area and the suffix
-/// excludes triggers (`-open-...-btn`) and unrelated elements.
-///
-/// Scope note: the prefixes below are the smix selftest fixture id
-/// namespace (`v2-*`), so this auto-routing can never fire on a
-/// third-party consumer's ids — it is back-compat for smix's own e2e
-/// yamls only. The generic surface for the same capability is
-/// `tapOn: { id: …, dispatch: xcui }`: consumers whose SwiftUI modal
-/// dismiss buttons need XCUIElement-anchored dispatch declare it
-/// explicitly. New yaml (including smix's own) should use
-/// `dispatch: xcui`; this heuristic is not extended.
+/// Whether an id is one of smix's own fixture modal dismiss buttons
+/// (`v2-*` prefix, dismiss suffix), which `Step::TapOn` routes through
+/// [`App::tap_xcui`]. Back-compat for smix's own e2e yamls only; anything
+/// else says `tapOn: { id: …, dispatch: xcui }`, and this is not extended.
 fn is_swiftui_modal_dismiss_id(id: &str) -> bool {
     const PREFIXES: &[&str] = &[
         "v2-modal-sheet-",
@@ -973,12 +961,9 @@ fn recurses_into_steps(step: &Step) -> bool {
 /// Say so, before doing anything, when a verb was handed a selector
 /// spelling it does not read.
 ///
-/// Without this the verb resolves against the accessibility tree, which
-/// has no idea what to do with pixels or a locale map or a coordinate,
-/// finds nothing, and reports the target absent — indistinguishable
-/// from a target that really is absent. The table in
-/// `selector_support` says which slot reads which form, and the reason
-/// it gives is written for the author rather than about the code.
+/// Otherwise the tree finds nothing for pixels, a locale map or a
+/// coordinate, and the target reads as absent. `selector_support` says
+/// which slot reads which form.
 ///
 /// Only a form standing on its own. A `fallback:` chain whose readable
 /// layers match is a working flow, and refusing it because a later
@@ -1014,11 +999,11 @@ fn describe_box(r: smix_sdk::Rect) -> String {
 }
 
 fn summarize_step_verb(step: &Step) -> String {
-    if let Step::UntilEffect { action, .. } = step {
-        return summarize_step_verb(action);
+    if let Step::UntilEffect { action: inner, .. } | Step::Optional(inner) = step {
+        return summarize_step_verb(inner);
     }
     match step {
-        Step::UntilEffect { .. } => unreachable!("answered above"),
+        Step::UntilEffect { .. } | Step::Optional(_) => unreachable!("answered above"),
         Step::SwipeOver { .. } => "swipe",
         Step::Pinch { .. } => "pinch",
         Step::HoverOn { .. } => "hoverOn",
@@ -2018,7 +2003,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     ) -> Result<(), RunError> {
         for step in steps {
             let (result, _) = Box::pin(self.timed_step(None, step, warnings)).await;
-            result?;
+            // a block reports one result; a skip inside it would leave no trace
+            if let RunStepReport::Skipped { reason } = result? {
+                warnings.push(format!("inside a block: {reason}"));
+            }
         }
         Ok(())
     }
@@ -2089,6 +2077,25 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     ) -> Result<RunStepReport, RunError> {
         refuse_what_this_verb_cannot_read(step)?;
         match step {
+            Step::Optional(inner) => {
+                // the skip names what was checked, which the failure may not carry
+                let ran = Box::pin(self.run_step(inner, warnings))
+                    .await
+                    .map_err(|e| match e {
+                        RunError::Sdk(mut f) if f.selector.is_none() => {
+                            f.selector = crate::selector_support::slot_selectors(inner)
+                                .first()
+                                .map(|(_, sel)| (*sel).clone());
+                            RunError::Sdk(f)
+                        }
+                        other => other,
+                    });
+                let opts = crate::BlockOptions {
+                    optional: true,
+                    ..Default::default()
+                };
+                block_outcome(&summarize_step_verb(inner), &opts, ran)
+            }
             Step::UntilEffect {
                 action,
                 until,
@@ -2601,25 +2608,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 wait_for,
                 timeout_ms,
             } => {
-                // URL-scheme JS-wipe. Fires
-                // `simctl openurl <UDID> <url>` on host side (no
-                // runner HTTP round-trip), then optionally waits for
-                // a completion signal per `wait_for`. Distinct from
-                // ClearAppData: no container wipe → dev-fixture state
-                // (Expo dev-launcher metro URL cache, dev-tools
-                // state, MMKV keys the app chooses to preserve)
-                // survives, so consumers don't pay the dev-client
-                // ceremony cost on every reset.
-                //
-                // Runtime dispatch (as opposed to a bare
-                // `App::reset_app_data`) — needs the runtime's
-                // MetroLogTail reference to satisfy the
-                // `waitFor: { logLinePattern }` shape, and the
-                // MetroLogTail is only threaded through the runtime
-                // (not down into `App`). CLI-side reset counter
-                // increments happen here on both success and
-                // timeout so `smix diagnostic dump` can surface the
-                // outcome even when the whole run failed.
+                // a URL-scheme JS wipe from the host, then the optional
+                // `wait_for` signal: unlike ClearAppData the container
+                // (dev-launcher cache, preserved keys) survives. Here,
+                // not in `App`, because the Metro log tail lives here;
+                // the reset counters count timeouts too.
                 self.app.open_url(url).await?;
                 smix_simctl::increment_reset_app_data_total();
                 match wait_for {

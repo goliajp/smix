@@ -1126,8 +1126,7 @@ fn every_runner_dialling_command_can_reach_the_registry() {
 /// N2 — the Android launch activity a reader configures reaches the
 /// device.
 ///
-/// `apps.yaml` takes `activity:`, 08-cookbook shows it being set, and
-/// `AndroidApp::activity` even has a default. For a long time
+/// `apps.yaml` takes `activity:`, and 08-cookbook shows it being set. For a long time
 /// resolution then used the package alone and the Kotlin runner started
 /// `<pkg>/.MainActivity` regardless — the field was read, defaulted,
 /// carried as far as `ResolvedApp::Android`, and dropped. Asked
