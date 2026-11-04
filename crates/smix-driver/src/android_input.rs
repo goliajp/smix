@@ -163,6 +163,24 @@ fn focused_input_failure(e: &RunnerTransportError) -> ExpectationFailure {
     })
 }
 
+/// A package with no launcher activity to start is an app that cannot
+/// run, which is what the caller's advice is written for.
+pub(crate) fn foreground_failure(e: &RunnerTransportError) -> ExpectationFailure {
+    let no_launcher = matches!(
+        e,
+        RunnerTransportError::RefusedNaming { kind, .. } if kind == "no_launcher"
+    );
+    ExpectationFailure::new(FailureInit {
+        code: Some(if no_launcher {
+            FailureCode::AppNotRunning
+        } else {
+            FailureCode::DriverError
+        }),
+        message: format!("AndroidDriver::foreground: {e}"),
+        ..Default::default()
+    })
+}
+
 fn driver_error(message: String) -> ExpectationFailure {
     ExpectationFailure::new(FailureInit {
         code: Some(FailureCode::DriverError),
@@ -181,6 +199,18 @@ mod tests {
             kind: kind.into(),
             saw: "the window stack".into(),
         }
+    }
+
+    #[test]
+    fn no_launcher_is_an_app_that_cannot_run() {
+        assert_eq!(
+            foreground_failure(&refused("no_launcher")).code,
+            FailureCode::AppNotRunning
+        );
+        assert_eq!(
+            foreground_failure(&refused(NO_FOCUSED_FIELD)).code,
+            FailureCode::DriverError
+        );
     }
 
     #[test]
