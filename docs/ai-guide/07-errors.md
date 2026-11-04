@@ -156,6 +156,12 @@ is not a verdict on whatever your script was checking.
 - Check app's crash log: `smix sim exec <udid> spawn ~/Library/Logs/CoreSimulator/<udid>/system.log | tail -50`.
 - For iOS, also `xcrun simctl spawn <udid> log show --last 5m --predicate 'eventMessage contains "<bundle-id>"'`.
 - Verify `launchApp` step ran (or that the app is installed: `smix sim list-apps <udid>`).
+- On Android, a message that says the device "is locked" means a PIN,
+  pattern or password is set and has not been entered since the device
+  booted: until it is, no app that is not direct-boot aware can start.
+  Unlock the device and run again. A message that the package declares no
+  launcher means the app has neither a `LAUNCHER` nor a `LEANBACK_LAUNCHER`
+  entry; name one with `activity:` in the apps config.
 
 ### APP_NOT_IN_FOREGROUND
 
