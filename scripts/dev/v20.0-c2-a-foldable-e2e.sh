@@ -107,7 +107,7 @@ case "$(simulator_name "$DEVICE")" in
   *) cannot_judge "'$SECOND_SIM' resolves to $DEVICE, which is not one of smix's own simulators" ;;
 esac
 if [ "$(simulator_state "$DEVICE")" != Booted ]; then
-  with_deadline 300 "$SMIX" sim boot "$DEVICE" >"$WORK/boot.log" 2>&1 || fail "boot: $(tail -3 "$WORK/boot.log")"
+  with_deadline 900 "$SMIX" sim boot "$DEVICE" --wait 600 >"$WORK/boot.log" 2>&1 || fail "boot: $(tail -3 "$WORK/boot.log")"
   WE_BOOTED=1
 fi
 read -r _ primary _ <<<"$(lit "$DEVICE")"

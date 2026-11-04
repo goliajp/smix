@@ -299,6 +299,8 @@ python3 scripts/dev/a-script-drives-this-tree.test.py
 # A script touches a phone only when a person named it (2026-09-25).
 python3 scripts/dev/an-e2e-leaves-the-phones-alone.py
 python3 scripts/dev/an-e2e-leaves-the-phones-alone.test.py
+# A script booting a device beyond the release's two queues for room.
+python3 scripts/dev/an-extra-device-waits-for-room.py
 # A device gate keeps what the device recorded when the app left mid-flow.
 python3 scripts/dev/a-device-gate-keeps-crash-evidence.py
 python3 scripts/dev/a-device-gate-keeps-crash-evidence.test.py

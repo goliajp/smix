@@ -139,7 +139,7 @@ for p in "$PA" "$PB"; do healthy "$p" && cannot_judge "port $p already answers â
 
 needs_boot() { case "$(sim_state "$1")" in Booted*) return 1 ;; *) return 0 ;; esac; }
 boot() {
-  with_deadline 300 "$SMIX" sim boot "$1" >"$WORK/boot.log" 2>&1 \
+  with_deadline 900 "$SMIX" sim boot "$1" --wait 600 >"$WORK/boot.log" 2>&1 \
     || cannot_judge "could not boot $1: $(tail -3 "$WORK/boot.log" | tr '\n' ' ')"
 }
 if needs_boot "$A_UDID"; then boot "$A_UDID"; A_WE_BOOTED=1; fi

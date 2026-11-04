@@ -82,7 +82,7 @@ command -v adb >/dev/null 2>&1 || cannot_judge "no adb"
 python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
   || fail "the fixture apk on disk is not the one this tree builds"
 if ! DEVICE="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)" || [ -z "$DEVICE" ]; then
-  with_deadline 300 "$SMIX" sim boot "$ALIAS" --no-window >"$WORK/boot.log" 2>&1 \
+  with_deadline 900 "$SMIX" sim boot "$ALIAS" --wait 600 --no-window >"$WORK/boot.log" 2>&1 \
     || cannot_judge "$ALIAS could not be booted: $(tail -3 "$WORK/boot.log")"
   DEVICE="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)" || fail "$ALIAS was booted and does not resolve"
   WE_BOOTED=1

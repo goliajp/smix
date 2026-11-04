@@ -95,7 +95,7 @@ cleanup() {
 trap cleanup EXIT
 
 step "3. boot it from this checkout"
-"$SMIX" sim boot "$IDLE" >/dev/null 2>&1 || { echo "boot failed"; exit 2; }
+"$SMIX" sim boot "$IDLE" --wait 600 >/dev/null 2>&1 || { echo "boot failed"; exit 2; }
 WE_BOOTED=yes
 ok "booted $IDLE"
 
