@@ -16,6 +16,10 @@ one brings to crates.io, npm, Maven Central and the Swift package.
   or, when one is up on another port, to set `SMIX_RUNNER_PORT` to it —
   the usual way to reach this error is a verb reading the default port
   while the runner listens elsewhere.
+- **A failed `claude` call now says why.** When the CLI printed a warning
+  on stderr (a sign-in about to end) and the actual reason on stdout (a
+  usage limit), the error kept the warning and dropped the reason. It now
+  carries both, stderr first, so a limit or an expired login is named.
 
 ## [23.3.0] — 2026-11-04
 

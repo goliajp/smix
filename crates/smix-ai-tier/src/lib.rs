@@ -266,16 +266,18 @@ pub async fn ask_with_attachments(
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// What a failed CLI said about itself. The claude CLI reports a usage
-/// limit on stdout and leaves stderr empty, so stderr alone can lose the
-/// reason; the tail of stdout stands in when stderr has nothing.
+/// What a failed CLI said about itself, from both streams. The claude CLI
+/// reports a usage limit on stdout, and can put an unrelated warning (a
+/// sign-in about to end) on stderr in the same run: reading stderr alone
+/// kept the warning and lost the reason.
 fn why_it_failed(stderr: &[u8], stdout: &[u8]) -> String {
     const TAIL: usize = 800;
     let pick = |b: &[u8]| String::from_utf8_lossy(b).trim().to_string();
-    let said = match pick(stderr) {
-        e if !e.is_empty() => e,
-        _ => pick(stdout),
-    };
+    let said = [pick(stderr), pick(stdout)]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
     if said.is_empty() {
         return "no output on stdout or stderr".into();
     }
@@ -378,6 +380,33 @@ mod transport_tests {
         assert_eq!(
             written_by_caller, 1,
             "the path should appear once, added here"
+        );
+    }
+
+    #[test]
+    fn a_failed_cli_reports_both_streams() {
+        let said = why_it_failed(
+            b"Warning: this sign-in can end at any time from now until 2026-11-05.\n",
+            b"You've reached your usage limit. Switch to another model.\n",
+        );
+        assert!(said.contains("sign-in"), "{said}");
+        assert!(said.contains("reached your usage limit"), "{said}");
+    }
+
+    #[test]
+    fn a_failed_cli_with_one_stream_reports_that_one() {
+        assert_eq!(why_it_failed(b"", b"limit\n"), "limit");
+        assert_eq!(why_it_failed(b"boom\n", b""), "boom");
+        assert_eq!(why_it_failed(b"  ", b"\n"), "no output on stdout or stderr");
+    }
+
+    #[test]
+    fn a_long_report_keeps_its_end() {
+        let long = "x".repeat(2000) + " the reason";
+        let said = why_it_failed(b"", long.as_bytes());
+        assert!(
+            said.starts_with('…') && said.ends_with("the reason"),
+            "{said}"
         );
     }
 }
