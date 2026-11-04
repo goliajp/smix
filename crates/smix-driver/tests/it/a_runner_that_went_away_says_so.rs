@@ -246,3 +246,18 @@ fn a_step_too_long_for_one_request_says_nothing_was_sent() {
     assert!(said.contains("600 s"), "the limit has to be named — {said}");
     assert!(!said.contains("may already have happened"), "{said}");
 }
+
+/// Nothing on the port: the hint names what a user has to act with, the
+/// command that starts a runner and the variable that picks the port, and
+/// no file of this repository, which a user does not have.
+#[test]
+fn nothing_on_the_port_says_how_to_start_one_or_find_it() {
+    let f = transport_to_failure(RunnerTransportError::Unreachable {
+        endpoint: "http://127.0.0.1:22087/tree".to_string(),
+        message: "connection refused".to_string(),
+    });
+    let hint = f.hint.expect("an unreachable runner carries a hint");
+    assert!(hint.contains("smix runner up"), "{hint}");
+    assert!(hint.contains("SMIX_RUNNER_PORT"), "{hint}");
+    assert!(!hint.contains("scripts/"), "{hint}");
+}

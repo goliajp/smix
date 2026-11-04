@@ -1715,6 +1715,8 @@ fn code_for_unavailable(category: Option<&str>) -> FailureCode {
     }
 }
 
+const NO_RUNNER_ON_THE_PORT: &str = "start one with `smix runner up <device>`; if one is up on another port, set SMIX_RUNNER_PORT to that port";
+
 /// What a transport error means to a caller, in one place.
 ///
 /// Exported rather than copied: a second translation of the same errors
@@ -1724,18 +1726,16 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
     let (code, hint) = match &e {
         RunnerTransportError::Unreachable { .. } => (
             FailureCode::DriverError,
-            Some("start the runner first: bash scripts/smix-runner-health.sh".to_string()),
+            Some(NO_RUNNER_ON_THE_PORT.to_string()),
         ),
         // The runner could not snapshot the target app. When it said
         // why, that answer wins: it read `XCUIApplication.state` and
         // this side is guessing from a category string.
         //
-        // The guess used to print regardless — three fixes, offered
-        // for every cause. Against `not-running` all three are wrong,
-        // and a reader following them re-sends a header, adds
-        // `--activate`, and foregrounds an app that is not there,
-        // while the runner's own hint ("launch it again") sat one line
-        // above.
+        // The guess used to print regardless: against `not-running` its
+        // three fixes are all wrong, and a reader following them re-sends a
+        // header, adds `--activate` and foregrounds an app that is not
+        // there, while the runner's own hint ("launch it again") sat above.
         RunnerTransportError::AppUnavailable {
             target,
             reason,
