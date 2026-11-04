@@ -92,7 +92,7 @@ class RunnerWireTransformTest {
         )
     }
 
-    // insight's two entries: neither is `.MainActivity`, and the phone's
+    // a phone entry and a TV entry, neither `.MainActivity`; the phone's
     // launcher is tried before the TV's
     @Test
     fun launcherActivityIsRelativeUnderThePackageAndFullOutsideIt() {

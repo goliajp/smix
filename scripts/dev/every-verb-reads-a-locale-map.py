@@ -39,6 +39,9 @@ EXEMPT = {
     "RunFlowInline": "its gate selectors go through check_selector_visible, "
     "which desugars for itself",
     "RunFlowConditional": "same gate path as RunFlowInline",
+    # `optional: true` on a check: the arm runs the wrapped step through
+    # run_step, whose own arm desugars
+    "Optional": "it runs the wrapped step through run_step, whose arm desugars",
 }
 
 

@@ -47,6 +47,11 @@
     notVisible: "Spinner"
     timeout: 10000
 
+- extendedWaitUntil:
+    visible: "Rate this app"
+    timeout: 3000
+    optional: true                       # never came: skipped, not failed
+
 # On timeout, extendedWaitUntil auto-captures a screenshot + tree JSON
 # to `.smix/timeouts/` (or `--debug-output` dir when set) and appends
 # the written paths to the failure hint — no flag needed.
