@@ -278,15 +278,25 @@ object RunnerWire {
     fun inputTextCommand(text: String): String =
         "input text ${escapeForInputText(text)}"
 
-    // The activity is resolved by the caller, which has a Context and
-    // can ask the package manager. `.MainActivity` remains only as the
-    // answer of last resort: it is what a scaffolded app is called and
-    // what almost nothing else is, so every launch used to work for
-    // apps generated from a template and silently for no others.
-    const val ACTIVITY_CONVENTION: String = ".MainActivity"
+    // the categories an app is started through, in the order tried: a
+    // phone's launcher, then a TV's. No name is ever guessed: a guessed
+    // `.MainActivity` started template apps and failed, unexplained, for
+    // the rest
+    val LAUNCHER_CATEGORIES: List<String> = listOf(
+        "android.intent.category.LAUNCHER",
+        "android.intent.category.LEANBACK_LAUNCHER",
+    )
 
-    fun foregroundCommand(bundleId: String, activity: String? = null): String =
-        "am start --activity-single-top -n $bundleId/${activity ?: ACTIVITY_CONVENTION}"
+    /// The name `am start -n <pkg>/<this>` takes for [className], relative
+    /// when the class lives under the package.
+    fun launcherActivity(bundleId: String, className: String): String =
+        if (className.startsWith("$bundleId.")) className.removePrefix(bundleId) else className
+
+    fun noLauncherSaw(bundleId: String): String =
+        "$bundleId has no LAUNCHER or LEANBACK_LAUNCHER activity, or is not installed"
+
+    fun foregroundCommand(bundleId: String, activity: String): String =
+        "am start --activity-single-top -n $bundleId/$activity"
 
     // /session/launch-app + /session/relaunch-app reuse the /foreground
     // entry-point resolution — same launch semantics, so the same
@@ -603,9 +613,10 @@ object RunnerWire {
         .put("saw", saw)
         .toString()
 
-    fun foregroundBody(ok: Boolean, bundleId: String, saw: String): String = JSONObject()
+    fun foregroundBody(ok: Boolean, bundleId: String, saw: String, error: String? = null): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "not_in_foreground")
+        .put("error", error ?: JSONObject.NULL)
         .put("bundleId", bundleId)
         .put("saw", saw)
         .toString()
@@ -773,22 +784,10 @@ object RunnerWire {
         .toString()
 
     /// Resource-id spellings to try for a short id, most likely first.
-    ///
-    /// Compose with `testTagsAsResourceId = true` emits the bare short
-    /// string on some layouts (FlowRow) and `<pkg>:id/<short>` on others
-    /// (older LazyRow), so both spellings have to be attempted.
-    ///
-    /// The package-qualified form needs the package of the app under
-    /// test, which only the caller knows — it arrives on the
-    /// `App-Bundle-Id` header. Until that was wired, this list carried
-    /// the literal `com.example.app`, which is the README's placeholder
-    /// and not any real app: the qualified spelling could only ever
-    /// match a reader who had copied the example verbatim. Every real
-    /// app fell through to the manual walk, slower and by a different
-    /// code path than the one the comment described.
-    ///
-    /// The runner's own test process stays in the list: it addresses
-    /// its fixtures by id in the self-tests.
+    /// Compose with `testTagsAsResourceId = true` emits the bare string on
+    /// some layouts (FlowRow) and `<pkg>:id/<short>` on others (older
+    /// LazyRow); the package comes from the `App-Bundle-Id` header. The
+    /// runner's own test package stays for the self-tests' fixtures.
     fun viewIdCandidates(shortId: String, targetPackage: String?): List<String> = buildList {
         add(shortId)
         if (!targetPackage.isNullOrBlank()) {
@@ -797,21 +796,10 @@ object RunnerWire {
         add("dev.smix.runner.test:id/$shortId")
     }
 
-    /// Name the spelling that actually found the node.
-    ///
-    /// Reads beside viewIdCandidates on purpose: one decides which
-    /// spellings to try, this one decides how to say which was tried
-    /// successfully, and neither is complete without the other.
-    ///
-    /// It exists because the strict lookup and the manual walk return
-    /// the same node. That is how `com.example.app` — a documentation
-    /// placeholder sitting in the candidate list as though it were a
-    /// real package — lasted through releases: every real app missed
-    /// the qualified spelling and fell through to the walk, which
-    /// answered identically. Nothing failed, so nothing was noticed.
-    ///
-    /// `matched` is the candidate the framework lookup hit, or null
-    /// when all of them missed and the walk took over.
+    /// Which spelling found the node: `matched` is the candidate the
+    /// framework lookup hit, null when the walk took over. The strict
+    /// lookup and the walk return the same node, so without this a
+    /// spelling that never matches goes unnoticed.
     fun viewIdMatchKind(matched: String?, shortId: String, targetPackage: String?): String =
         when {
             matched == null -> "walk"
@@ -932,9 +920,6 @@ object TreeWire {
     /// Strip "<pkg>:id/" prefix so consumers match short ids literally.
     fun shortResourceId(vid: String): String = vid.substringAfter(":id/", vid)
 
-    /// Map android widget class → smix Role camelCase string. Returns
-    /// null when no clean mapping (caller omits the role field). Matches
-    /// the curated Role enum in smix-screen.
     /// The role a window's own type decides, regardless of what class
     /// its root node happens to be.
     ///
@@ -951,16 +936,6 @@ object TreeWire {
     fun roleForWindowType(windowType: Int): String? =
         if (windowType == 2) "keyboard" else null
 
-    /// Whose window a subtree is, as smix-screen's `WindowInfo` reads it.
-    ///
-    /// The status bar is a window of its own and comes first in
-    /// `UiAutomation.windows`, so without this a host reading the tree
-    /// could not tell the app's nodes from the system's — and a failure
-    /// that listed the first ten visible elements listed the clock. The
-    /// types are `AccessibilityWindowInfo.TYPE_*`: 1 application,
-    /// 2 input method, 3 system; the rest (accessibility overlay,
-    /// split-screen divider, magnification overlay) are `other`. A
-    /// package the platform did not report is left out, not guessed.
     /// Whether `/tree?hollow=<app>` reports this window without walking it.
     ///
     /// The host reads the app through its probe and this tree for every
