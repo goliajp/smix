@@ -27,4 +27,11 @@ extension TreeRoute.A11ySnapshotData {
       placeholderValue: placeholderValue
     )
   }
+
+  /// Nil keeps the frame as it is: a platform with no interface
+  /// orientation (visionOS) lays a window out in the shape it has.
+  public func inInterfaceShape(landscape: Bool?) -> TreeRoute.A11ySnapshotData {
+    guard let landscape else { return self }
+    return inInterfaceShape(landscape: landscape)
+  }
 }

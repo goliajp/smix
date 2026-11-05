@@ -31,4 +31,15 @@ final class InterfaceShapeTests: XCTestCase {
     XCTAssertEqual(app(951, 669, child: child).inInterfaceShape(landscape: true).frame.width, 951)
     XCTAssertEqual(app(402, 874, child: child).inInterfaceShape(landscape: false).frame.width, 402)
   }
+
+  /// A visionOS window, 1280×800, has no interface orientation: its menu
+  /// button at x = 1220 stays inside it. Turned portrait, it was not.
+  func testAWindowWithNoOrientationKeepsItsShape() {
+    let menu = CGRect(x: 1220, y: 18, width: 45, height: 44)
+    let none: Bool? = nil
+    let shaped = app(1280, 800, child: menu).inInterfaceShape(landscape: none)
+    XCTAssertEqual(shaped.frame, CGRect(x: 0, y: 0, width: 1280, height: 800))
+    XCTAssertTrue(TreeRoute.isVisible(menu, shaped.frame))
+    XCTAssertFalse(TreeRoute.isVisible(menu, app(1280, 800, child: menu).inInterfaceShape(landscape: false).frame))
+  }
 }
