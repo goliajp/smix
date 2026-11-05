@@ -374,14 +374,19 @@ func smixLayout(of app: XCUIApplication) -> SmixLayout {
     reported = smixStamp(o)
   }
   let device: StampOrientation?
-  switch XCUIDevice.shared.orientation {
-  case .portrait: device = .portrait
-  case .portraitUpsideDown: device = .portraitUpsideDown
-  // The device turned left shows the interface turned right.
-  case .landscapeLeft: device = .landscapeRight
-  case .landscapeRight: device = .landscapeLeft
-  default: device = nil
-  }
+  #if os(iOS)
+    switch XCUIDevice.shared.orientation {
+    case .portrait: device = .portrait
+    case .portraitUpsideDown: device = .portraitUpsideDown
+    // The device turned left shows the interface turned right.
+    case .landscapeLeft: device = .landscapeRight
+    case .landscapeRight: device = .landscapeLeft
+    default: device = nil
+    }
+  #else
+    // a headset has no device orientation to read
+    device = nil
+  #endif
   let orientation = layoutOrientation(appFrame: size, reported: reported, device: device)
   let source =
     reported != nil ? "app" : (size.width > size.height && device != nil && device != .portrait && device != .portraitUpsideDown ? "device" : "frame")
