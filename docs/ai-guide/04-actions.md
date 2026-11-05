@@ -599,6 +599,7 @@ looking is `keyboard_state_unknown` — see
 
 - iOS: the runner sets `XCUIDevice.shared.orientation`.
 - iOS foldable simulator (iPhone Duo): it ignores `XCUIDevice.orientation`, folded or not, so smix turns it the way Device Hub's orientation picker does and waits until the device reads the new orientation back. The orientation is measured against the lit screen. Folded, `PORTRAIT_UPSIDE_DOWN` cannot be reached; unfolded, `LANDSCAPE_LEFT` cannot. Either one is refused by name rather than ignored.
+- visionOS (Vision Pro simulator): refused — a headset has no device orientation.
 - Android: `adb shell content insert --uri content://settings/system --bind name:s:user_rotation`.
 - Some apps lock orientation in Info.plist / manifest → setOrientation no-op; assert with `assertVisible` against orientation-dependent label to verify.
 
@@ -612,6 +613,20 @@ looking is `keyboard_state_unknown` — see
 - A device with one screen is refused ("it has one screen, so it does not fold"); Android emulators and phones are refused by name.
 - Taps, swipes, screenshots and OCR follow the lit screen in either posture, including an app laid out landscape on the inner screen.
 - From the shell: `smix sim posture <device> closed|half-open|open`.
+
+## Vision Pro (visionOS simulators)
+
+The iOS runner also drives an Apple Vision Pro simulator: `smix runner up <udid> --platform ios`.
+`tree`, `describe`, `tap`, `fill`, `sim screenshot`, `smix system-popups` / `system-popup-action`, and
+flows with `launchApp`, `tapOn`, `inputText`, `extendedWaitUntil` and `assertVisible` work there.
+
+- A tap is XCUI's tap on the element under the point, by its identifier; a point with no identified
+  element under it is tapped as a coordinate. The event synthesis the iOS runner uses elsewhere is
+  refused on visionOS.
+- A window keeps the shape it has: there is no interface orientation to turn it by.
+- System alerts (a permission prompt among them) are hosted by RealityNotifications. They are listed
+  as `type: alert`; their buttons are `b-0`, `b-1`, … in order.
+- Swipes, scrolls and `back` have not been verified there. tvOS is not supported.
 
 ## System permissions
 
