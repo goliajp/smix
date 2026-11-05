@@ -21,7 +21,7 @@ func appNotInFront(_ target: XCUIApplication, bundleId: String) -> AppNotInFront
 /// same on iOS 26.5 and 27. Empty on the home screen.
 @MainActor
 private func appsInFront() -> [String] {
-  let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+  let springboard = smixSystemUI()
   let cards = springboard.descendants(matching: .any)
     .matching(NSPredicate(format: "identifier BEGINSWITH 'card:'"))
     .allElementsBoundByIndex

@@ -15,7 +15,7 @@ private let bannerId = "NotificationShortLookView"
 private let bannerPrefix = "notification-"
 
 private func springboardBanners() -> [XCUIElement] {
-  XCUIApplication(bundleIdentifier: "com.apple.springboard")
+  smixSystemUI()
     .descendants(matching: .any).matching(identifier: bannerId)
     .allElementsBoundByAccessibilityElement
 }
@@ -29,7 +29,7 @@ func collectBanners() -> [SystemPopupsRoute.Popup] {
     let body = labelOf(snap, identifier: "TextContent.Primary") ?? ""
     out.append(
       SystemPopupsRoute.Popup(
-        id: "\(bannerPrefix)\(i)", type: "notification", source: "com.apple.springboard",
+        id: "\(bannerPrefix)\(i)", type: "notification", source: smixSystemUIBundle(),
         title: title, body: body,
         buttons: [
           SystemPopupsRoute.PopupButton(
@@ -49,7 +49,7 @@ func tapBanner(popupId: String) -> SmixRunnerServer.SystemPopupActionOutcome? {
   guard i < banners.count, let snap = try? banners[i].snapshot() else { return .notFound }
   // laid out by SpringBoard, whose frame is the screen: the app under test
   // may be in the background, and reading its frame then waits 30 s
-  let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+  let springboard = smixSystemUI()
   return tapThroughDaemon(at: CGPoint(x: snap.frame.midX, y: snap.frame.midY), layoutOf: springboard)
 }
 

@@ -457,6 +457,10 @@ jobs:
         run: python3 scripts/dev/an-e2e-leaves-the-phones-alone.py
       - name: the phones gate can still go red
         run: python3 scripts/dev/an-e2e-leaves-the-phones-alone.test.py
+      # The device tier's lanes run side by side under smix's device budget;
+      # a script booting a device beyond the release's two queues for room.
+      - name: an extra device waits for room
+        run: python3 scripts/dev/an-extra-device-waits-for-room.py
       # A device gate keeps what the device recorded when the app under
       # test went away mid-flow. CI's corpus lost one that way with nothing kept.
       - name: every device gate keeps the crash evidence

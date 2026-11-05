@@ -151,6 +151,11 @@ case "$without" in
     fail "the fixture's text was found WITHOUT the header, so the run above
        proves nothing: the runner is bound to the fixture regardless. Either
        the boot bundle is wrong, or something rebound it outside this gate." ;;
+  # Since 23.1 a read of an app that is not in front is refused at once,
+  # naming it; the runner saying that of the boot bundle is the same fact,
+  # put more plainly: it is still bound to that app, not the fixture.
+  *'"reason":"in-background"'*"\"hint\":\"$BOOT_BUNDLE is in the background"*)
+    log "refused as in the background, naming $BOOT_BUNDLE — the runner is still on it" ;;
   *) fail "unreadable response without the header:
        $without" ;;
 esac

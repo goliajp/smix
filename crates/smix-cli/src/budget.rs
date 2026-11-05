@@ -11,11 +11,13 @@
 //! what a consumer saw with an app open). The sum may use 60% of physical
 //! memory by default (`SMIX_DEVICE_BUDGET_GIB` to say otherwise), and a
 //! Vision Pro or Apple TV runs alone (`SMIX_HEAVY_DEVICES_ALONE=0` to let
-//! them share). Whatever the weights say, a machine already short — swap
-//! in use reaching half of physical memory, or under 15% of memory free —
-//! boots nothing. Swap *left* says nothing on macOS, which grows swap as
-//! it needs it: an idle machine shows 1 GiB left of 5; the one that nearly
-//! stopped had 36 GiB in use.
+//! them share). Whatever the weights say, a machine already short — the
+//! kernel reporting critical memory pressure, or under 15% of memory free
+//! — boots nothing. Swap is not the measure: macOS grows it as it needs it
+//! and keeps it until the pages are touched again, so a Mac that once
+//! filled it reads "36 GiB in use" for days after the pressure is gone
+//! (studio, 2026-11-05: 32 GiB in use, 52% free, no swapping, and every
+//! boot refused until the rule changed).
 //! Refused, the boot names what is running, whose it is and since when;
 //! `--wait` queues instead, for as long as it is given.
 
@@ -117,7 +119,8 @@ pub(crate) struct Running {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Machine {
     pub total_gib: Option<u64>,
-    pub swap_used_mib: Option<u64>,
+    /// `kern.memorystatus_vm_pressure_level`: 1 normal, 2 warning, 4 critical.
+    pub pressure_level: Option<u64>,
     pub free_percent: Option<u64>,
 }
 
@@ -170,10 +173,8 @@ pub(crate) fn decide(target: Class, running: &[Running], m: Machine, l: Limits) 
             listed()
         ));
     }
-    if let (Some(used), Some(total)) = (m.swap_used_mib, m.total_gib)
-        && used >= total * 512
-    {
-        return Verdict::Refuse(format!("the machine has {used} MiB of swap in use"));
+    if m.pressure_level.is_some_and(|p| p >= 4) {
+        return Verdict::Refuse("the system reports critical memory pressure".into());
     }
     if let Some(f) = m.free_percent.filter(|f| *f < 15) {
         return Verdict::Refuse(format!("the machine has {f}% of memory free"));
@@ -208,13 +209,6 @@ fn sysctl(name: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// `used = 3977.75M` out of `sysctl vm.swapusage`.
-fn parse_swap_used(s: &str) -> Option<u64> {
-    let v = s.split("used = ").nth(1)?.split_whitespace().next()?;
-    let mib: f64 = v.trim_end_matches('M').parse().ok()?;
-    Some(mib as u64)
-}
-
 fn parse_free_percent(s: &str) -> Option<u64> {
     s.lines()
         .find_map(|l| l.strip_prefix("System-wide memory free percentage:"))
@@ -227,7 +221,7 @@ pub(crate) fn machine() -> Machine {
         total_gib: sysctl("hw.memsize")
             .and_then(|v| v.parse::<u64>().ok())
             .map(|b| b >> 30),
-        swap_used_mib: sysctl("vm.swapusage").as_deref().and_then(parse_swap_used),
+        pressure_level: sysctl("kern.memorystatus_vm_pressure_level").and_then(|v| v.parse().ok()),
         free_percent: pressure
             .and_then(|o| parse_free_percent(&String::from_utf8_lossy(&o.stdout))),
     }
@@ -384,7 +378,7 @@ mod tests {
 
     const ROOMY: Machine = Machine {
         total_gib: Some(64),
-        swap_used_mib: Some(4000),
+        pressure_level: Some(1),
         free_percent: Some(60),
     };
     const LIMITS: Limits = Limits {
@@ -440,13 +434,28 @@ mod tests {
     }
 
     #[test]
+    fn swap_left_in_use_after_pressure_has_passed_does_not_refuse() {
+        // studio on 2026-11-05: 32 GiB of swap still in use from earlier,
+        // 52% free, the kernel at warning and not swapping
+        let after = Machine {
+            pressure_level: Some(2),
+            free_percent: Some(52),
+            ..ROOMY
+        };
+        assert!(matches!(
+            decide(Class::Phone, &[], after, LIMITS),
+            Verdict::Boot
+        ));
+    }
+
+    #[test]
     fn a_machine_already_short_boots_nothing() {
-        let low_swap = Machine {
-            swap_used_mib: Some(36_000),
+        let critical = Machine {
+            pressure_level: Some(4),
             ..ROOMY
         };
         assert!(
-            matches!(decide(Class::Phone, &[], low_swap, LIMITS), Verdict::Refuse(w) if w.contains("36000 MiB of swap in use"))
+            matches!(decide(Class::Phone, &[], critical, LIMITS), Verdict::Refuse(w) if w.contains("critical memory pressure"))
         );
         let low_free = Machine {
             free_percent: Some(9),
@@ -484,10 +493,6 @@ mod tests {
         assert_eq!(
             Class::of_avd_config("hw.device.name=pixel_9"),
             Class::AndroidPhone
-        );
-        assert_eq!(
-            parse_swap_used("total = 5120.00M  used = 3977.75M  free = 1142.25M  (encrypted)"),
-            Some(3977)
         );
         assert_eq!(
             parse_free_percent("...\nSystem-wide memory free percentage: 65%\n"),

@@ -82,8 +82,42 @@ feed $ALLOW "adb -s R5CT52DF07D logcat -d"
 feed $ALLOW "adb -s R5CT52DF07D get-state"
 # and the ones that only look read-only
 feed $BLOCK "adb -s R5CT52DF07D shell pm uninstall dev.smix.fixture"
-feed $BLOCK "adb -s R5CT52DF07D shell rm -rf /sdcard/x"
-feed $BLOCK "adb -s R5CT52DF07D shell settings put global x 1"
+# administering the phone itself is the owner's to do (2026-11-05): only
+# changing an app on it is refused
+feed $ALLOW "adb -s R5CT52DF07D shell rm -rf /sdcard/x"
+feed $ALLOW "adb -s R5CT52DF07D shell settings put global x 1"
+feed $ALLOW "adb -s R5CT52DF07D shell dumpsys telecom"
+feed $ALLOW "adb -s R5CT52DF07D shell cmd role get-role-holders android.app.role.DIALER"
+feed $ALLOW "adb -s R5CT52DF07D shell cmd appops get com.samsung.android.incallui"
+feed $ALLOW "adb -s R5CT52DF07D shell pm list packages -d"
+feed $ALLOW "adb -s R5CT52DF07D reboot"
+feed $BLOCK "adb -s R5CT52DF07D push app.apk /data/local/tmp/"
+feed $BLOCK "adb -s R5CT52DF07D shell am start -n dev.smix.fixture/.MainActivity"
+feed $BLOCK "adb -s R5CT52DF07D shell am force-stop dev.smix.fixture"
+feed $BLOCK "adb -s R5CT52DF07D shell pm clear dev.smix.fixture"
+feed $BLOCK "adb -s R5CT52DF07D shell cmd package uninstall dev.smix.fixture"
+feed $BLOCK "adb -s R5CT52DF07D shell run-as dev.smix.fixture ls"
+feed $BLOCK "adb -s R5CT52DF07D shell monkey -p dev.smix.fixture 1"
+feed $ALLOW "adb -s R5CT52DF07D shell pm grant com.samsung.android.incallui android.permission.READ_PHONE_STATE"
+feed $ALLOW "adb -s R5CT52DF07D shell pm enable com.samsung.android.incallui"
+feed $BLOCK "adb -s R5CT52DF07D shell pm install-existing dev.smix.fixture"
+feed $BLOCK "adb -s R5CT52DF07D shell pm reset-permissions"
+feed $BLOCK "adb -s R5CT52DF07D shell am startservice dev.smix.fixture/.Svc"
+feed $BLOCK "adb -s R5CT52DF07D shell am set-debug-app dev.smix.fixture"
+# a serial in a variable is a script's: what it holds is not on the line
+feed $BLOCK 'adb -s "$SERIAL" shell settings put global window_animation_scale 0'
+feed $BLOCK 'adb -s $S shell dumpsys telecom'
+feed $ALLOW 'adb -s "$SERIAL" shell getprop ro.product.model'
+feed $ALLOW 'adb -s "$SERIAL" logcat -d'
+# a python body after `&&` is python, whatever words it holds
+feed $ALLOW "$(printf 'bash -n x.sh && python3 - <<%s\nb = "adb -s R5CT52DF07D install app.apk"\nEOF\n' "'EOF'")"
+# and a shell body after a python one on the same line is still judged
+feed $BLOCK "$(printf 'python3 - <<%s && bash <<%s\nx = 1\nPY\nadb -s R5CT52DF07D install app.apk\nSH\n' "'PY'" "'SH'")"
+# unpinned mutations still never reach a phone
+# a word an adb shell would treat as a command is not one outside adb
+feed $ALLOW "bash run.sh input x"
+feed $ALLOW "make start"
+feed $BLOCK "adb shell pm clear dev.smix.fixture"
 
 # unrelated commands are never touched
 feed $ALLOW "cargo test -p smix-driver"
@@ -124,7 +158,7 @@ feed $ALLOW "curl -s https://example.com/x.txt -o /tmp/x.txt && adb -s emulator-
 feed $BLOCK "$(printf 'adb -s emulator-5554 shell getprop sys.boot_completed\nadb -s R5CT52DF07D install -r app.apk')"
 feed $BLOCK "$(printf 'adb -s emulator-5554 shell getprop sys.boot_completed\nadb install -r app.apk')"
 feed $BLOCK "adb -s emulator-5554 shell getprop sys.boot_completed && adb install -r app.apk"
-feed $BLOCK "adb -s R5CT52DF07D shell rm -rf /sdcard/x && adb devices"
+feed $ALLOW "adb -s R5CT52DF07D shell rm -rf /sdcard/x && adb devices"
 # A `VAR=value cmd` prefix applies to that command only — shell says so,
 # and the guard has to say the same. The pin does not reach the next line.
 feed $BLOCK "$(printf 'ANDROID_SERIAL=emulator-5554 ./gradlew assembleDebug\n./gradlew connectedAndroidTest')"
