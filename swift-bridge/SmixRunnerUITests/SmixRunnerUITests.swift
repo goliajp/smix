@@ -378,7 +378,7 @@ private func firstSeeThroughMatch(
   //    alert button — acting on a system popup is a core flat capability,
   //    not driver-specific. Same `label == text OR identifier == text` matcher; same
   //    `smixGuarded` span at the caller guards mid-enumeration vanish.
-  let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+  let springboard = smixSystemUI()
   let sbDesc = springboard.descendants(matching: .any)
     .allElementsBoundByAccessibilityElement
   for el in sbDesc where matches(el) { return el }
@@ -438,21 +438,19 @@ private func collectSystemPopups(
   bundleId: String,
   includeAllWindows: Bool = false
 ) -> [SystemPopupsRoute.Popup] {
-  let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+  let springboard = smixSystemUI()
   var out: [SystemPopupsRoute.Popup] = []
+  #if !os(iOS)
+    out += smixHeadsetSystemAlerts()
+  #endif
   // Enumeration caps for buttons/staticTexts inside a bound-app window.
-  // Heavy native overlays like the RN expo-dev-menu carry 50+ buttons, and
-  // `.allElementsBoundByAccessibilityElement` plus per-element `.exists` /
-  // `.label` / `.identifier` calls each cost ~1-2 s — 60-120 s in total,
-  // which blows past both the SDK's drainPopups budget and FlyingFox's 15 s
-  // socket timeout, hanging the whole chain. Hence a structural cap: at
-  // most 40 buttons + 20 staticTexts per container. Alerts, sheets,
-  // dialogs and popovers are naturally far below this; only a dev-menu or
-  // window gets truncated. Decide policy still works after truncation:
-  // the default affirmative-by-hint is findable within buttons[0..N], and
-  // RN dismiss-by-xmark is the same shape — the xmark is usually
-  // buttons[0] or close to it. Truncation only drops redundant button
-  // metadata, never a signal popup-handling needs.
+  // Heavy overlays like the RN expo-dev-menu carry 50+ buttons, and the
+  // per-element `.exists` / `.label` / `.identifier` calls cost ~1-2 s
+  // each — 60-120 s in total, past the SDK's drainPopups budget and
+  // FlyingFox's 15 s socket timeout. So at most 40 buttons and 20 texts
+  // per container: alerts, sheets, dialogs and popovers are far below it,
+  // and a truncated dev-menu keeps what popup handling needs (the
+  // affirmative-by-hint and the RN xmark sit early in the buttons).
   let consumeMaxButtons = 40
   let consumeMaxStaticTexts = 20
   // Overall wall-clock budget across containers. consume() has its own
@@ -513,7 +511,7 @@ private func collectSystemPopups(
     // root cause the single-snapshot path above eliminates.
     var cancelLabels: Set<String> = []
     var destructiveLabels: Set<String> = []
-    if source == "com.apple.springboard" {
+    if source == smixSystemUIBundle() {
       let cancelPred = NSPredicate(format: "userTestingAttributes CONTAINS %@", "cancel-button")
       let destructivePred = NSPredicate(format: "userTestingAttributes CONTAINS %@", "destructive")
       cancelLabels = Set(
@@ -555,7 +553,7 @@ private func collectSystemPopups(
     // decision aid. The hint is SpringBoard-specific (the system
     // "Open in 'X'?" deeplink confirm); in-app modals do not get an
     // auto-hint — the upper layer decides which button to press.
-    let isSpringboard = source == "com.apple.springboard"
+    let isSpringboard = source == smixSystemUIBundle()
     let schemeConfirm =
       isSpringboard && isAlert && cancelCount == 1 && defaultCount >= 1
       && buttons.count == 2
@@ -603,10 +601,10 @@ private func collectSystemPopups(
   // SpringBoard side first (preserves emitted-order expectation: system
   // popup before in-app popup when both are present).
   for el in springboard.alerts.allElementsBoundByAccessibilityElement {
-    consume(el, fallbackType: "alert", source: "com.apple.springboard")
+    consume(el, fallbackType: "alert", source: smixSystemUIBundle())
   }
   for el in springboard.sheets.allElementsBoundByAccessibilityElement {
-    consume(el, fallbackType: "sheet", source: "com.apple.springboard")
+    consume(el, fallbackType: "sheet", source: smixSystemUIBundle())
   }
   // an app in the background is not asked: each query on it waits 30 s.
   // Banners go last, so the `popup-N` ids the action walk derives still
@@ -688,7 +686,10 @@ private func findAndTapSystemPopupButton(
   popupId: String, buttonId: String
 ) -> SmixRunnerServer.SystemPopupActionOutcome {
   if let banner = tapBanner(popupId: popupId) { return banner }
-  let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+  #if !os(iOS)
+    if let headset = smixHeadsetSystemAlertAction(popupId: popupId, buttonId: buttonId) { return headset }
+  #endif
+  let springboard = smixSystemUI()
   var popupIdx = 0
   // an app in the background is not asked: each query on it waits 30 s
   let appInFront = app.state == .runningForeground
@@ -2397,28 +2398,7 @@ final class SmixRunnerUITests: XCTestCase {
           return (ok: false, chain: chain, press: nil, gone: saw)
         }
         #if !os(iOS)
-          // Synthesis asks Accessibility for the scene the point is in,
-          // and a visionOS app's window gives none (XCTDaemon error 74,
-          // "invalid scene ID (nil)"), so XCUI's own tap is used there.
-          // A coordinate tap is accepted there and lands on nothing
-          // (measured on visionOS 27.2: no control under the point
-          // reacted), so the element under the point is tapped by its
-          // identifier when one is known, the host's aim first.
-          let id = [aimedAt?.identifier].compactMap { $0 }.first(where: { !$0.isEmpty })
-            ?? chain.first(where: { !$0.identifier.isEmpty })?.identifier
-          let tapped = smixGuarded("tap-at-norm-coord-xcui") { () -> Bool in
-            let hold = Double(holdMs) / 1000
-            if let id {
-              let element = app.descendants(matching: .any).matching(identifier: id).firstMatch
-              guard element.exists else { return false }
-              for _ in 0..<max(1, times) { if hold > 0 { element.press(forDuration: hold) } else { element.tap() } }
-            } else {
-              let point = app.coordinate(withNormalizedOffset: CGVector(dx: nx, dy: ny))
-              for _ in 0..<max(1, times) { if hold > 0 { point.press(forDuration: hold) } else { point.tap() } }
-            }
-            return true
-          } == true
-          return (ok: tapped, chain: chain, press: nil, gone: nil)
+          return (ok: smixHeadsetTap(app, nx: nx, ny: ny, times: times, holdMs: holdMs, aimedAt: aimedAt, chain: chain), chain: chain, press: nil, gone: nil)
         #endif
         // Timed around the synthesise alone: this process authors the
         // timeline, so the call's span and the hold bound when a single
@@ -2804,18 +2784,7 @@ final class SmixRunnerUITests: XCTestCase {
               Data("smix-runner: set-orientation: unknown orientation '\(orientationStr)'\n".utf8))
             return false
           }
-          #if os(iOS)
-            XCUIDevice.shared.orientation = mapped
-            // settle: orientation change is asynchronous in sim;
-            // 200ms aligns with iOS rotation animation budget.
-            Thread.sleep(forTimeInterval: 0.2)
-            return true
-          #else
-            _ = mapped
-            FileHandle.standardError.write(
-              Data("smix-runner: set-orientation: this platform has no device orientation\n".utf8))
-            return false
-          #endif
+          return smixSetDeviceOrientation(mapped)
         } ?? false
       },
       recordHandlers: recordEnabled ? SmixRunnerServer.RecordHandlers(
@@ -3322,11 +3291,7 @@ final class SmixRunnerUITests: XCTestCase {
             rootFrame = convertSnapshot(snapshot)
               .inInterfaceShape(landscape: smixInterfaceIsLandscape(app)).frame
           }
-          #if os(iOS)
-            interface = describeDeviceOrientation(XCUIDevice.shared.orientation)
-          #else
-            interface = describeDeviceOrientation(.unknown)
-          #endif
+          interface = describeDeviceOrientation(smixDeviceOrientationNow())
           csLayout = smixLayout(of: app)
           return true
         }
@@ -3679,7 +3644,7 @@ private func buildAllWindowsSnapshot(
 
 private func collectSpringBoardWindows() -> [TreeRoute.A11ySnapshotData] {
   var out: [TreeRoute.A11ySnapshotData] = []
-  let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+  let springboard = smixSystemUI()
   let alerts = springboard.alerts.allElementsBoundByAccessibilityElement
   for el in alerts {
     guard el.exists else { continue }

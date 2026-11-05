@@ -13,7 +13,12 @@ All notable changes to the `smix` workspace are documented here. The format foll
   `assertVisible` work there. A tap is made with XCUI's element tap,
   because the event synthesis iOS uses is refused on visionOS ("invalid
   scene ID"). `setOrientation` is refused there: a headset has no device
-  orientation. tvOS is not supported yet.
+  orientation. A window keeps its own shape (a 1280×800 window was turned
+  portrait, and everything right of x=800 read as off screen), and a
+  system alert such as a notification permission prompt — hosted by
+  RealityNotifications, not as an alert element — is listed by `smix
+  system-popups` and pressed by `smix system-popup-action`. tvOS is not
+  supported yet.
 
 ### Changed
 

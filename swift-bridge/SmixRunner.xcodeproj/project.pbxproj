@@ -11,6 +11,7 @@
 		1CB5D5E731634D61D9EE489A /* EventSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72197983C53848D29C050471 /* EventSynthesizer.swift */; };
 		39AC667CBBFB90AAF02D95F9 /* HideKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60ADEFEBB5644D83B0956CD1 /* HideKeyboard.swift */; };
 		53169F0AFCECEB57F00B6D2F /* SmixA11ySwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 77E941BAAFA086830E4BCA33 /* SmixA11ySwizzle.m */; };
+		55BE0426E74C56855DCE98DF /* Headset.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC78B183001B5FA692E54B3 /* Headset.swift */; };
 		5C28A1EFB4FFACB2067D1EFB /* SmixExceptionTrampoline.m in Sources */ = {isa = PBXBuildFile; fileRef = BCD3DBB82831D19910E77B87 /* SmixExceptionTrampoline.m */; };
 		6FDCA06236F8D50E730C87AA /* Banners.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D2BB4CF0E98637789C98F1 /* Banners.swift */; };
 		7744A4808C0F9E0E2608C8A6 /* SmixQuiescenceSwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */; };
@@ -48,6 +49,7 @@
 		C216AAC0D648FE4B6D4EC9EC /* swift-bridge */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "swift-bridge"; path = .; sourceTree = SOURCE_ROOT; };
 		CBE545DCBDBD7B19B5102374 /* SmixQuiescenceSwizzle.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmixQuiescenceSwizzle.h; sourceTree = "<group>"; };
 		CF15C4D428CB8B2B34F9A061 /* SmixRunner.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SmixRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DFC78B183001B5FA692E54B3 /* Headset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Headset.swift; sourceTree = "<group>"; };
 		E91F97A8EE7187D90CC587D0 /* SmixRunnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmixRunnerApp.swift; sourceTree = "<group>"; };
 		F1D2BB4CF0E98637789C98F1 /* Banners.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Banners.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -89,6 +91,7 @@
 				F1D2BB4CF0E98637789C98F1 /* Banners.swift */,
 				95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */,
 				72197983C53848D29C050471 /* EventSynthesizer.swift */,
+				DFC78B183001B5FA692E54B3 /* Headset.swift */,
 				60ADEFEBB5644D83B0956CD1 /* HideKeyboard.swift */,
 				B75B6B5792291DC048C4BECC /* Info.plist */,
 				29E63C356CE3614778CA640B /* SmixA11ySwizzle.h */,
@@ -207,6 +210,7 @@
 				6FDCA06236F8D50E730C87AA /* Banners.swift in Sources */,
 				D0B65170676A011C0A27F1C4 /* EventRecorder.swift in Sources */,
 				1CB5D5E731634D61D9EE489A /* EventSynthesizer.swift in Sources */,
+				55BE0426E74C56855DCE98DF /* Headset.swift in Sources */,
 				39AC667CBBFB90AAF02D95F9 /* HideKeyboard.swift in Sources */,
 				53169F0AFCECEB57F00B6D2F /* SmixA11ySwizzle.m in Sources */,
 				5C28A1EFB4FFACB2067D1EFB /* SmixExceptionTrampoline.m in Sources */,
