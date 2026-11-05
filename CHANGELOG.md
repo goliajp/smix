@@ -20,6 +20,13 @@ one brings to crates.io, npm, Maven Central and the Swift package.
   on stderr (a sign-in about to end) and the actual reason on stdout (a
   usage limit), the error kept the warning and dropped the reason. It now
   carries both, stderr first, so a limit or an expired login is named.
+- **A boot is no longer refused for swap left over from earlier.** The
+  device budget refused every boot once swap in use reached half of
+  physical memory, but macOS keeps swap long after the pressure that grew
+  it is gone, so a Mac that once filled it refused boots for days with
+  half its memory free. A boot is now refused when the kernel reports
+  critical memory pressure (`kern.memorystatus_vm_pressure_level`), or
+  under 15% of memory free, as before.
 - **A foldable that does not turn says what it showed instead.** When
   `setOrientation` on an iPhone Duo times out, the error now lists each
   orientation devicectl read while it waited, with when, and how many
