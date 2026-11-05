@@ -2,6 +2,26 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Added
+
+- **The iOS runner drives a visionOS simulator.** `smix runner up <udid>
+  --platform ios` builds and starts it on an Apple Vision Pro simulator,
+  and `tree`, `describe`, `tap`, `fill`, `sim screenshot` and flows with
+  `launchApp`, `tapOn`, `inputText`, `extendedWaitUntil` and
+  `assertVisible` work there. A tap is made with XCUI's element tap,
+  because the event synthesis iOS uses is refused on visionOS ("invalid
+  scene ID"). `setOrientation` is refused there: a headset has no device
+  orientation. tvOS is not supported yet.
+
+### Changed
+
+- The runner's xcodebuild destination for a simulator is `id=<udid>`
+  alone, so xcodebuild reads the platform from the device.
+- `smix tree`'s note about Compose dialogs is printed only for a device
+  known to be Android, not for one whose platform was not given.
+
 ## [23.3.1] — 2026-11-05
 
 The first release on any registry since 23.0.0: 23.1.0, 23.2.0 and

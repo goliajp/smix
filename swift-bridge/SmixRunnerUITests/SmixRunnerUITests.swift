@@ -2396,6 +2396,30 @@ final class SmixRunnerUITests: XCTestCase {
         if let aimedAt, let saw = AimCheck.gone(target: aimedAt, chain: chain, readable: readable) {
           return (ok: false, chain: chain, press: nil, gone: saw)
         }
+        #if !os(iOS)
+          // Synthesis asks Accessibility for the scene the point is in,
+          // and a visionOS app's window gives none (XCTDaemon error 74,
+          // "invalid scene ID (nil)"), so XCUI's own tap is used there.
+          // A coordinate tap is accepted there and lands on nothing
+          // (measured on visionOS 27.2: no control under the point
+          // reacted), so the element under the point is tapped by its
+          // identifier when one is known, the host's aim first.
+          let id = [aimedAt?.identifier].compactMap { $0 }.first(where: { !$0.isEmpty })
+            ?? chain.first(where: { !$0.identifier.isEmpty })?.identifier
+          let tapped = smixGuarded("tap-at-norm-coord-xcui") { () -> Bool in
+            let hold = Double(holdMs) / 1000
+            if let id {
+              let element = app.descendants(matching: .any).matching(identifier: id).firstMatch
+              guard element.exists else { return false }
+              for _ in 0..<max(1, times) { if hold > 0 { element.press(forDuration: hold) } else { element.tap() } }
+            } else {
+              let point = app.coordinate(withNormalizedOffset: CGVector(dx: nx, dy: ny))
+              for _ in 0..<max(1, times) { if hold > 0 { point.press(forDuration: hold) } else { point.tap() } }
+            }
+            return true
+          } == true
+          return (ok: tapped, chain: chain, press: nil, gone: nil)
+        #endif
         // Timed around the synthesise alone: this process authors the
         // timeline, so the call's span and the hold bound when a single
         // touch was down (see `TapAtCoordRoute.PressTimings`). A burst
@@ -2780,11 +2804,18 @@ final class SmixRunnerUITests: XCTestCase {
               Data("smix-runner: set-orientation: unknown orientation '\(orientationStr)'\n".utf8))
             return false
           }
-          XCUIDevice.shared.orientation = mapped
-          // settle: orientation change is asynchronous in sim;
-          // 200ms aligns with iOS rotation animation budget.
-          Thread.sleep(forTimeInterval: 0.2)
-          return true
+          #if os(iOS)
+            XCUIDevice.shared.orientation = mapped
+            // settle: orientation change is asynchronous in sim;
+            // 200ms aligns with iOS rotation animation budget.
+            Thread.sleep(forTimeInterval: 0.2)
+            return true
+          #else
+            _ = mapped
+            FileHandle.standardError.write(
+              Data("smix-runner: set-orientation: this platform has no device orientation\n".utf8))
+            return false
+          #endif
         } ?? false
       },
       recordHandlers: recordEnabled ? SmixRunnerServer.RecordHandlers(
@@ -3291,7 +3322,11 @@ final class SmixRunnerUITests: XCTestCase {
             rootFrame = convertSnapshot(snapshot)
               .inInterfaceShape(landscape: smixInterfaceIsLandscape(app)).frame
           }
-          interface = describeDeviceOrientation(XCUIDevice.shared.orientation)
+          #if os(iOS)
+            interface = describeDeviceOrientation(XCUIDevice.shared.orientation)
+          #else
+            interface = describeDeviceOrientation(.unknown)
+          #endif
           csLayout = smixLayout(of: app)
           return true
         }

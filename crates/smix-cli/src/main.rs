@@ -4145,10 +4145,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             reader,
         } => {
             let p = runner_dial_port(port, device.as_deref());
-            // Only for the caveat, so a platform that cannot be told is not
-            // a reason to refuse the tree.
-            let ios = runner_dial_target(port, device.as_deref(), platform)
-                .is_ok_and(|(_, plat)| plat == smix_driver::Platform::Ios);
+            // Only for the caveat, which is about Android: shown only when the
+            // device is known to be one, never for a platform not told.
+            let ios = !runner_dial_target(port, device.as_deref(), platform)
+                .is_ok_and(|(_, plat)| plat == smix_driver::Platform::Android);
             act::cmd_tree(json, p, keyboard, reader.to_act(), ios)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
