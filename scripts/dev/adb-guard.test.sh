@@ -82,8 +82,27 @@ feed $ALLOW "adb -s R5CT52DF07D logcat -d"
 feed $ALLOW "adb -s R5CT52DF07D get-state"
 # and the ones that only look read-only
 feed $BLOCK "adb -s R5CT52DF07D shell pm uninstall dev.smix.fixture"
-feed $BLOCK "adb -s R5CT52DF07D shell rm -rf /sdcard/x"
-feed $BLOCK "adb -s R5CT52DF07D shell settings put global x 1"
+# administering the phone itself is the owner's to do (2026-11-05): only
+# changing an app on it is refused
+feed $ALLOW "adb -s R5CT52DF07D shell rm -rf /sdcard/x"
+feed $ALLOW "adb -s R5CT52DF07D shell settings put global x 1"
+feed $ALLOW "adb -s R5CT52DF07D shell dumpsys telecom"
+feed $ALLOW "adb -s R5CT52DF07D shell cmd role get-role-holders android.app.role.DIALER"
+feed $ALLOW "adb -s R5CT52DF07D shell cmd appops get com.samsung.android.incallui"
+feed $ALLOW "adb -s R5CT52DF07D shell pm list packages -d"
+feed $ALLOW "adb -s R5CT52DF07D reboot"
+feed $BLOCK "adb -s R5CT52DF07D push app.apk /data/local/tmp/"
+feed $BLOCK "adb -s R5CT52DF07D shell am start -n dev.smix.fixture/.MainActivity"
+feed $BLOCK "adb -s R5CT52DF07D shell am force-stop dev.smix.fixture"
+feed $BLOCK "adb -s R5CT52DF07D shell pm clear dev.smix.fixture"
+feed $BLOCK "adb -s R5CT52DF07D shell cmd package uninstall dev.smix.fixture"
+feed $BLOCK "adb -s R5CT52DF07D shell run-as dev.smix.fixture ls"
+feed $BLOCK "adb -s R5CT52DF07D shell monkey -p dev.smix.fixture 1"
+# unpinned mutations still never reach a phone
+# a word an adb shell would treat as a command is not one outside adb
+feed $ALLOW "bash run.sh input x"
+feed $ALLOW "make start"
+feed $BLOCK "adb shell pm clear dev.smix.fixture"
 
 # unrelated commands are never touched
 feed $ALLOW "cargo test -p smix-driver"
@@ -124,7 +143,7 @@ feed $ALLOW "curl -s https://example.com/x.txt -o /tmp/x.txt && adb -s emulator-
 feed $BLOCK "$(printf 'adb -s emulator-5554 shell getprop sys.boot_completed\nadb -s R5CT52DF07D install -r app.apk')"
 feed $BLOCK "$(printf 'adb -s emulator-5554 shell getprop sys.boot_completed\nadb install -r app.apk')"
 feed $BLOCK "adb -s emulator-5554 shell getprop sys.boot_completed && adb install -r app.apk"
-feed $BLOCK "adb -s R5CT52DF07D shell rm -rf /sdcard/x && adb devices"
+feed $ALLOW "adb -s R5CT52DF07D shell rm -rf /sdcard/x && adb devices"
 # A `VAR=value cmd` prefix applies to that command only — shell says so,
 # and the guard has to say the same. The pin does not reach the next line.
 feed $BLOCK "$(printf 'ANDROID_SERIAL=emulator-5554 ./gradlew assembleDebug\n./gradlew connectedAndroidTest')"

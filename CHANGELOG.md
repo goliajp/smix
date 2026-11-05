@@ -2,6 +2,20 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Changed
+
+- **The plugin's adb guard lets a phone be administered.** A command that
+  names a physical device with `adb -s <serial>` and does not change an app
+  on it — `dumpsys`, `settings`, `cmd appops`, `cmd role`, `pm list`,
+  `logcat`, `reboot` — is no longer refused. Changing an app on a phone
+  still is: install, uninstall, push, `am start` / `force-stop` /
+  `instrument`, `pm clear`, `run-as`, `monkey`, `input`. Without `-s`,
+  those app changes are refused unless an emulator is named, as before;
+  `pm clear`, `am start` and the rest of that list were not checked
+  unpinned until now.
+
 ## [23.3.1] — 2026-11-05
 
 The first release on any registry since 23.0.0: 23.1.0, 23.2.0 and
