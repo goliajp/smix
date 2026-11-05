@@ -19,11 +19,14 @@
 #      gradle android plugin fans install/connected tasks out to EVERY
 #      attached device, so an unpinned run reaches the phone too.
 #
-# A physical phone named with `-s <serial>` is the owner's to administer:
-# settings, dumpsys, appops, roles, logcat, packages listed, a reboot.
-# What stays refused on it is what a test of an app does — install,
+# smix serves app development, and this guard keeps that work off a phone
+# it reaches by accident. Administering the phone itself is not its
+# business: a physical serial written out on the command (`-s R5CT…`) may
+# do anything that does not change an app — settings, dumpsys, appops,
+# roles, permissions, logcat, a reboot. Changing an app on it — install,
 # uninstall, push, start / stop / instrument / drive an app, clear its
-# data — because that is what reaching a phone by accident destroys.
+# data or permissions — stays refused, pinned or not. A serial held in a
+# variable is a script's, and only reading passes there.
 #
 # Read-only adb is never touched — `devices`, `shell getprop`, `logcat`,
 # and the `--list` form of `forward` / `reverse`. Non-adb, non-gradle
@@ -145,7 +148,7 @@ is_read_only() {
 # What a test of an app does to a device, as opposed to administering
 # the device: these are refused on a physical serial.
 is_app_operation() {
-  local shell_app='(am[[:space:]]+(instrument|start|start-activity|force-stop|kill|broadcast)|pm[[:space:]]+(install|uninstall|clear)|cmd[[:space:]]+package[[:space:]]+(install|uninstall|clear)|monkey|run-as|input)'
+  local shell_app='(am[[:space:]]+(instrument|start|start-activity|startservice|start-service|stopservice|stop-service|force-stop|kill|broadcast|set-debug-app)|(pm|cmd[[:space:]]+package)[[:space:]]+(install|install-existing|install-create|uninstall|clear|reset-permissions)|monkey|run-as|input)'
   printf '%s' "$1" | grep -qE \
     "adb[^|;&]*[[:space:]](install|install-multiple|install-multi-package|uninstall|push|sideload)([[:space:]]|\$)|adb[^|;&]*[[:space:]]shell[[:space:]]+$shell_app([[:space:]]|\$)|(^|[[:space:]])am[[:space:]]+instrument([[:space:]]|\$)"
 }
@@ -177,7 +180,16 @@ judge_one() {
         if is_app_operation " $one"; then
           deny "adb -s '$serial' names a physical device, and this changes an app on it (install, uninstall, push, start / stop / instrument / drive an app, clear its data), in: $one"
         fi
-        # administering the phone itself: settings, dumpsys, appops, roles
+        # A serial written out is a person naming the phone they mean to
+        # administer. One held in a variable is a script's, and what it
+        # holds is not on the line: a script that resolved the phone by
+        # accident and changed its settings is the accident this guard is
+        # for, so only reading passes there.
+        case "$serial" in
+          *'$'*|*'`'*|*'"'*|*"'"*)
+            is_read_only " $one" \
+              || deny "adb -s $serial names its device through a variable, so whether it is a phone cannot be read here, and this is not read-only, in: $one" ;;
+        esac
         return 0
         ;;
     esac
