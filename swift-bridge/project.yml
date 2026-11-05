@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: dev.smix
   deploymentTarget:
     iOS: "17.0"
+    visionOS: "2.0"
   developmentLanguage: en
 
 packages:
@@ -12,7 +13,7 @@ packages:
 targets:
   SmixRunner:
     type: application
-    platform: iOS
+    supportedDestinations: [iOS, visionOS]
     sources:
       - path: SmixRunner
     info:
@@ -25,7 +26,7 @@ targets:
 
   SmixRunnerUITests:
     type: bundle.ui-testing
-    platform: iOS
+    supportedDestinations: [iOS, visionOS]
     sources:
       - path: SmixRunnerUITests
     info:

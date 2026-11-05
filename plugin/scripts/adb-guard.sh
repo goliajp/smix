@@ -19,6 +19,15 @@
 #      gradle android plugin fans install/connected tasks out to EVERY
 #      attached device, so an unpinned run reaches the phone too.
 #
+# smix serves app development, and this guard keeps that work off a phone
+# it reaches by accident. Administering the phone itself is not its
+# business: a physical serial written out on the command (`-s R5CT…`) may
+# do anything that does not change an app — settings, dumpsys, appops,
+# roles, permissions, logcat, a reboot. Changing an app on it — install,
+# uninstall, push, start / stop / instrument / drive an app, clear its
+# data or permissions — stays refused, pinned or not. A serial held in a
+# variable is a script's, and only reading passes there.
+#
 # Read-only adb is never touched — `devices`, `shell getprop`, `logcat`,
 # and the `--list` form of `forward` / `reverse`. Non-adb, non-gradle
 # commands pass untouched.
@@ -90,7 +99,8 @@ deny() {
   echo "adb-guard: drive the device through smix, not raw adb — smix takes the device explicitly, so it cannot fall through to an attached phone: 'smix run <flow> --device emulator-5554', 'smix fill/find/tree --device emulator-5554', 'smix runner up --platform android --device emulator-5554', 'smix sim boot <alias>'. A physical device must be registered first ('smix sim register')." >&2
   echo "adb-guard: to let a device reach a server on this machine, 'smix sim reverse <device> <port>' (and '--remove' to close it) — it takes the device explicitly and records the route, so a teardown can close it" >&2
   echo "adb-guard: to arrange or read a device, 'smix sim wake <device>', 'smix sim stay-awake <device> on|off', 'smix sim permission <device> <bundle> <name> grant|revoke', 'smix sim frontmost <device>', 'smix sim crashes <device>' — each names the device and reads the result back from it" >&2
-  echo "adb-guard: if you must use raw adb, pin an emulator — 'adb -s emulator-5554 …' or 'ANDROID_SERIAL=emulator-5554 ./gradlew …'; never an unpinned mutation (it reaches a physical phone) and never a physical serial" >&2
+  echo "adb-guard: administering a physical phone itself is not refused — 'adb -s <serial> shell dumpsys|settings|cmd appops|cmd role …', 'adb -s <serial> logcat'; what is refused on a phone is changing an app on it" >&2
+  echo "adb-guard: if you must use raw adb, pin an emulator — 'adb -s emulator-5554 …' or 'ANDROID_SERIAL=emulator-5554 ./gradlew …'; never an unpinned app change (it reaches whatever phone is attached) and never an app change on a physical serial" >&2
   exit 2
 }
 
@@ -135,6 +145,14 @@ is_read_only() {
 # never travels — it is one invocation's argument — and neither does
 # being read-only, which is a fact about one command and says nothing
 # about what another one does.
+# What a test of an app does to a device, as opposed to administering
+# the device: these are refused on a physical serial.
+is_app_operation() {
+  local shell_app='(am[[:space:]]+(instrument|start|start-activity|startservice|start-service|stopservice|stop-service|force-stop|kill|broadcast|set-debug-app)|(pm|cmd[[:space:]]+package)[[:space:]]+(install|install-existing|install-create|uninstall|clear|reset-permissions)|monkey|run-as|input)'
+  printf '%s' "$1" | grep -qE \
+    "adb[^|;&]*[[:space:]](install|install-multiple|install-multi-package|uninstall|push|sideload)([[:space:]]|\$)|adb[^|;&]*[[:space:]]shell[[:space:]]+$shell_app([[:space:]]|\$)|(^|[[:space:]])am[[:space:]]+instrument([[:space:]]|\$)"
+}
+
 judge_one() {
   local one="$1"
   local carried="$2"
@@ -159,18 +177,27 @@ judge_one() {
     case "$serial" in
       emulator-*) ;;  # explicit emulator — the safe case
       *)
-        if ! is_read_only " $one"; then
-          deny "adb -s '$serial' names a non-emulator device (physical serials are not emulator-NNNN), in: $one"
+        if is_app_operation " $one"; then
+          deny "adb -s '$serial' names a physical device, and this changes an app on it (install, uninstall, push, start / stop / instrument / drive an app, clear its data), in: $one"
         fi
+        # A serial written out is a person naming the phone they mean to
+        # administer. One held in a variable is a script's, and what it
+        # holds is not on the line: a script that resolved the phone by
+        # accident and changed its settings is the accident this guard is
+        # for, so only reading passes there.
+        case "$serial" in
+          *'$'*|*'`'*|*'"'*|*"'"*)
+            is_read_only " $one" \
+              || deny "adb -s $serial names its device through a variable, so whether it is a phone cannot be read here, and this is not read-only, in: $one" ;;
+        esac
+        return 0
         ;;
     esac
   fi
 
-  # Mutating adb subcommands must carry an explicit emulator serial.
-  # `am instrument` is reached via `adb [-s …] shell am instrument`.
-  local mutating='(install|uninstall|push)'
-  if printf '%s' "$one" | grep -qE "adb[[:space:]]+([^|;&]*[[:space:]])?$mutating([[:space:]]|$)" \
-     || printf '%s' "$one" | grep -qE 'am[[:space:]]+instrument'; then
+  # Changing an app must name an emulator explicitly: unpinned, it goes
+  # to whatever single device is attached, which may be a phone.
+  if is_app_operation " $one"; then
     if ! printf '%s' "$one" | grep -qE '\-s[[:space:]]+emulator-[0-9]+'; then
       deny "a device-mutating adb command with no explicit '-s emulator-NNNN', in: $one"
     fi

@@ -2,6 +2,77 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [23.4.0] — 2026-11-05
+
+The first release on any registry since 23.0.0: 23.1.0, 23.2.0 and
+23.3.0 were not published, so their entries below are part of what this
+one brings to crates.io, npm, Maven Central and the Swift package.
+
+### Added
+
+- **The iOS runner drives a visionOS simulator.** `smix runner up <udid>
+  --platform ios` builds and starts it on an Apple Vision Pro simulator,
+  and `tree`, `describe`, `tap`, `fill`, `sim screenshot` and flows with
+  `launchApp`, `tapOn`, `inputText`, `extendedWaitUntil` and
+  `assertVisible` work there. A tap is made with XCUI's element tap,
+  because the event synthesis iOS uses is refused on visionOS ("invalid
+  scene ID"). `setOrientation` is refused there: a headset has no device
+  orientation. A window keeps its own shape (a 1280×800 window was turned
+  portrait, and everything right of x=800 read as off screen), and a
+  system alert such as a notification permission prompt — hosted by
+  RealityNotifications, not as an alert element — is listed by `smix
+  system-popups` and pressed by `smix system-popup-action`. tvOS is not
+  supported yet.
+
+### Changed
+
+- The runner's xcodebuild destination for a simulator is `id=<udid>`
+  alone, so xcodebuild reads the platform from the device.
+- `smix tree`'s note about Compose dialogs is printed only for a device
+  known to be Android, not for one whose platform was not given.
+- **The plugin's adb guard lets a phone be administered.** smix serves
+  app development, and the guard now keeps only that off a phone: a
+  command naming a physical device by its serial written out (`adb -s
+  1A2B3C4D`) that does not change an app — `dumpsys`, `settings`, `cmd
+  appops`, `cmd role`, `pm grant`/`enable`, `pm list`, `logcat`, `reboot`
+  — is no longer refused. Changing an app on a phone still is: install,
+  uninstall, push, `am start` / `startservice` / `force-stop` /
+  `instrument` / `set-debug-app`, `pm clear` / `install-existing` /
+  `reset-permissions`, `run-as`, `monkey`, `input`. A serial held in a
+  variable (`-s "$SERIAL"`) is a script's, and only reading passes there.
+  Without `-s`, those app changes are refused unless an emulator is named;
+  several of them (`pm clear`, `am start`) were not checked unpinned
+  until now.
+- The plugin's device guards read a heredoc's body as the language of the
+  command it is written on. In `bash -n x.sh && python3 - <<EOF` the
+  body is python and is no longer judged as shell; it was, because the
+  line's first word was taken for its consumer.
+
+### Fixed
+
+- **A runner that does not answer is no longer met with a script you do
+  not have.** The hint said `bash scripts/smix-runner-health.sh`, which is
+  in no install. It now says to start one with `smix runner up <device>`,
+  or, when one is up on another port, to set `SMIX_RUNNER_PORT` to it —
+  the usual way to reach this error is a verb reading the default port
+  while the runner listens elsewhere.
+- **A failed `claude` call now says why.** When the CLI printed a warning
+  on stderr (a sign-in about to end) and the actual reason on stdout (a
+  usage limit), the error kept the warning and dropped the reason. It now
+  carries both, stderr first, so a limit or an expired login is named.
+- **A boot is no longer refused for swap left over from earlier.** The
+  device budget refused every boot once swap in use reached half of
+  physical memory, but macOS keeps swap long after the pressure that grew
+  it is gone, so a Mac that once filled it refused boots for days with
+  half its memory free. A boot is now refused when the kernel reports
+  critical memory pressure (`kern.memorystatus_vm_pressure_level`), or
+  under 15% of memory free, as before.
+- **A foldable that does not turn says what it showed instead.** When
+  `setOrientation` on an iPhone Duo times out, the error now lists each
+  orientation devicectl read while it waited, with when, and how many
+  times the report was sent — so a device that never moved reads
+  differently from one that moved elsewhere or could not be read.
+
 ## [23.3.0] — 2026-11-04
 
 ### Added

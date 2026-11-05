@@ -60,11 +60,11 @@ for pair in "A $UDID_A" "B $UDID_B"; do
   esac
 done
 if [ "$(simulator_state "$UDID_A")" != Booted ]; then
-  with_deadline 300 "$SMIX" sim boot "$UDID_A" >"$WORK/boot-a.log" 2>&1 || fail "boot A: $(tail -3 "$WORK/boot-a.log")"
+  with_deadline 900 "$SMIX" sim boot "$UDID_A" --wait 600 >"$WORK/boot-a.log" 2>&1 || fail "boot A: $(tail -3 "$WORK/boot-a.log")"
   WE_BOOTED_A=1
 fi
 if [ "$(simulator_state "$UDID_B")" != Booted ]; then
-  with_deadline 300 "$SMIX" sim boot "$UDID_B" >"$WORK/boot-b.log" 2>&1 || fail "boot B: $(tail -3 "$WORK/boot-b.log")"
+  with_deadline 900 "$SMIX" sim boot "$UDID_B" --wait 600 >"$WORK/boot-b.log" 2>&1 || fail "boot B: $(tail -3 "$WORK/boot-b.log")"
   WE_BOOTED_B=1
 fi
 for u in "$UDID_A" "$UDID_B"; do

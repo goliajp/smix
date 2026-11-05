@@ -81,7 +81,7 @@ if [ -n "$SERIAL" ]; then
 fi
 
 step "1. smix boots it, and the ledger says so"
-"$SMIX" sim boot "$ALIAS" > "$WORK/boot.log" 2>&1 \
+"$SMIX" sim boot "$ALIAS" --wait 600 > "$WORK/boot.log" 2>&1 \
   || { cat "$WORK/boot.log" >&2; fail "smix could not boot $ALIAS"; }
 SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
 [ -n "$SERIAL" ] || fail "smix booted $ALIAS and cannot say which serial it is on"

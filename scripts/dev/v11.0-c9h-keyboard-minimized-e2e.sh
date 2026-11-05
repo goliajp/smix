@@ -58,7 +58,7 @@ trap cleanup EXIT
 [ -f "$FLOW" ] || cannot_judge "no flow at $FLOW"
 [ -d "$FIXTURE" ] || cannot_judge "no iOS fixture — run: bash scripts/dev/build-fixture-app.sh"
 if [ "$(simulator_state "$UDID")" != Booted ]; then
-  "$SMIX" sim boot "$UDID" >"$WORK/boot.log" 2>&1 || cannot_judge "could not boot $UDID"
+  "$SMIX" sim boot "$UDID" --wait 600 >"$WORK/boot.log" 2>&1 || cannot_judge "could not boot $UDID"
   WE_BOOTED=1
 fi
 "$SMIX" sim install "$UDID" "$FIXTURE" >"$WORK/install.log" 2>&1 \

@@ -79,16 +79,22 @@ def strip_inert_heredocs(command):
         out.append(line)
         i += 1
 
-        openers = OPENER.findall(line)
-        if not openers:
-            continue
-
-        inert = leading_word(line) not in SHELL_CONSUMERS
-        pending = [(delim, dash == "-") for dash, _q, delim in openers]
+        # Each body belongs to the command its `<<` is written on, which is
+        # the text after the last separator before it — not the line's
+        # first word: in `bash -n x.sh && python3 - <<EOF` the body is
+        # python's, and it was judged as bash's.
+        pending = [
+            (
+                m.group(3),
+                m.group(1) == "-",
+                leading_word(re.split(r"[;|&]", line[: m.start()])[-1]) not in SHELL_CONSUMERS,
+            )
+            for m in OPENER.finditer(line)
+        ]
 
         while i < len(lines) and pending:
             body = lines[i]
-            delim, strip_tabs = pending[0]
+            delim, strip_tabs, inert = pending[0]
             probe = body.lstrip("\t") if strip_tabs else body
             if probe.strip() == delim:
                 pending.pop(0)
