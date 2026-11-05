@@ -251,7 +251,7 @@ pub fn workspace_root(start: &Path) -> Option<PathBuf> {
 /// without a team.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerTarget<'a> {
-    /// An iOS Simulator. Unsigned, and `platform=iOS Simulator`.
+    /// A simulator of any platform. Unsigned, named by id alone.
     Simulator,
     /// A physical device: signed by `team`, and `platform=iOS`.
     Physical {
@@ -284,13 +284,13 @@ pub fn xcodebuild_argv_for(project: &Path, udid: &str, target: RunnerTarget<'_>)
         "-scheme".into(),
         "SmixRunner".into(),
         "-destination".into(),
-        // The two platform strings are not interchangeable, and mixing
-        // them up fails in a way that names neither: xcodebuild goes
-        // looking for a simulator with a phone's udid, finds nothing,
-        // and reports a destination error that says nothing about
-        // signing or about the device being physical.
+        // A simulator is named by id alone, so xcodebuild reads its
+        // platform (iOS, visionOS, tvOS) from the device. A phone keeps
+        // `platform=iOS`: named as a simulator, xcodebuild looks for one
+        // with a phone's udid, finds nothing, and reports a destination
+        // error that says nothing about signing or the device being physical.
         match target {
-            RunnerTarget::Simulator => format!("platform=iOS Simulator,id={udid}"),
+            RunnerTarget::Simulator => format!("id={udid}"),
             RunnerTarget::Physical { .. } => format!("platform=iOS,id={udid}"),
         },
         "-derivedDataPath".into(),
@@ -2872,10 +2872,7 @@ mod tests {
         );
         assert_eq!(argv[0], "test");
         assert!(argv.contains(&"SmixRunner".to_string()));
-        assert!(
-            argv.iter()
-                .any(|a| a == &format!("platform=iOS Simulator,id={UDID}"))
-        );
+        assert!(argv.iter().any(|a| a == &format!("id={UDID}")));
         assert!(!argv.iter().any(|a| a.contains("name=")));
         // Per-udid derivedDataPath keeps concurrent runners from
         // contending on the shared Xcode DerivedData lock.
@@ -3181,10 +3178,7 @@ mod target_tests {
         // Every existing caller lands here. If this drifts, a working
         // setup breaks for a feature it never asked for.
         let argv = argv_for(SIM, RunnerTarget::Simulator);
-        assert!(
-            argv.iter()
-                .any(|a| a == &format!("platform=iOS Simulator,id={SIM}"))
-        );
+        assert!(argv.iter().any(|a| a == &format!("id={SIM}")));
         assert!(
             !argv.iter().any(|a| a.starts_with("DEVELOPMENT_TEAM")),
             "a simulator build needs no signing team: {argv:?}"
