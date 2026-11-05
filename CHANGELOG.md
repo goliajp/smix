@@ -33,7 +33,7 @@ one brings to crates.io, npm, Maven Central and the Swift package.
 - **The plugin's adb guard lets a phone be administered.** smix serves
   app development, and the guard now keeps only that off a phone: a
   command naming a physical device by its serial written out (`adb -s
-  R5CT…`) that does not change an app — `dumpsys`, `settings`, `cmd
+  1A2B3C4D`) that does not change an app — `dumpsys`, `settings`, `cmd
   appops`, `cmd role`, `pm grant`/`enable`, `pm list`, `logcat`, `reboot`
   — is no longer refused. Changing an app on a phone still is: install,
   uninstall, push, `am start` / `startservice` / `force-stop` /

@@ -1279,7 +1279,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:23.3.1")
+    debugImplementation("jp.golia.smix:smix-probe:23.4.0")
 }
 ```
 
