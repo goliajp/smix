@@ -3262,8 +3262,9 @@ it reached with an app open). The budget is 60% of physical memory, or
 `SMIX_DEVICE_BUDGET_GIB`. A Vision Pro or an Apple TV runs alone — it is
 refused beside anything else, and nothing boots beside it —
 unless `SMIX_HEAVY_DEVICES_ALONE=0`. Whatever the weights say, nothing boots
-while swap in use has reached half of physical memory or less than 15% of
-memory is free. A device that is already running is not weighed again.
+while the kernel reports critical memory pressure or less than 15% of memory
+is free. Swap in use is not read: macOS keeps it long after the pressure that
+grew it has passed. A device that is already running is not weighed again.
 
 ```bash
 smix sim boot sim-smix-02 --wait 600    # queue for up to ten minutes instead of refusing
