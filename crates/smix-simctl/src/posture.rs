@@ -323,23 +323,29 @@ impl SimctlClient {
         session.send(&report)?;
         let started = Instant::now();
         let mut sent = started;
+        let mut sends = 1u32;
+        let mut seen = Readings::default();
         loop {
             let json = crate::displays::read_displays_json(udid)
                 .await
                 .map_err(|e| e.to_string())?;
             let now = crate::displays::device_orientation(&json);
+            seen.note(started.elapsed(), now.as_deref());
             if now.as_deref() == Some(facing.devicectl_name()) {
                 return Ok(());
             }
             if started.elapsed() >= SHOWS_WITHIN {
                 return Err(format!(
-                    "the orientation report `{value}` was sent and after {} s devicectl reads {}",
+                    "the orientation report `{value}` was sent and after {} s devicectl reads {} \
+                     (sent {sends} times; it read {})",
                     SHOWS_WITHIN.as_secs(),
-                    now.as_deref().unwrap_or("no orientation")
+                    now.as_deref().unwrap_or("no orientation"),
+                    seen.describe()
                 ));
             }
             if sent.elapsed() >= RESEND {
                 session.send(&report)?;
+                sends += 1;
                 sent = Instant::now();
             }
             tokio::time::sleep(POLL).await;
@@ -349,6 +355,36 @@ impl SimctlClient {
     #[cfg(not(target_os = "macos"))]
     async fn send_orientation_and_wait(&self, _: &str, _: &str, _: Facing) -> Result<(), String> {
         Err("turning a simulator needs macOS".into())
+    }
+}
+
+/// What devicectl read while a turn was awaited: each change of reading,
+/// with when it was first read, so a failed turn shows whether the device
+/// never moved, moved elsewhere, or could not be read.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Default)]
+struct Readings(Vec<(Duration, Option<String>)>);
+
+#[cfg(any(target_os = "macos", test))]
+impl Readings {
+    fn note(&mut self, at: Duration, now: Option<&str>) {
+        if self.0.last().map(|(_, r)| r.as_deref()) != Some(now) {
+            self.0.push((at, now.map(str::to_string)));
+        }
+    }
+
+    fn describe(&self) -> String {
+        self.0
+            .iter()
+            .map(|(at, r)| {
+                format!(
+                    "{} from {:.1} s",
+                    r.as_deref().unwrap_or("nothing"),
+                    at.as_secs_f64()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", then ")
     }
 }
 
@@ -374,6 +410,28 @@ pub fn describe(screens: &[Screen]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn readings_keep_each_change_and_when() {
+        let mut r = super::Readings::default();
+        r.note(Duration::from_millis(100), Some("landscapeRight"));
+        r.note(Duration::from_millis(200), Some("landscapeRight"));
+        r.note(Duration::from_millis(4300), None);
+        r.note(Duration::from_millis(5000), Some("portrait"));
+        assert_eq!(
+            r.describe(),
+            "landscapeRight from 0.1 s, then nothing from 4.3 s, then portrait from 5.0 s"
+        );
+    }
+
+    #[test]
+    fn readings_that_never_change_are_one_entry() {
+        let mut r = super::Readings::default();
+        for ms in [0, 100, 200, 15000] {
+            r.note(Duration::from_millis(ms), Some("landscapeRight"));
+        }
+        assert_eq!(r.describe(), "landscapeRight from 0.0 s");
+    }
+
     use super::*;
     use crate::displays::screens;
 
