@@ -6,15 +6,19 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Changed
 
-- **The plugin's adb guard lets a phone be administered.** A command that
-  names a physical device with `adb -s <serial>` and does not change an app
-  on it — `dumpsys`, `settings`, `cmd appops`, `cmd role`, `pm list`,
-  `logcat`, `reboot` — is no longer refused. Changing an app on a phone
-  still is: install, uninstall, push, `am start` / `force-stop` /
-  `instrument`, `pm clear`, `run-as`, `monkey`, `input`. Without `-s`,
-  those app changes are refused unless an emulator is named, as before;
-  `pm clear`, `am start` and the rest of that list were not checked
-  unpinned until now.
+- **The plugin's adb guard lets a phone be administered.** smix serves
+  app development, and the guard now keeps only that off a phone: a
+  command naming a physical device by its serial written out (`adb -s
+  R5CT…`) that does not change an app — `dumpsys`, `settings`, `cmd
+  appops`, `cmd role`, `pm grant`/`enable`, `pm list`, `logcat`, `reboot`
+  — is no longer refused. Changing an app on a phone still is: install,
+  uninstall, push, `am start` / `startservice` / `force-stop` /
+  `instrument` / `set-debug-app`, `pm clear` / `install-existing` /
+  `reset-permissions`, `run-as`, `monkey`, `input`. A serial held in a
+  variable (`-s "$SERIAL"`) is a script's, and only reading passes there.
+  Without `-s`, those app changes are refused unless an emulator is named;
+  several of them (`pm clear`, `am start`) were not checked unpinned
+  until now.
 
 ## [23.3.1] — 2026-11-05
 

@@ -98,6 +98,17 @@ feed $BLOCK "adb -s R5CT52DF07D shell pm clear dev.smix.fixture"
 feed $BLOCK "adb -s R5CT52DF07D shell cmd package uninstall dev.smix.fixture"
 feed $BLOCK "adb -s R5CT52DF07D shell run-as dev.smix.fixture ls"
 feed $BLOCK "adb -s R5CT52DF07D shell monkey -p dev.smix.fixture 1"
+feed $ALLOW "adb -s R5CT52DF07D shell pm grant com.samsung.android.incallui android.permission.READ_PHONE_STATE"
+feed $ALLOW "adb -s R5CT52DF07D shell pm enable com.samsung.android.incallui"
+feed $BLOCK "adb -s R5CT52DF07D shell pm install-existing dev.smix.fixture"
+feed $BLOCK "adb -s R5CT52DF07D shell pm reset-permissions"
+feed $BLOCK "adb -s R5CT52DF07D shell am startservice dev.smix.fixture/.Svc"
+feed $BLOCK "adb -s R5CT52DF07D shell am set-debug-app dev.smix.fixture"
+# a serial in a variable is a script's: what it holds is not on the line
+feed $BLOCK 'adb -s "$SERIAL" shell settings put global window_animation_scale 0'
+feed $BLOCK 'adb -s $S shell dumpsys telecom'
+feed $ALLOW 'adb -s "$SERIAL" shell getprop ro.product.model'
+feed $ALLOW 'adb -s "$SERIAL" logcat -d'
 # unpinned mutations still never reach a phone
 # a word an adb shell would treat as a command is not one outside adb
 feed $ALLOW "bash run.sh input x"
