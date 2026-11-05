@@ -2,7 +2,11 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [23.4.0] — 2026-11-05
+
+The first release on any registry since 23.0.0: 23.1.0, 23.2.0 and
+23.3.0 were not published, so their entries below are part of what this
+one brings to crates.io, npm, Maven Central and the Swift package.
 
 ### Added
 
@@ -26,12 +30,23 @@ All notable changes to the `smix` workspace are documented here. The format foll
   alone, so xcodebuild reads the platform from the device.
 - `smix tree`'s note about Compose dialogs is printed only for a device
   known to be Android, not for one whose platform was not given.
-
-## [23.3.1] — 2026-11-05
-
-The first release on any registry since 23.0.0: 23.1.0, 23.2.0 and
-23.3.0 were not published, so their entries below are part of what this
-one brings to crates.io, npm, Maven Central and the Swift package.
+- **The plugin's adb guard lets a phone be administered.** smix serves
+  app development, and the guard now keeps only that off a phone: a
+  command naming a physical device by its serial written out (`adb -s
+  R5CT…`) that does not change an app — `dumpsys`, `settings`, `cmd
+  appops`, `cmd role`, `pm grant`/`enable`, `pm list`, `logcat`, `reboot`
+  — is no longer refused. Changing an app on a phone still is: install,
+  uninstall, push, `am start` / `startservice` / `force-stop` /
+  `instrument` / `set-debug-app`, `pm clear` / `install-existing` /
+  `reset-permissions`, `run-as`, `monkey`, `input`. A serial held in a
+  variable (`-s "$SERIAL"`) is a script's, and only reading passes there.
+  Without `-s`, those app changes are refused unless an emulator is named;
+  several of them (`pm clear`, `am start`) were not checked unpinned
+  until now.
+- The plugin's device guards read a heredoc's body as the language of the
+  command it is written on. In `bash -n x.sh && python3 - <<EOF` the
+  body is python and is no longer judged as shell; it was, because the
+  line's first word was taken for its consumer.
 
 ### Fixed
 
