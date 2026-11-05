@@ -373,20 +373,7 @@ func smixLayout(of app: XCUIApplication) -> SmixLayout {
   {
     reported = smixStamp(o)
   }
-  let device: StampOrientation?
-  #if os(iOS)
-    switch XCUIDevice.shared.orientation {
-    case .portrait: device = .portrait
-    case .portraitUpsideDown: device = .portraitUpsideDown
-    // The device turned left shows the interface turned right.
-    case .landscapeLeft: device = .landscapeRight
-    case .landscapeRight: device = .landscapeLeft
-    default: device = nil
-    }
-  #else
-    // a headset has no device orientation to read
-    device = nil
-  #endif
+  let device = smixDeviceStamp()
   let orientation = layoutOrientation(appFrame: size, reported: reported, device: device)
   let source =
     reported != nil ? "app" : (size.width > size.height && device != nil && device != .portrait && device != .portraitUpsideDown ? "device" : "frame")
@@ -407,17 +394,6 @@ func smixAppFrame(_ app: XCUIApplication) -> CGRect {
 func smixShaped(_ frame: CGRect, landscape: Bool) -> CGRect {
   guard landscape == (frame.height > frame.width) else { return frame }
   return CGRect(x: frame.origin.x, y: frame.origin.y, width: frame.height, height: frame.width)
-}
-
-/// Whether the app says it is laid out landscape. Only the app's own
-/// interface orientation is read: unlike `XCUIDevice.orientation`, it may
-/// be asked off the main thread, where the tree is built.
-func smixInterfaceIsLandscape(_ app: XCUIApplication) -> Bool {
-  guard app.responds(to: NSSelectorFromString("interfaceOrientation")),
-    let raw = app.value(forKey: "interfaceOrientation") as? Int,
-    let o = UIInterfaceOrientation(rawValue: raw)
-  else { return false }
-  return o.isLandscape
 }
 
 /// The screen an app of this size fills, when it is not the main one.
