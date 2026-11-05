@@ -19,6 +19,10 @@ All notable changes to the `smix` workspace are documented here. The format foll
   Without `-s`, those app changes are refused unless an emulator is named;
   several of them (`pm clear`, `am start`) were not checked unpinned
   until now.
+- The plugin's device guards read a heredoc's body as the language of the
+  command it is written on. In `bash -n x.sh && python3 - <<EOF` the
+  body is python and is no longer judged as shell; it was, because the
+  line's first word was taken for its consumer.
 
 ## [23.3.1] — 2026-11-05
 

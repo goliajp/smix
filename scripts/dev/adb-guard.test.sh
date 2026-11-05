@@ -109,6 +109,10 @@ feed $BLOCK 'adb -s "$SERIAL" shell settings put global window_animation_scale 0
 feed $BLOCK 'adb -s $S shell dumpsys telecom'
 feed $ALLOW 'adb -s "$SERIAL" shell getprop ro.product.model'
 feed $ALLOW 'adb -s "$SERIAL" logcat -d'
+# a python body after `&&` is python, whatever words it holds
+feed $ALLOW "$(printf 'bash -n x.sh && python3 - <<%s\nb = "adb -s R5CT52DF07D install app.apk"\nEOF\n' "'EOF'")"
+# and a shell body after a python one on the same line is still judged
+feed $BLOCK "$(printf 'python3 - <<%s && bash <<%s\nx = 1\nPY\nadb -s R5CT52DF07D install app.apk\nSH\n' "'PY'" "'SH'")"
 # unpinned mutations still never reach a phone
 # a word an adb shell would treat as a command is not one outside adb
 feed $ALLOW "bash run.sh input x"
