@@ -32,7 +32,7 @@ pub struct RgbImage {
     pub w: usize,
     /// Height in pixels.
     pub h: usize,
-    px: Vec<[u8; 3]>,
+    pub(crate) px: Vec<[u8; 3]>,
 }
 
 impl RgbImage {
@@ -421,7 +421,7 @@ pub(crate) fn judge_pixels(
     }
 }
 
-fn encode_rgb(w: u32, h: u32, data: &[u8]) -> Result<Vec<u8>, ExpectationFailure> {
+pub(crate) fn encode_rgb(w: u32, h: u32, data: &[u8]) -> Result<Vec<u8>, ExpectationFailure> {
     let mut out = Vec::new();
     let mut encoder = png::Encoder::new(&mut out, w, h);
     encoder.set_color(png::ColorType::Rgb);

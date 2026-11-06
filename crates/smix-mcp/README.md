@@ -41,7 +41,7 @@ smix runner up <udid> --soft
 |---|---|
 | `smix_describe` | The visible elements and their bounds — start here. |
 | `smix_tree` | The full accessibility tree, when `describe` isn't enough. |
-| `smix_screenshot` | A base64 PNG. |
+| `smix_screenshot` | Writes a PNG and returns its path; `maxWidth` also returns a scaled copy as an image. |
 | `smix_find` | Is this element on screen? true/false, no failure. |
 
 **Act**
@@ -53,6 +53,8 @@ smix runner up <udid> --soft
 | `smix_press_key` | Return, Delete, Tab, Space, Escape, arrows. |
 | `smix_swipe` | Swipe once. |
 | `smix_scroll` | Swipe until an element is in view, then stop. |
+| `smix_long_press` | Press and hold an element or a point. |
+| `smix_drag` | Press, hold, move and lift as one touch: a home screen icon, a launcher widget. |
 
 **Lifecycle**
 

@@ -34,6 +34,7 @@ mod boot_cold;
 mod boot_record;
 mod boot_unlock;
 mod capsule;
+mod drag_cmd;
 mod fill_secret;
 mod hover_cmd;
 mod log_sources;
@@ -472,6 +473,13 @@ enum Cmd {
     /// drags both fingers a fifth of the screen up before they lift. A
     /// finger that would leave the screen is refused, never clipped.
     Pinch(pinch_cmd::PinchArgs),
+    /// Press and hold an element or a point: `smix long-press id:row`,
+    /// `smix long-press point:50%,50% --duration-ms 1500` on a home screen.
+    LongPress(drag_cmd::LongPressArgs),
+    /// Press, hold, move and lift as one touch: `smix drag id:widget
+    /// point:50%,8%` carries a launcher widget to the Remove target. Each
+    /// end is `<kind>:<value>` or `point:X%,Y%`.
+    Drag(drag_cmd::DragArgs),
     /// Rest a mouse pointer on an element, or take it off the app.
     ///
     /// `smix hover id:row_settings` moves the pointer onto the element's
@@ -4109,6 +4117,18 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Pinch(args) => {
             let (p, plat) = runner_dial_target(args.port, args.device.as_deref(), args.platform)?;
             pinch_cmd::cmd_pinch(args, p, plat)
+                .await
+                .map_err(|e| CliError::Other(e.to_string()))?;
+        }
+        Cmd::LongPress(args) => {
+            let (p, plat) = runner_dial_target(args.port, args.device.as_deref(), args.platform)?;
+            drag_cmd::cmd_long_press(args, p, plat)
+                .await
+                .map_err(|e| CliError::Other(e.to_string()))?;
+        }
+        Cmd::Drag(args) => {
+            let (p, plat) = runner_dial_target(args.port, args.device.as_deref(), args.platform)?;
+            drag_cmd::cmd_drag(args, p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }

@@ -383,6 +383,9 @@ one that stops.
     duration: 1500                       # ms
     captureDuring: true                  # optional; write PNGs of the held state
                                          # needs duration >= 800 (see below)
+- longPressOn:
+    point: "50%,45%"                     # a place with nothing nameable, e.g. a home screen
+    duration: 1000                       # (captureDuring needs an element, not a point)
 
 ```
 
@@ -607,6 +610,32 @@ gesture.
   `anchorRelative:` are refused there — give the point with `at:` instead.
 - Pinching and then a separate `swipe` also drags the zoomed content: the
   zoom stays in the app once the fingers lift.
+
+### Drag (press, hold, move, lift)
+
+smix's own verb; maestro has none. One finger pressed and held, moved,
+rested, and lifted, as one touch — for a home screen, a launcher, a
+reorderable list.
+
+```yaml
+- drag:
+    from: { id: "weather_widget" }       # where the finger goes down: an element's centre…
+    to: "50%,12%"                        # …or a point; either form at either end
+    hold: 500                            # ms still before moving, 0..10000; default 500
+    duration: 800                        # ms moving, 50..10000; default 800
+    release: 300                         # ms still before lifting, 0..5000; default 300
+
+- drag:
+    from: { point: "62%,62%" }           # a point may also be written as `point:`
+    to: { ocrText: "Remove" }            # ocrText and anchorRelative ends are read as points
+```
+
+- Both ends are required. An element end is waited for like any step's
+  target; one that never appears fails the step and nothing is touched.
+- On an iOS home screen keep `hold` under about 700 ms: held longer, the
+  icon's menu opens first and the move picks a menu item instead of
+  carrying the icon.
+- More in [04 — Actions](04-actions.md#drag).
 
 ### Hover (a mouse pointer)
 
@@ -1847,6 +1876,19 @@ before it acts.
 - Judged like `tapOn` on both platforms: a press delivered to something
   other than the element fails with `TAP_MISSED`.
 
+A place with nothing nameable — an empty spot on a home screen, which a
+long press puts into edit mode — is pressed by point:
+
+```yaml
+- longPressOn:
+    point: "50%,45%"
+    duration: 1000
+```
+
+The same from the command line and MCP:
+`smix long-press point:50%,45% --duration-ms 1000`,
+`smix_long_press { target: { point: "50%,45%" }, durationMs: 1000 }`.
+
 #### Capturing the held state
 
 Verifying a pressed appearance — a highlight, a scale-down, a ghost
@@ -2024,6 +2066,45 @@ looking is `keyboard_state_unknown` — see
   the next step's question (read its zoom label, or assert on what the
   zoom reveals).
 - Full shape and limits: [02 — YAML reference](02-yaml-reference.md#pinch-two-fingers).
+
+## Drag
+
+```yaml
+- drag:
+    from: { id: "weather_widget" }   # an element's centre, or a point "50%,80%"
+    to: "50%,12%"                    # same forms
+    hold: 500       # ms the finger stays still before moving (default 500)
+    duration: 800   # ms the move takes (default 800)
+    release: 300    # ms it rests at the end before lifting (default 300)
+```
+
+One touch: the finger goes down at `from`, stays still for `hold`, moves to
+`to` over `duration`, rests for `release`, and lifts. What a home screen, a
+launcher or a reorderable list needs: the hold lets the item come loose
+before the finger moves, and the rest lets a drop target such as Android's
+**Remove** see the finger over it before it lets go. A `swipe` moves at
+once and lifts on arrival, so it does neither.
+
+Each end is an element (`id` / `text` / `label` / `role`, its centre),
+`ocrText` (the middle of the text read), `anchorRelative`, or a point.
+An element end is waited for like any other step's target.
+
+- iOS: one touch path in one synthesized event record.
+- Android: touchscreen motion events injected through UiAutomation — a
+  down, a move every 10 ms while travelling, an up.
+- `ok` means the whole touch went in; whether the item moved is the next
+  step's question.
+
+The hold matters on an iOS home screen: held 500 ms and then moved, an icon
+is carried to where the finger lifts; held 700 ms or more, the icon's menu
+opens first and the move picks the menu item it ends over. On an Android
+launcher (Pixel), the defaults dragged a widget from the widget list onto
+the home screen, a resize handle to a new size, and the widget onto
+**Remove**.
+
+From the command line: `smix drag id:weather_widget point:50%,12%`
+(`--hold-ms`, `--duration-ms`, `--release-ms`). Through MCP: `smix_drag`
+with `from`, `to` and `holdMs` / `durationMs` / `releaseMs`.
 
 ## Hover
 
@@ -3380,6 +3461,10 @@ smix pinch id:player --from 1 --to 3       # two fingers about the element's cen
 smix pinch point:50%,50% --from-span 0.6 --to-span 0.2   # zoom out about a point
 smix pinch id:player --from 1 --to 3 --pan 0,-0.2        # then drag up a fifth of the screen before lifting
 smix pinch id:player --from 1 --to 3 --run-up slide      # for a recognizer that counts from the touch
+smix long-press id:list-row-3 --duration-ms 1500     # press and hold an element
+smix long-press point:50%,45% --duration-ms 1000      # …or a place: a home screen's edit mode
+smix drag id:weather_widget point:50%,12%             # press, hold 500 ms, move 800 ms, rest 300 ms, lift
+smix drag point:62%,62% point:42%,37% --hold-ms 500 --duration-ms 800 --release-ms 300
 smix hover id:settings_row                 # Android: a mouse pointer rests on the element (hover style shows)
 smix hover --away                          # …and leaves the app
 smix window-size 839x768 --app com.example # Android desktop window: resize to 839x768 dp, read it back
@@ -5659,7 +5744,7 @@ what it did before 4.3.
 ## Tools
 
 **Look** — `smix_describe` · `smix_tree` · `smix_screenshot` · `smix_find`
-**Act** — `smix_tap` · `smix_tap_then_screenshot` · `smix_fill` · `smix_press_key` · `smix_swipe` · `smix_scroll`
+**Act** — `smix_tap` · `smix_tap_then_screenshot` · `smix_fill` · `smix_press_key` · `smix_swipe` · `smix_scroll` · `smix_long_press` · `smix_drag`
 **Lifecycle** — `smix_launch_app` · `smix_stop_app`
 **Assert** — `smix_assert_visible` · `smix_assert_not_visible`
 **Diagnose** — `smix_session_state` · `smix_diagnostic_dump`
@@ -5675,7 +5760,23 @@ and a frame from the runner about 88 ms, so both together are well
 inside a UI that lives three seconds. What it saves is **the turn
 between two tool calls** — the model's own round trip, which is where
 the seconds actually go. It answers with a line naming the route and the
-delay, then the PNG as base64. A tap that fails returns no frame.
+delay, and the file the PNG was written to. A tap that fails returns no
+frame.
+
+`smix_screenshot` writes the PNG to a file and returns its path, pixel
+size and byte count, not the image: a full phone frame as base64 text is
+about three quarters of a million characters, more than a tool result
+holds. Open the file to look at it, or pass `maxWidth` (pixels) to also get
+a copy scaled to that width as an image — `400` is enough to read a
+layout. `path` chooses where the file goes; left out, it is a new file
+under the system's temporary directory.
+
+`smix_long_press` presses and holds an element or a `point` for
+`durationMs` (default 500). `smix_drag` presses at `from`, holds `holdMs`,
+moves to `to` over `durationMs`, rests `releaseMs`, and lifts — each end
+named like `smix_tap`'s target or a point. Both drive whatever is on the
+screen, the home screen included, once `smix_launch_app` has opened a
+session.
 
 ## Directions
 
@@ -6470,6 +6571,7 @@ that is why.
 | `scrollUntilVisible` | ✅ | ✅ | One host-side loop on both: swipe, look (tree, then each `ocrText`), stop when the element is wholly on screen and has stopped moving. `visibilityPercentage` / `centerElement` / `timeout` / `label` / `optional` read; `speed` / `waitToSettleTimeoutMs` refused by name |
 | `swipe` (`direction:` or `start:`/`end:` or `from:`/`to:`) | ✅ | ✅ | Absolute + relative coord shapes |
 | `pinch` (`over:` or `at:`, `from`/`to` or `fromSpan`/`toSpan`, optional `pan:`) | ✅ | ✅ | smix's own verb (maestro has none). Two fingers in one gesture about an element's centre or a point; the iOS runner synthesises two touch paths in one event record, the Android runner injects two-pointer motion events. A finger that would leave the screen is refused by name, never clipped |
+| `drag` (`from:`, `to:`, optional `hold:` / `duration:` / `release:`) | ✅ | ✅ | smix's own verb (maestro has none). One touch: pressed at `from`, held, moved to `to`, rested, lifted — what a home screen or launcher needs before an item comes loose and before a drop target notices it. Each end is an element's centre or a point |
 | `hoverOn` / `hover` | ❌ | ✅ | smix's own verb. A mouse pointer comes to rest on the element's centre: mouse events, not a touch, so a desktop window's hover styles answer it (Chromebook, Android's desktop mode). The element is waited for up to 5 s. iOS refuses by name: XCUITest on iOS has no pointer |
 | `hoverAway` | ❌ | ✅ | The pointer leaves the app, so nothing in it stays hovered. Not a move to an empty spot, which is still inside some row or container. iOS refuses by name |
 | `rightClickOn` | ❌ | ✅ | smix's own verb. A secondary-button click on the element's centre, what opens a context menu. iOS refuses by name. The Android 14 desktop emulator image routes it to the view at the wrong height |

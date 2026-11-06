@@ -1,6 +1,10 @@
-# The pointer comes to rest on the element's centre: mouse events, so the
-# app's hover style shows, as it does under a Chromebook's pointer.
-- hoverOn: { id: "settings_row" }
-- assertVisible: { id: "settings_row_hovered" }
-# The pointer leaves the app; nothing in it stays hovered.
-- hoverAway
+- drag:
+    from: { id: "weather_widget" }       # where the finger goes down: an element's centre…
+    to: "50%,12%"                        # …or a point; either form at either end
+    hold: 500                            # ms still before moving, 0..10000; default 500
+    duration: 800                        # ms moving, 50..10000; default 800
+    release: 300                         # ms still before lifting, 0..5000; default 300
+
+- drag:
+    from: { point: "62%,62%" }           # a point may also be written as `point:`
+    to: { ocrText: "Remove" }            # ocrText and anchorRelative ends are read as points

@@ -11,10 +11,15 @@
 use serde::{Deserialize, Serialize};
 
 mod combo;
+mod drag;
 mod mouse;
 mod pinch;
 mod window;
 pub use combo::{ComboKey, KeyCombo};
+pub use drag::{
+    DEFAULT_DURATION_MS as DRAG_DEFAULT_DURATION_MS, DEFAULT_HOLD_MS as DRAG_DEFAULT_HOLD_MS,
+    DEFAULT_RELEASE_MS as DRAG_DEFAULT_RELEASE_MS, Drag,
+};
 pub use mouse::Mouse;
 pub use pinch::{
     DEFAULT_DURATION_MS as PINCH_DEFAULT_DURATION_MS, DEFAULT_PAN_MS as PINCH_DEFAULT_PAN_MS,
