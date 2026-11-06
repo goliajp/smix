@@ -353,6 +353,9 @@ object RunnerWire {
     fun decodeAimedBy(payload: String): HitChain.Reader =
         HitChain.Reader.named(JSONObject(payload).optString("aimedBy").ifEmpty { null })
 
+    /// `/drag-at-norm-coord`: whether every event of the touch went in.
+    fun dragBody(ok: Boolean): String = JSONObject().put("ok", ok).toString()
+
     /// `/pinch-at-norm-coord`: `ok` and where both fingers started and ended.
     fun pinchBody(ok: Boolean, plan: PinchGesture.Plan): String = JSONObject()
         .put("ok", ok)

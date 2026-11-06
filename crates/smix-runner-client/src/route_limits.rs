@@ -199,6 +199,7 @@ pub const ROUTES: &[Route] = &[
     r("/swipe-at-norm-coord", ms(0), ms(500), true),
     r("/swipe-once", ms(0), ms(500), true),
     r("/pinch-at-norm-coord", REQ, REQ, true),
+    r("/drag-at-norm-coord", REQ, REQ, true),
     // Android: a drag's events 16 ms apart, then a 0.5 s idle wait.
     r("/mouse-at-norm-coord", NONE, ms(800), false),
     // Android: 2 s for the resized window to read back at its new bounds.

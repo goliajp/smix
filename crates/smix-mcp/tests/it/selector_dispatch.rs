@@ -15,11 +15,23 @@
 
 use std::fs;
 
-const MAIN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/main.rs");
 const PARAMS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/selector_params.rs");
 
 fn tool_bodies() -> Vec<(String, String)> {
-    let src = fs::read_to_string(MAIN).expect("main.rs");
+    // Every module: the tools are spread over several files.
+    let mut files: Vec<_> =
+        fs::read_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"))
+            .expect("src")
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "rs"))
+            .collect();
+    files.sort();
+    let src: String = files
+        .iter()
+        .map(|p| fs::read_to_string(p).expect("source file"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let mut out = Vec::new();
     for chunk in src.split("async fn smix_").skip(1) {
         let name = chunk.split('(').next().unwrap_or("?").to_string();

@@ -1,9 +1,6 @@
-# A secondary (right) click on the element's centre: what opens a context menu.
-- rightClickOn: { id: "file_row" }
-# The wheel turned over the element; `ctrl: true` holds Ctrl, which apps read as zoom.
-- mouseWheel: { on: { id: "file_list" }, direction: down, notches: 3 }
-- mouseWheel: { on: { id: "map" }, direction: up, ctrl: true }
-# The primary button pressed on one element and released on another, or a
-# distance away in dp (x right, y down).
-- mouseDrag: { from: { id: "card_3" }, to: { id: "done_column" } }
-- mouseDrag: { from: { id: "split_divider" }, by: { x: 96, y: 0 } }
+# The pointer comes to rest on the element's centre: mouse events, so the
+# app's hover style shows, as it does under a Chromebook's pointer.
+- hoverOn: { id: "settings_row" }
+- assertVisible: { id: "settings_row_hovered" }
+# The pointer leaves the app; nothing in it stays hovered.
+- hoverAway

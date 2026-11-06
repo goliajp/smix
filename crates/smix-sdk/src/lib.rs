@@ -24,9 +24,12 @@
 /// Visual regression perceptual hash (dhash 64-bit). Crate-internal:
 /// `compute_dhash_masked` + `hamming_distance` back the public
 /// `App::assert_screenshot`, not part of the SDK surface.
+mod drag;
 pub(crate) mod png_gray;
 pub mod screenshot_compare;
 pub(crate) mod screenshot_hash;
+/// Smaller copies of a screenshot, for a caller that cannot take the full one.
+pub mod screenshot_shrink;
 pub use screenshot_compare::{CropTo, ScreenshotCheck, ScreenshotCompare, crop_to, crop_to_window};
 pub use screenshot_hash::ScreenMask;
 

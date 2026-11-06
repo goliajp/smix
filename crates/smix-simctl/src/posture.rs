@@ -15,8 +15,10 @@
 
 use crate::displays::{Screen, read_screens};
 use crate::{DeviceControlError, SimctlClient};
+#[cfg(any(target_os = "macos", test))]
+use std::time::Duration;
 #[cfg(target_os = "macos")]
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// How long a fold may take to show before it is called failed. Sent once,
 /// folds showed in 0.9–4.7 s, in two clusters, the slow one a first report
@@ -410,6 +412,8 @@ pub fn describe(screens: &[Screen]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::Duration;
+
     #[test]
     fn readings_keep_each_change_and_when() {
         let mut r = super::Readings::default();

@@ -1,4 +1,3 @@
 - longPressOn:
-    id: "hdr-back-btn"
-    duration: 1500
-    captureDuring: true
+    point: "50%,45%"
+    duration: 1000

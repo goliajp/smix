@@ -328,6 +328,8 @@ class SmixHttpServer(
                 // LONGEST WAIT /pinch-at-norm-coord: from the request — durationMs + panMs and 0.4 s around them (PREROLL_MS, HOLD_MS), then a 0.5 s idle wait
                 uri == "/pinch-at-norm-coord" && session.method == Method.POST ->
                     servePinch(session)
+                // LONGEST WAIT /drag-at-norm-coord: from the request — holdMs + durationMs + releaseMs, then a 0.5 s idle wait
+                uri == "/drag-at-norm-coord" && session.method == Method.POST -> serveDrag(session)
                 // LONGEST WAIT /mouse-at-norm-coord: 800 ms — a drag's 16 events 16 ms apart, then a 0.5 s idle wait
                 uri == "/mouse-at-norm-coord" && session.method == Method.POST ->
                     serveMouse(session)
@@ -855,6 +857,21 @@ class SmixHttpServer(
         val ok = injectPinch(gesture.timeline(plan))
         device.waitForIdle(500)
         return newFixedLengthResponse(Response.Status.OK, "application/json", RunnerWire.pinchBody(ok, plan))
+    }
+
+    private fun serveDrag(session: IHTTPSession): Response {
+        // OK MEANS: injected — the press, the move and the rest went in as one touch; whether anything moved is the caller's next assertion.
+        val events = try {
+            val (w, h) = displaySize()
+            DragGesture.decode(readBodyString(session)).timeline(w, h)
+        } catch (e: IllegalArgumentException) {
+            return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad drag request")
+        } catch (e: org.json.JSONException) {
+            return errorJson(Response.Status.BAD_REQUEST, "bad_request", e.message ?: "bad drag request")
+        }
+        val ok = injectPinch(events)
+        device.waitForIdle(500)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", RunnerWire.dragBody(ok))
     }
 
     /// Put a two-finger timeline in as touchscreen motion events, each at

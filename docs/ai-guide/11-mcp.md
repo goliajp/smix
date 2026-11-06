@@ -148,7 +148,7 @@ what it did before 4.3.
 ## Tools
 
 **Look** — `smix_describe` · `smix_tree` · `smix_screenshot` · `smix_find`
-**Act** — `smix_tap` · `smix_tap_then_screenshot` · `smix_fill` · `smix_press_key` · `smix_swipe` · `smix_scroll`
+**Act** — `smix_tap` · `smix_tap_then_screenshot` · `smix_fill` · `smix_press_key` · `smix_swipe` · `smix_scroll` · `smix_long_press` · `smix_drag`
 **Lifecycle** — `smix_launch_app` · `smix_stop_app`
 **Assert** — `smix_assert_visible` · `smix_assert_not_visible`
 **Diagnose** — `smix_session_state` · `smix_diagnostic_dump`
@@ -164,7 +164,23 @@ and a frame from the runner about 88 ms, so both together are well
 inside a UI that lives three seconds. What it saves is **the turn
 between two tool calls** — the model's own round trip, which is where
 the seconds actually go. It answers with a line naming the route and the
-delay, then the PNG as base64. A tap that fails returns no frame.
+delay, and the file the PNG was written to. A tap that fails returns no
+frame.
+
+`smix_screenshot` writes the PNG to a file and returns its path, pixel
+size and byte count, not the image: a full phone frame as base64 text is
+about three quarters of a million characters, more than a tool result
+holds. Open the file to look at it, or pass `maxWidth` (pixels) to also get
+a copy scaled to that width as an image — `400` is enough to read a
+layout. `path` chooses where the file goes; left out, it is a new file
+under the system's temporary directory.
+
+`smix_long_press` presses and holds an element or a `point` for
+`durationMs` (default 500). `smix_drag` presses at `from`, holds `holdMs`,
+moves to `to` over `durationMs`, rests `releaseMs`, and lifts — each end
+named like `smix_tap`'s target or a point. Both drive whatever is on the
+screen, the home screen included, once `smix_launch_app` has opened a
+session.
 
 ## Directions
 
