@@ -1,3 +1,2 @@
-- scroll
-- scroll:
-    direction: UP
+- pressKey: ctrl+s
+- pressKey: ctrl+shift+z

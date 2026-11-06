@@ -60,7 +60,7 @@ trap cleanup EXIT
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
 command -v adb >/dev/null 2>&1 || fail "no adb — this needs the Android SDK"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)"
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)" || true
 [ -n "$SERIAL" ] || fail "no device registered as $ALIAS"
 case "$SERIAL" in
   emulator-*) : ;;

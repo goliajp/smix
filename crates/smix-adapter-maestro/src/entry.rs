@@ -862,6 +862,13 @@ pub(crate) fn summarize_step(step: &Step) -> String {
             smix_sdk::describe_selector(until)
         ),
         Step::RepeatTap { times, .. } => format!("repeatTap x{times}"),
+        Step::Drag {
+            from, to, hold_ms, ..
+        } => format!(
+            "drag {} → {} (hold {hold_ms} ms)",
+            smix_sdk::describe_selector(from),
+            smix_sdk::describe_selector(to)
+        ),
         Step::Pinch { spans, pan, .. } => {
             let (a, b, unit) = match spans {
                 smix_input::PinchSpans::Scales { from, to } => (*from, *to, "x"),

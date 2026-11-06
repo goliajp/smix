@@ -1071,6 +1071,10 @@ smix pinch id:player --from 1 --to 3       # two fingers about the element's cen
 smix pinch point:50%,50% --from-span 0.6 --to-span 0.2   # zoom out about a point
 smix pinch id:player --from 1 --to 3 --pan 0,-0.2        # then drag up a fifth of the screen before lifting
 smix pinch id:player --from 1 --to 3 --run-up slide      # for a recognizer that counts from the touch
+smix long-press id:list-row-3 --duration-ms 1500     # press and hold an element
+smix long-press point:50%,45% --duration-ms 1000      # …or a place: a home screen's edit mode
+smix drag id:weather_widget point:50%,12%             # press, hold 500 ms, move 800 ms, rest 300 ms, lift
+smix drag point:62%,62% point:42%,37% --hold-ms 500 --duration-ms 800 --release-ms 300
 smix hover id:settings_row                 # Android: a mouse pointer rests on the element (hover style shows)
 smix hover --away                          # …and leaves the app
 smix window-size 839x768 --app com.example # Android desktop window: resize to 839x768 dp, read it back
@@ -1279,7 +1283,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:23.4.0")
+    debugImplementation("jp.golia.smix:smix-probe:23.5.0")
 }
 ```
 

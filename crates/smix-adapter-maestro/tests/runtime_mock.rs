@@ -69,6 +69,8 @@ enum MockCall {
     SwipeAtCoord((f64, f64), (f64, f64)),
     /// `App::pinch(pinch)`.
     Pinch(smix_input::Pinch),
+    Drag(smix_input::Drag),
+    LongPressAtCoord(f64, f64, u64),
     /// `App::mouse(mouse)`.
     Mouse(smix_input::Mouse),
     WindowSize(Option<String>, smix_input::WindowSize),
@@ -555,10 +557,14 @@ impl AppLike for MockApp {
     }
     async fn long_press_at_coord(
         &self,
-        _nx: f64,
-        _ny: f64,
-        _duration_ms: u64,
+        nx: f64,
+        ny: f64,
+        duration_ms: u64,
     ) -> Result<(), ExpectationFailure> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(MockCall::LongPressAtCoord(nx, ny, duration_ms));
         Ok(())
     }
     async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
@@ -839,6 +845,10 @@ impl AppLike for MockApp {
     }
     async fn pinch(&self, pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::Pinch(*pinch));
+        Ok(())
+    }
+    async fn drag(&self, drag: &smix_input::Drag) -> Result<(), ExpectationFailure> {
+        self.calls.lock().unwrap().push(MockCall::Drag(*drag));
         Ok(())
     }
     async fn swipe_at_coord(
@@ -4676,6 +4686,79 @@ async fn pinch_over_a_missing_element_sends_nothing() {
         pinches(&app).is_empty(),
         "no pinch at the middle of the screen instead"
     );
+}
+
+// --- drag / long press at a point -----------------------------------------
+
+fn drags(app: &MockApp) -> Vec<smix_input::Drag> {
+    app.calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            MockCall::Drag(d) => Some(*d),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn drag_from_an_element_to_a_point_sends_one_touch_with_its_timing() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- drag: { from: { id: \"fixture-input\" }, to: \"50%,8%\", hold: 600, release: 0 }\n",
+    )
+    .unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect("run ok");
+    let sent = drags(&app);
+    assert_eq!(sent.len(), 1, "one drag: {:?}", app.calls.lock().unwrap());
+    let d = sent[0];
+    assert_ne!(d.from, (0.5, 0.5), "the element's centre, not the screen's");
+    assert!((0.0..=1.0).contains(&d.from.0) && (0.0..=1.0).contains(&d.from.1));
+    assert_eq!(d.to, (0.5, 0.08));
+    assert_eq!((d.hold_ms, d.duration_ms, d.release_ms), (600, 800, 0));
+}
+
+#[tokio::test]
+async fn drag_from_a_missing_element_sends_nothing() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- drag: { from: { id: \"no-such-thing\" }, to: \"50%,8%\" }\n",
+    )
+    .unwrap();
+    let err = Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("drag from"), "{err}");
+    assert!(
+        drags(&app).is_empty(),
+        "no drag from the middle of the screen instead"
+    );
+}
+
+#[tokio::test]
+async fn long_press_on_a_point_presses_there_for_its_duration() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- longPressOn: { point: \"50%,40%\", duration: 1500 }\n",
+    )
+    .unwrap();
+    Adapter::new(&app, fixtures_dir())
+        .run(&flow)
+        .await
+        .expect("run ok");
+    let calls = app.calls.lock().unwrap();
+    assert!(
+        calls
+            .iter()
+            .any(|c| matches!(c, MockCall::LongPressAtCoord(x, y, 1500) if (*x, *y) == (0.5, 0.4))),
+        "{calls:?}"
+    );
+    assert!(!calls.iter().any(|c| matches!(c, MockCall::LongPress(..))));
 }
 
 // --- hover ---------------------------------------------------------------

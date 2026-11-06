@@ -32,6 +32,7 @@
 //! - `POST /press-key` `{key}` → [`RunnerKeyboardResult`]
 //! - `POST /swipe-once` `{direction}` → `{ok}`
 //! - `POST /pinch-at-norm-coord` `{cx, cy, fromSpan, toSpan, durationMs, panDx?, panDy?, panMs?, runUp?}` → `{ok, fingers}`
+//! - `POST /drag-at-norm-coord` `{fromNx, fromNy, toNx, toNy, holdMs, durationMs, releaseMs}` → `{ok}`
 //! - `POST /mouse-at-norm-coord` `{kind, nx?, ny?, toNx?, toNy?, dxDp?, dyDp?, wheel?, ctrl?}` → `{ok, kind, injected}` (Android)
 //! - `POST /window-size` `{package?, widthDp, heightDp}` → `{ok, widthDp, heightDp, package}` (Android)
 //! - `POST /press-key-combo` `{key, ctrl?, shift?, alt?, meta?}` → `{ok, key, keyCode}` (Android)

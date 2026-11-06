@@ -224,6 +224,7 @@ fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
         | Step::TapOn { .. }
         | Step::SwipeOver { .. }
         | Step::Pinch { .. }
+        | Step::Drag { .. }
         | Step::HoverOn { .. }
         | Step::HoverAway
         | Step::RightClickOn { .. }

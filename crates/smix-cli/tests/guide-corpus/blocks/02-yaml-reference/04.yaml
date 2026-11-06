@@ -43,4 +43,7 @@
     duration: 1500                       # ms
     captureDuring: true                  # optional; write PNGs of the held state
                                          # needs duration >= 800 (see below)
+- longPressOn:
+    point: "50%,45%"                     # a place with nothing nameable, e.g. a home screen
+    duration: 1000                       # (captureDuring needs an element, not a point)
 
