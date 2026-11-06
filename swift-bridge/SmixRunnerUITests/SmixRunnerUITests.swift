@@ -2316,7 +2316,7 @@ final class SmixRunnerUITests: XCTestCase {
       // skeleton loader for 30 s instead of populating.
       tapAtCoordHandler: { nx, ny, times, intervalMs, holdMs, doubleTap, aimedAt in
         let entryMs = Date().timeIntervalSince1970 * 1000.0
-        let app = await resolveApp()  // Per-request target-app rebind.
+        let app = await resolveApp()
         // Compute the physical point (nx × app.frame.width + frame.origin)
         // on the main thread.
         var px: CGFloat = 0
@@ -2669,56 +2669,9 @@ final class SmixRunnerUITests: XCTestCase {
           smixScreen(showing: app).screenshot().image.pngData()
         }.value
       },
-      // POST /swipe-at-norm-coord handler. From-to coordinate swipe
-      // via Apple native event chain (XCSynthesizedEventRecord +
-      // XCPointerEventPath initForTouchAtPoint → moveToPoint:atOffset:
-      // → liftUpAtOffset:). Normalized-coordinate escape-hatch sibling of
-      // tap-at-norm-coord. Same daemonProxy dispatch path; same setup-time
-      // app.frame coord conversion as tap.
+      // POST /swipe-at-norm-coord handler (Gestures.swift).
       swipeAtCoordHandler: { fromNx, fromNy, toNx, toNy in
-        let app = await resolveApp()  // Per-request target-app rebind.
-        var fromPx: CGFloat = 0
-        var fromPy: CGFloat = 0
-        var toPx: CGFloat = 0
-        var toPy: CGFloat = 0
-        var swipeLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame", displayID: nil)
-        let setupOk = smixGuarded("swipe-at-norm-coord-setup") {
-          let frame = smixAppFrame(app)
-          fromPx = frame.origin.x + frame.size.width * CGFloat(fromNx)
-          fromPy = frame.origin.y + frame.size.height * CGFloat(fromNy)
-          toPx = frame.origin.x + frame.size.width * CGFloat(toNx)
-          toPy = frame.origin.y + frame.size.height * CGFloat(toNy)
-          swipeLayout = smixLayout(of: app)
-          return true
-        }
-        guard setupOk == true else { return false }
-
-        let swipeFrom = smixDelivery(
-          of: CGPoint(x: fromPx, y: fromPy), layout: swipeLayout)
-        let swipeTo = smixDelivery(
-          of: CGPoint(x: toPx, y: toPy), layout: swipeLayout)
-        guard let record = SmixEventRecord(orientation: swipeFrom.orientation, displayID: swipeFrom.displayID) else {
-          FileHandle.standardError.write(
-            Data("smix-runner: swipe-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
-          return false
-        }
-        let pathAdded = record.addPointerSwipeEvent(
-          from: swipeFrom.point,
-          to: swipeTo.point
-        )
-        guard pathAdded else {
-          FileHandle.standardError.write(
-            Data("smix-runner: swipe-at-norm-coord: XCPointerEventPath unavailable\n".utf8))
-          return false
-        }
-        do {
-          try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
-          return true
-        } catch {
-          FileHandle.standardError.write(
-            Data("smix-runner: swipe-at-norm-coord: synthesize error: \(error)\n".utf8))
-          return false
-        }
+        await smixSwipe(on: await resolveApp(), from: (fromNx, fromNy), to: (toNx, toNy))
       },
       // POST /pinch-at-norm-coord handler. Planned against the app's
       // frame, every point delivered the same way a swipe's are.
@@ -2768,6 +2721,8 @@ final class SmixRunnerUITests: XCTestCase {
           return .notDispatched
         }
       },
+      // POST /drag-at-norm-coord handler (Gestures.swift).
+      dragHandler: { req in await smixDrag(on: await resolveApp(), req) },
       // POST /set-orientation handler. XCUIDevice.shared.orientation
       // public XCUI API. orientation literal aligned with iOS UIDeviceOrientation
       // raw values via switch mapping.

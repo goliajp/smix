@@ -1,2 +1,2 @@
-- pressKey: ctrl+s
-- pressKey: ctrl+shift+z
+- hoverOn: { id: "settings_row" }
+- hoverAway

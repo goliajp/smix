@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use std::time::Duration;
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
-use smix_input::{KeyCombo, KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
+use smix_input::{Drag, KeyCombo, KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
@@ -276,6 +276,13 @@ impl Driver for IosDriver {
 
     async fn pinch(&self, pinch: &Pinch) -> Result<(), ExpectationFailure> {
         IosDriver::pinch(self, pinch).await
+    }
+
+    async fn drag(&self, drag: &Drag) -> Result<(), ExpectationFailure> {
+        self.runner()
+            .drag_at_norm_coord(drag)
+            .await
+            .map_err(crate::transport_to_failure)
     }
 
     async fn mouse(&self, mouse: &Mouse) -> Result<(), ExpectationFailure> {

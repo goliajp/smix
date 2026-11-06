@@ -21,7 +21,7 @@ use smix_error::{FailureCode, FailureInit};
 use std::time::Duration;
 
 use smix_error::ExpectationFailure;
-use smix_input::{KeyCombo, KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
+use smix_input::{Drag, KeyCombo, KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
 use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
@@ -383,6 +383,17 @@ pub trait Driver: Send + Sync {
     /// drag before they lift. A finger that would leave the screen is the
     /// runner's refusal, not a clipped gesture.
     async fn pinch(&self, pinch: &Pinch) -> Result<(), ExpectationFailure>;
+
+    /// One finger pressed and held, moved, rested and lifted, in one touch.
+    /// Defaulted to a refusal for the same reason as
+    /// [`Driver::double_tap_at_norm_coord`]; both drivers here override it.
+    async fn drag(&self, _drag: &Drag) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "drag: this driver cannot hold a touch down while it moves".into(),
+            ..Default::default()
+        }))
+    }
 
     /// A mouse pointer resting over a point or leaving the app: mouse
     /// events, which a desktop window's hover styles and menus answer and

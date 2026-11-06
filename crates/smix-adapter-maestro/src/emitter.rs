@@ -387,6 +387,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::WaitForAnimationToEnd { .. } => "waitForAnimationToEnd",
         Step::SwipeOver { .. } => "swipe",
         Step::Pinch { .. } => "pinch",
+        Step::Drag { .. } => "drag",
         Step::HoverOn { .. } => "hoverOn",
         Step::HoverAway => "hoverAway",
         Step::RightClickOn { .. } => "rightClickOn",

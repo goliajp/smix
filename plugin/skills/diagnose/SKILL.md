@@ -35,7 +35,8 @@ what it already told you.
 
 `smix_screenshot` when the tree is not telling you enough — a scrim, an
 overlay, or a keyboard covering the target shows up in a picture and not
-in a selector query.
+in a selector query. It returns the path of the PNG it wrote; open the
+file, or pass `maxWidth: 400` for a small copy inline.
 
 `smix_tree` for the full picture when `smix_describe` has summarised away
 whatever matters.

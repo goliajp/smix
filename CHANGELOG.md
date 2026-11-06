@@ -2,6 +2,37 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Added
+
+- **Drag: press, hold, move, rest, lift, as one touch.** A flow writes
+  `drag: { from: …, to: … }`, the command line `smix drag <from> <to>`, and
+  MCP `smix_drag`. Each end is an element's centre or a point
+  (`"50%,12%"`); a flow's ends may also be `ocrText` or `anchorRelative`.
+  The finger stays still for `hold` (default 500 ms), moves for `duration`
+  (800 ms), rests for `release` (300 ms) and lifts — what a home screen or
+  a launcher needs before an item comes loose and before a drop target
+  such as Android's Remove notices it. Both runners take it as one
+  request (`POST /drag-at-norm-coord`). Driven on an iOS 26.5 home screen
+  (an icon carried to a new place) and a Pixel launcher (a widget dragged
+  from the widget list onto the home screen, resized by its handle, and
+  removed). On an iOS home screen a hold of 700 ms or more opens the
+  icon's menu first, and the move then picks a menu item.
+- **Long press from the command line and MCP, and at a point.**
+  `smix long-press <target> --duration-ms N` and `smix_long_press` press an
+  element or a point; a flow's `longPressOn` takes `point: "X%,Y%"` for a
+  place with nothing nameable, such as an empty spot on a home screen.
+
+### Changed
+
+- **`smix_screenshot` writes the PNG to a file and returns its path**,
+  pixel size and byte count instead of the image as base64 text: an
+  iPhone frame came back as 775,008 characters, more than a tool result
+  may hold, and was cut. `maxWidth` also returns a copy scaled to that
+  width as an image; `path` chooses the file. `smix_tap_then_screenshot`
+  writes its frame to a file the same way.
+
 ## [23.4.0] — 2026-11-05
 
 The first release on any registry since 23.0.0: 23.1.0, 23.2.0 and

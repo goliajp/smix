@@ -218,6 +218,19 @@ before it acts.
 - Judged like `tapOn` on both platforms: a press delivered to something
   other than the element fails with `TAP_MISSED`.
 
+A place with nothing nameable — an empty spot on a home screen, which a
+long press puts into edit mode — is pressed by point:
+
+```yaml
+- longPressOn:
+    point: "50%,45%"
+    duration: 1000
+```
+
+The same from the command line and MCP:
+`smix long-press point:50%,45% --duration-ms 1000`,
+`smix_long_press { target: { point: "50%,45%" }, durationMs: 1000 }`.
+
 #### Capturing the held state
 
 Verifying a pressed appearance — a highlight, a scale-down, a ghost
@@ -395,6 +408,45 @@ looking is `keyboard_state_unknown` — see
   the next step's question (read its zoom label, or assert on what the
   zoom reveals).
 - Full shape and limits: [02 — YAML reference](02-yaml-reference.md#pinch-two-fingers).
+
+## Drag
+
+```yaml
+- drag:
+    from: { id: "weather_widget" }   # an element's centre, or a point "50%,80%"
+    to: "50%,12%"                    # same forms
+    hold: 500       # ms the finger stays still before moving (default 500)
+    duration: 800   # ms the move takes (default 800)
+    release: 300    # ms it rests at the end before lifting (default 300)
+```
+
+One touch: the finger goes down at `from`, stays still for `hold`, moves to
+`to` over `duration`, rests for `release`, and lifts. What a home screen, a
+launcher or a reorderable list needs: the hold lets the item come loose
+before the finger moves, and the rest lets a drop target such as Android's
+**Remove** see the finger over it before it lets go. A `swipe` moves at
+once and lifts on arrival, so it does neither.
+
+Each end is an element (`id` / `text` / `label` / `role`, its centre),
+`ocrText` (the middle of the text read), `anchorRelative`, or a point.
+An element end is waited for like any other step's target.
+
+- iOS: one touch path in one synthesized event record.
+- Android: touchscreen motion events injected through UiAutomation — a
+  down, a move every 10 ms while travelling, an up.
+- `ok` means the whole touch went in; whether the item moved is the next
+  step's question.
+
+The hold matters on an iOS home screen: held 500 ms and then moved, an icon
+is carried to where the finger lifts; held 700 ms or more, the icon's menu
+opens first and the move picks the menu item it ends over. On an Android
+launcher (Pixel), the defaults dragged a widget from the widget list onto
+the home screen, a resize handle to a new size, and the widget onto
+**Remove**.
+
+From the command line: `smix drag id:weather_widget point:50%,12%`
+(`--hold-ms`, `--duration-ms`, `--release-ms`). Through MCP: `smix_drag`
+with `from`, `to` and `holdMs` / `durationMs` / `releaseMs`.
 
 ## Hover
 

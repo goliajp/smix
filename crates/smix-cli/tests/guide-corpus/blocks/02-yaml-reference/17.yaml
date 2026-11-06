@@ -1,9 +1,6 @@
-- startRecording: "trace.mp4"
-- stopRecording                          # writes path passed to start
-- takeScreenshot: "step5.png"
-- takeScreenshot:
-    path: "card.png"
-    cropOn: { id: "summary-card" }       # only this element — a cropOn baseline
-- takeScreenshot:
-    path: "window.png"
-    window: true                         # only the app's desktop window, caption bar included (Android)
+- sendPush:
+    title: "Order shipped"
+    body: "Your parcel is on its way"
+    data: { route: "detail" }            # the app's own keys, beside `aps`
+- tapOn: "Order shipped"                 # the banner, found by its title
+- sendPush: { payload: "push/order.apns" }   # an APNs payload file, relative to the flow

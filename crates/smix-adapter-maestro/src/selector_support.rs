@@ -90,6 +90,9 @@ pub enum Slot {
     /// `pinch: { over: <selector> }` — the element whose centre the two
     /// fingers meet at.
     PinchTarget,
+    /// `drag: { from: <selector>, to: <selector> }` — an end of the drag,
+    /// taken at the element's centre.
+    DragEnd,
     /// `hoverOn: <selector>` — the element the mouse pointer rests on.
     HoverTarget,
     /// `rightClickOn:`, `mouseWheel.on`, `mouseDrag.from` / `.to` — the
@@ -145,6 +148,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         Step::TakeScreenshot { .. } => &[Slot::AnnotationAnchor],
         Step::SwipeOver { .. } => &[Slot::SwipeOverTarget],
         Step::Pinch { .. } => &[Slot::PinchTarget],
+        Step::Drag { .. } => &[Slot::DragEnd],
         Step::HoverOn { .. } => &[Slot::HoverTarget],
         Step::RightClickOn { .. } | Step::MouseWheel { .. } | Step::MouseDrag { .. } => {
             &[Slot::MouseTarget]
@@ -206,7 +210,7 @@ impl Slot {
     /// this list against the `Slot::` names `slots()` actually hands
     /// out, because a list written by hand beside a list derived from
     /// the code is two truths waiting to disagree.
-    pub const ALL: [Slot; 19] = [
+    pub const ALL: [Slot; 20] = [
         Slot::TapOnTarget,
         Slot::RepeatTapTarget,
         Slot::DoubleTapTarget,
@@ -222,6 +226,7 @@ impl Slot {
         Slot::AnnotationAnchor,
         Slot::SwipeOverTarget,
         Slot::PinchTarget,
+        Slot::DragEnd,
         Slot::HoverTarget,
         Slot::MouseTarget,
         Slot::BoundsTarget,
@@ -269,6 +274,11 @@ pub fn support(slot: Slot, form: UnreadableForm) -> Support {
         (S::SwipeOverTarget, F::AnchorRelative) => Support::Refused(
             "an anchor plus a shift is a point, and a swipe inside a box needs              the box: there is nothing to take a share of. Name the element              itself, or use `swipe: { from, to }` if it has no identity to name",
         ),
+
+        // An end of a drag is a place: the middle of the text OCR reads,
+        // or the point an anchor plus a shift names, does as well as an
+        // element's centre.
+        (S::DragEnd, F::OcrText | F::AnchorRelative) => Support::Dispatched,
 
         // The centre comes from the element's box in the accessibility
         // tree; neither of these is read there.
@@ -411,6 +421,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
         }
         Step::TapOn { selector, .. } => vec![(Slot::TapOnTarget, selector)],
         Step::SwipeOver { selector, .. } => vec![(Slot::SwipeOverTarget, selector)],
+        Step::Drag { from, to, .. } => vec![(Slot::DragEnd, from), (Slot::DragEnd, to)],
         Step::Pinch {
             at: crate::PinchAt::Over(selector),
             ..

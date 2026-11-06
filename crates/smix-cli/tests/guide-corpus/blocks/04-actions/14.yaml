@@ -1,2 +1,1 @@
-- hoverOn: { id: "settings_row" }
-- hoverAway
+- pinch: { over: { id: "player" }, from: 1, to: 3 }
