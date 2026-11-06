@@ -68,7 +68,7 @@ echo "$OUT" | grep -qi "unknown device\|register" \
 log "unregistered device refused, pointed at the registry"
 
 step "2. a registered phone is addressable — registration is the gate, not a ban"
-OUT="$("$SMIX" sim resolve phone 2>&1 | tail -1)"
+OUT="$("$SMIX" sim resolve phone 2>&1 | tail -1)" || true
 echo "$OUT" | grep -q "$E2E_FAKE_IOS_UDID" || fail "registered phone did not resolve: $OUT"
 log "registered phone resolves"
 

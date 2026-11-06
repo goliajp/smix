@@ -98,7 +98,7 @@ set_nav() {
 }
 
 command -v adb >/dev/null 2>&1 || cannot_judge "no adb on PATH"
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)"
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)" || true
 [ -n "$SERIAL" ] || cannot_judge "no device registered as $ALIAS"
 case "$SERIAL" in
   emulator-*) : ;;
