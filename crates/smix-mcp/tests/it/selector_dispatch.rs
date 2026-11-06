@@ -15,17 +15,17 @@
 
 use std::fs;
 
-const SRC: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
 const PARAMS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/selector_params.rs");
 
 fn tool_bodies() -> Vec<(String, String)> {
     // Every module: the tools are spread over several files.
-    let mut files: Vec<_> = fs::read_dir(SRC)
-        .expect("src")
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "rs"))
-        .collect();
+    let mut files: Vec<_> =
+        fs::read_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"))
+            .expect("src")
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "rs"))
+            .collect();
     files.sort();
     let src: String = files
         .iter()
