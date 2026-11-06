@@ -313,6 +313,15 @@ pub trait AppLike: Send + Sync {
     ) -> Result<(), ExpectationFailure>;
     /// Two fingers in one gesture. Mirrors [`App::pinch`].
     async fn pinch(&self, pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure>;
+    /// Press, hold, move, rest, lift. Mirrors [`App::drag`]. An app that
+    /// cannot hold a touch refuses by name.
+    async fn drag(&self, _drag: &smix_input::Drag) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "drag: this app cannot hold a touch down while it moves".into(),
+            ..Default::default()
+        }))
+    }
     /// A mouse pointer over a point or off the app. Mirrors [`App::mouse`].
     /// An app with no pointer refuses by name.
     async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
@@ -683,6 +692,9 @@ impl AppLike for App {
     async fn pinch(&self, pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure> {
         App::pinch(self, pinch).await
     }
+    async fn drag(&self, drag: &smix_input::Drag) -> Result<(), ExpectationFailure> {
+        App::drag(self, drag).await
+    }
     async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
         App::mouse(self, mouse).await
     }
@@ -1006,6 +1018,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::UntilEffect { .. } | Step::Optional(_) => unreachable!("answered above"),
         Step::SwipeOver { .. } => "swipe",
         Step::Pinch { .. } => "pinch",
+        Step::Drag { .. } => "drag",
         Step::HoverOn { .. } => "hoverOn",
         Step::HoverAway => "hoverAway",
         Step::RightClickOn { .. } => "rightClickOn",
@@ -2484,6 +2497,22 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     point => point.clone(),
                 };
                 crate::pinch::run(self.app, &at, *spans, *duration_ms, *pan, *run_up).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::Drag {
+                from,
+                to,
+                hold_ms,
+                duration_ms,
+                release_ms,
+            } => {
+                let a = self.drag_end(from, "from").await?;
+                let b = self.drag_end(to, "to").await?;
+                let drag = smix_input::Drag::new(a, b)
+                    .with_hold_ms(*hold_ms)
+                    .with_duration_ms(*duration_ms)
+                    .with_release_ms(*release_ms);
+                self.app.drag(&drag).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::HoverOn { selector } => {
@@ -4384,6 +4413,16 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// means the form was read and nothing was there — distinct from a
     /// form this layer does not read at all, which is refused before
     /// any of this runs.
+    /// One end of a drag: a point as it is, an `ocrText` or an anchor plus
+    /// a shift as the point it reads to, an element as its centre.
+    async fn drag_end(&mut self, sel: &Selector, end: &str) -> Result<(f64, f64), RunError> {
+        let sel = self.desugar_localized_text(sel).into_owned();
+        if let Some(at) = self.point_for_unreadable(&sel, IMPLICIT_WAIT).await? {
+            return Ok(at);
+        }
+        Ok(crate::drag::element_centre(self.app, &sel, end, IMPLICIT_WAIT).await?)
+    }
+
     async fn point_for_unreadable(
         &mut self,
         sel: &Selector,
@@ -4413,6 +4452,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         sel: &Selector,
     ) -> Result<Option<(f64, f64)>, RunError> {
         match sel {
+            Selector::Point { nx, ny } => Ok(Some((*nx, *ny))),
             Selector::OcrText {
                 ocr_text, locales, ..
             } => {

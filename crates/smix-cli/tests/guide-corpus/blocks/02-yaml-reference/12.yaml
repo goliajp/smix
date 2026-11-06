@@ -1,2 +1,7 @@
-- openLink: "insight-native://dev-mutate?push=type:invoice"
-- expect: { signal: { regex: "dev-mutate handled: push", timeoutMs: 5000 } }
+# Width by height in dp, the caption bar included; the window is read back
+# after each, and a size it does not take fails naming the one it has.
+- setWindowSize: { width: 1024, height: 768 }
+- assertVisible: { id: "two_pane_layout" }
+- setWindowSize: 839x768
+- assertVisible: { id: "one_pane_layout" }
+- setWindowSize: compact            # or medium, expanded

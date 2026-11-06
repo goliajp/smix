@@ -1,5 +1,2 @@
-- setPermissions:
-    camera: allow
-    location: allow
-    notifications: allow
-    photos: deny
+- setOrientation: LANDSCAPE_LEFT
+- setOrientation: PORTRAIT

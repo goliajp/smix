@@ -50,7 +50,16 @@ sense again and retry rather than tapping harder.
 `smix_screenshot` when the tree is not telling you enough — a scrim, a
 keyboard, or an overlay covering the target is visible in a picture and
 invisible to a selector query. It is also what to reach for when a tap
-reported success and nothing seems to have happened.
+reported success and nothing seems to have happened. It writes the PNG to
+a file and returns the path — open the file to look — or pass `maxWidth: 400`
+to get a small copy back as an image.
+
+## Holding and dragging
+
+`smix_long_press` for what opens on a long press (a context menu, a home
+screen's edit mode). `smix_drag` for what has to be pressed, held and
+carried: a home screen icon, a launcher widget onto **Remove**, a list row.
+Either end may be a `point` when nothing there has a name.
 
 ## On an Android emulator
 

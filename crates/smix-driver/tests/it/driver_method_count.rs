@@ -20,6 +20,9 @@ const ROSTER: &[&str] = &[
     "confirm_on_screen",
     "double_tap",
     "double_tap_at_norm_coord",
+    // Pressed, held, moved, rested, lifted as one touch: what a home
+    // screen or launcher needs before an item comes loose.
+    "drag",
     "fill",
     "find",
     "find_all",
