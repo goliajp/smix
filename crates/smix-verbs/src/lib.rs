@@ -402,6 +402,7 @@ pub static VERB_TABLE: &[VerbEntry] = &[
     ),
     v("swipe", "swipe", VerbCategory::Gesture, ArgShape::Mapping),
     v("pinch", "pinch", VerbCategory::Gesture, ArgShape::Mapping),
+    v("drag", "drag", VerbCategory::Gesture, ArgShape::Mapping),
     // smix-native: a mouse pointer, which maestro does not have.
     v(
         "hoverOn",
@@ -719,6 +720,7 @@ mod tests {
         for name in [
             "fixture",
             "webviewEval",
+            "drag",
             "pinch",
             "hoverOn",
             "hoverAway",

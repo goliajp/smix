@@ -321,7 +321,8 @@ impl AppLike for MockApp {
         // element's box the same way; `summary-card` is the element the
         // screenshot examples crop to; `player` is what the pinch examples
         // zoom; `settings_row` is what the hover examples rest on; the
-        // mouse-button examples click, wheel and drag on the rest.
+        // mouse-button examples click, wheel and drag on the rest;
+        // `weather_widget` is what the drag examples carry.
         Ok(box_named(
             "root",
             vec![
@@ -336,6 +337,7 @@ impl AppLike for MockApp {
                 box_named("card_3", Vec::new()),
                 box_named("done_column", Vec::new()),
                 box_named("split_divider", Vec::new()),
+                box_named("weather_widget", Vec::new()),
             ],
         ))
     }
@@ -431,6 +433,9 @@ impl AppLike for MockApp {
         Ok(vec![])
     }
     async fn pinch(&self, _pinch: &smix_input::Pinch) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
+    async fn drag(&self, _drag: &smix_input::Drag) -> Result<(), ExpectationFailure> {
         Ok(())
     }
     async fn mouse(&self, _mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
@@ -814,7 +819,7 @@ fn remove_artifacts(flow: &smix_adapter_maestro::Flow) {
 const KNOWN_BROKEN: &[(&str, usize, &str)] = &[
     (
         "02-yaml-reference",
-        18,
+        19,
         "repeat.while.visible loops until the element leaves the screen; \
          a mock that always says visible never exits, and one that said \
          otherwise would be inventing a screen.",

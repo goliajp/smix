@@ -254,6 +254,7 @@ mod animations;
 mod annotate_bridge;
 mod app_log;
 mod apps_config;
+mod drag;
 mod emitter;
 mod entry;
 mod expr;
@@ -655,6 +656,21 @@ pub enum Step {
     SetWindowSize {
         /// Width and height in dp, the caption bar included.
         size: smix_input::WindowSize,
+    },
+    /// One finger pressed at `from`, held, moved to `to`, rested, lifted —
+    /// smix's own verb. Each end is an element's centre or a point
+    /// (`Selector::Point`).
+    Drag {
+        /// Where the finger goes down.
+        from: Selector,
+        /// Where it lifts.
+        to: Selector,
+        /// Milliseconds still at `from` before moving.
+        hold_ms: u64,
+        /// Milliseconds the move takes.
+        duration_ms: u64,
+        /// Milliseconds still at `to` before lifting.
+        release_ms: u64,
     },
     /// Launch / relaunch the app under test. Supports the full maestro
     /// yaml sub-parameter set: appId / clearState / clearKeychain /

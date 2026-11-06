@@ -3051,7 +3051,21 @@ fn parse_long_press_on(v: &Value) -> Result<Step, ParseError> {
             capture_during: false,
         }),
         Value::Mapping(m) => {
-            let selector = visible_to_selector(v)?;
+            // A place with nothing nameable — an empty spot on a home
+            // screen — is pressed by point.
+            let selector = match m.get(Value::String("point".into())) {
+                Some(Value::String(p)) => {
+                    let (nx, ny) = parse_point(p)?;
+                    Selector::Point { nx, ny }
+                }
+                Some(other) => {
+                    return Err(ParseError::InvalidValue {
+                        field: "longPressOn.point".into(),
+                        reason: format!("expected \"X%,Y%\", got {other:?}"),
+                    });
+                }
+                None => visible_to_selector(v)?,
+            };
             let duration_ms = m
                 .get(Value::String("duration".into()))
                 .and_then(Value::as_u64)
@@ -3065,6 +3079,14 @@ fn parse_long_press_on(v: &Value) -> Result<Step, ParseError> {
             // placed". Resolving the element runs before the touch goes
             // down, and a capture is not instantaneous; both come out
             // of the hold.
+            if capture_during && matches!(selector, Selector::Point { .. }) {
+                return Err(ParseError::InvalidValue {
+                    field: "longPressOn.captureDuring".into(),
+                    reason: "captureDuring places frames against the pressed element's \
+                             touch, and a point has no element; name the element"
+                        .into(),
+                });
+            }
             if capture_during && duration_ms < CAPTURE_DURING_MIN_MS {
                 return Err(ParseError::InvalidValue {
                     field: "longPressOn.duration".into(),
@@ -3437,6 +3459,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "eraseText" => parse_erase_text(value),
         "swipe" => parse_swipe(value),
         "pinch" => crate::pinch::parse(value),
+        "drag" => crate::drag::parse(value),
         "hoverOn" => crate::hover::parse_on(value),
         "rightClickOn" => crate::mouse::parse_right_click(value),
         "mouseWheel" => crate::mouse::parse_wheel(value),

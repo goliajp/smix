@@ -699,6 +699,10 @@ public actor SmixRunnerServer {
   /// event record. Plans with `PinchRoute.plan` against the app's frame.
   public typealias PinchHandler = @Sendable (PinchRoute.PinchRequest) async -> PinchRoute.Outcome
 
+  /// POST /drag-at-norm-coord handler: one finger held, moved, rested,
+  /// lifted, in one synthesized event record. True when it was dispatched.
+  public typealias DragHandler = @Sendable (DragRoute.DragRequest) async -> Bool
+
   /// POST /set-orientation handler. XCUIDevice.shared.orientation is a
   /// framework-documented public XCUI property, so the rule requiring
   /// private symbols to be resolved via dlsym does not apply here.
@@ -1497,6 +1501,7 @@ public actor SmixRunnerServer {
     screenshotHandler: ScreenshotHandler? = nil,
     swipeAtCoordHandler: SwipeAtCoordHandler? = nil,
     pinchHandler: PinchHandler? = nil,
+    dragHandler: DragHandler? = nil,
     setOrientationHandler: SetOrientationHandler? = nil,
     recordHandlers: RecordHandlers? = nil,
     selectResolveHandler: SelectResolveHandler? = nil,
@@ -2272,6 +2277,22 @@ public actor SmixRunnerServer {
         }
         return await Self.contextGuardedResponse(request: request, fallback: PinchRoute.failure()) {
           PinchRoute.response(for: await pinchHandler(req))
+        }
+      }
+    }
+
+    if let dragHandler {
+      // OK MEANS: injected — the press, the move and the rest were dispatched as one touch; whether anything moved is the caller's next assertion.
+      // LONGEST WAIT /drag-at-norm-coord: from the request — holdMs + durationMs + releaseMs
+      await server.appendRoute("POST /drag-at-norm-coord") { request in
+        let req: DragRoute.DragRequest
+        do {
+          req = try DragRoute.decode(try await request.bodyData)
+        } catch {
+          return DragRoute.badRequest(reason: "\(error)")
+        }
+        return await Self.contextGuardedResponse(request: request, fallback: DragRoute.success(ok: false)) {
+          DragRoute.success(ok: await dragHandler(req))
         }
       }
     }

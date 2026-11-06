@@ -211,6 +211,9 @@ one that stops.
     duration: 1500                       # ms
     captureDuring: true                  # optional; write PNGs of the held state
                                          # needs duration >= 800 (see below)
+- longPressOn:
+    point: "50%,45%"                     # a place with nothing nameable, e.g. a home screen
+    duration: 1000                       # (captureDuring needs an element, not a point)
 
 ```
 
@@ -435,6 +438,32 @@ gesture.
   `anchorRelative:` are refused there — give the point with `at:` instead.
 - Pinching and then a separate `swipe` also drags the zoomed content: the
   zoom stays in the app once the fingers lift.
+
+### Drag (press, hold, move, lift)
+
+smix's own verb; maestro has none. One finger pressed and held, moved,
+rested, and lifted, as one touch — for a home screen, a launcher, a
+reorderable list.
+
+```yaml
+- drag:
+    from: { id: "weather_widget" }       # where the finger goes down: an element's centre…
+    to: "50%,12%"                        # …or a point; either form at either end
+    hold: 500                            # ms still before moving, 0..10000; default 500
+    duration: 800                        # ms moving, 50..10000; default 800
+    release: 300                         # ms still before lifting, 0..5000; default 300
+
+- drag:
+    from: { point: "62%,62%" }           # a point may also be written as `point:`
+    to: { ocrText: "Remove" }            # ocrText and anchorRelative ends are read as points
+```
+
+- Both ends are required. An element end is waited for like any step's
+  target; one that never appears fails the step and nothing is touched.
+- On an iOS home screen keep `hold` under about 700 ms: held longer, the
+  icon's menu opens first and the move picks a menu item instead of
+  carrying the icon.
+- More in [04 — Actions](04-actions.md#drag).
 
 ### Hover (a mouse pointer)
 

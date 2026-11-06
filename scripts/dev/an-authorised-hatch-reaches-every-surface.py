@@ -40,7 +40,8 @@ REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 # exists to catch — one surface quietly missing while the others agree.
 SURFACES = [
     ("CLI", "crates/smix-cli/src/main.rs"),
-    ("MCP", "crates/smix-mcp/src/main.rs"),
+    # A directory: the server's tools are spread over several modules.
+    ("MCP", "crates/smix-mcp/src"),
     ("TS SDK", "npm/smix-rn/src/App.ts"),
     # The layer App.ts calls. A method on App that dispatches to a
     # driver without it typechecks nowhere and runs nowhere, and this
@@ -90,6 +91,13 @@ def read(rel, root=REPO):
     path = os.path.join(root, rel)
     if not os.path.exists(path):
         return None
+    if os.path.isdir(path):
+        parts = []
+        for name in sorted(os.listdir(path)):
+            if name.endswith(".rs"):
+                with open(os.path.join(path, name), encoding="utf-8") as fh:
+                    parts.append(fh.read())
+        return "\n".join(parts)
     with open(path, encoding="utf-8") as fh:
         return fh.read()
 

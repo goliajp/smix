@@ -1,4 +1,6 @@
-- rightClickOn: { id: "file_row" }
-- mouseWheel: { on: { id: "file_list" }, direction: down, notches: 3, ctrl: false }
-- mouseDrag: { from: { id: "card_3" }, to: { id: "done_column" } }
-- mouseDrag: { from: { id: "split_divider" }, by: { x: 96, y: 0 } }
+- drag:
+    from: { id: "weather_widget" }   # an element's centre, or a point "50%,80%"
+    to: "50%,12%"                    # same forms
+    hold: 500       # ms the finger stays still before moving (default 500)
+    duration: 800   # ms the move takes (default 800)
+    release: 300    # ms it rests at the end before lifting (default 300)

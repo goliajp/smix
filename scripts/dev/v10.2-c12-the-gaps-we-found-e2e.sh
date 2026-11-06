@@ -135,7 +135,7 @@ FLOW
 
 # ---- Android: a permission only Android has, and one tree -----------
 run_android() {
-  AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tail -1)"
+  AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tail -1)" || true
   [ -n "$AND_SERIAL" ] || fail "nothing is registered as $AND_ALIAS"
   # Never a phone: this grants and revokes a permission and installs an
   # app, none of which belongs on somebody's own handset.

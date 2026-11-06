@@ -56,7 +56,7 @@ command -v adb >/dev/null 2>&1 || fail "no adb on PATH — this judges an Androi
 python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
   || fail "the fixture apk on disk is not the one this tree builds"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)"
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)" || true
 if [ -z "$SERIAL" ]; then
   log "nothing is registered as $ALIAS"
   # 2, not 0: nothing was judged. A run that could not look and a run

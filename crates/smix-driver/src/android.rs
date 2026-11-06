@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_host_coord_resolver::{HostResolveError, resolve_to_norm_coord};
-use smix_input::{KeyCombo, KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
+use smix_input::{Drag, KeyCombo, KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
 use smix_runner_client::{HttpRunnerClient, IncludeScope, OcrFrame, SystemPopup, TapMode};
 use smix_screen::{A11yNode, DEFAULT_VISIBLE_LIMIT, collect_visible_summaries, screen_facts};
 use smix_selector::{Selector, describe_selector};
@@ -53,13 +53,10 @@ impl AndroidDriver {
         &self,
         include: Option<IncludeScope>,
     ) -> Result<smix_runner_client::PerceivedTree, ExpectationFailure> {
-        self.runner.get_tree(include).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::tree: {e}"),
-                ..Default::default()
-            })
-        })
+        self.runner
+            .get_tree(include)
+            .await
+            .map_err(|e| runner_failure("tree", e))
     }
 
     #[must_use]
@@ -127,13 +124,7 @@ impl Driver for AndroidDriver {
             .get_tree(include)
             .await
             .map(|t| t.root)
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::tree: {e}"),
-                    ..Default::default()
-                })
-            })
+            .map_err(|e| runner_failure("tree", e))
     }
 
     async fn find(
@@ -214,13 +205,7 @@ impl Driver for AndroidDriver {
         self.runner
             .find_text_by_ocr(text, locales, recognition_level)
             .await
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::find_text_by_ocr: {e}"),
-                    ..Default::default()
-                })
-            })
+            .map_err(|e| runner_failure("find_text_by_ocr", e))
     }
 
     async fn system_popups(
@@ -230,13 +215,10 @@ impl Driver for AndroidDriver {
         // Kotlin /system-popups walks UiAutomation.windows and
         // classifies dialog-shaped TYPE_APPLICATION windows. Returns
         // envelope {popups: [...]} per HttpRunnerClient deserialization.
-        self.runner.system_popups(include).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::system_popups: {e}"),
-                ..Default::default()
-            })
-        })
+        self.runner
+            .system_popups(include)
+            .await
+            .map_err(|e| runner_failure("system_popups", e))
     }
 
     async fn system_popup_action(
@@ -250,13 +232,7 @@ impl Driver for AndroidDriver {
         self.runner
             .system_popup_action(popup_id, button_id)
             .await
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::system_popup_action: {e}"),
-                    ..Default::default()
-                })
-            })
+            .map_err(|e| runner_failure("system_popup_action", e))
     }
 
     async fn wait_for(
@@ -414,13 +390,7 @@ impl Driver for AndroidDriver {
             .double_tap_at_norm_coord(nx, ny)
             .await
             .map(|_| ())
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::double_tap_at_norm_coord: {e}"),
-                    ..Default::default()
-                })
-            })
+            .map_err(|e| runner_failure("double_tap_at_norm_coord", e))
     }
 
     async fn long_press_at_norm_coord(
@@ -433,13 +403,7 @@ impl Driver for AndroidDriver {
             .long_press_at_norm_coord(nx, ny, duration_ms)
             .await
             .map(|_| ())
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::long_press_at_norm_coord: {e}"),
-                    ..Default::default()
-                })
-            })
+            .map_err(|e| runner_failure("long_press_at_norm_coord", e))
     }
 
     async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
@@ -448,25 +412,17 @@ impl Driver for AndroidDriver {
             .tap_at_norm_coord(nx, ny)
             .await
             .map(|_| ())
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::tap_at_norm_coord: {e}"),
-                    ..Default::default()
-                })
-            })
+            .map_err(|e| runner_failure("tap_at_norm_coord", e))
     }
 
     async fn tap_by_id(&self, id: &str) -> Result<(), ExpectationFailure> {
         // POST /tap-by-id with {id}. Kotlin side finds
         // UiObject2 via By.res(short or fully-qualified) and clicks.
-        let ok = self.runner.tap_by_id(id).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::tap_by_id: {e}"),
-                ..Default::default()
-            })
-        })?;
+        let ok = self
+            .runner
+            .tap_by_id(id)
+            .await
+            .map_err(|e| runner_failure("tap_by_id", e))?;
         if !ok {
             return Err(ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::ElementNotFound),
@@ -492,13 +448,7 @@ impl Driver for AndroidDriver {
                 .double_tap_at_norm_coord_aimed(nx, ny, Some(reader)),
         )
         .await
-        .map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::double_tap: {e}"),
-                ..Default::default()
-            })
-        })?;
+        .map_err(|e| runner_failure("double_tap", e))?;
         crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())
     }
 
@@ -524,13 +474,7 @@ impl Driver for AndroidDriver {
                 .long_press_at_norm_coord_aimed(nx, ny, duration_ms, Some(reader)),
         )
         .await
-        .map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::long_press: {e}"),
-                ..Default::default()
-            })
-        })?;
+        .map_err(|e| runner_failure("long_press", e))?;
         crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed)
             .map(|_| crate::PressTiming::unplaceable())
     }
@@ -597,13 +541,11 @@ impl Driver for AndroidDriver {
 
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure> {
         // Kotlin /press-key maps smix KeyName → KeyEvent.KEYCODE_*.
-        self.runner.press_key(key).await.map(|_| ()).map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::press_key: {e}"),
-                ..Default::default()
-            })
-        })
+        self.runner
+            .press_key(key)
+            .await
+            .map(|_| ())
+            .map_err(|e| runner_failure("press_key", e))
     }
 
     /// `true`: there is no stale frame here to check.
@@ -635,13 +577,10 @@ impl Driver for AndroidDriver {
     }
 
     async fn swipe_once(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {
-        self.runner.swipe_once(direction).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::swipe_once: {e}"),
-                ..Default::default()
-            })
-        })
+        self.runner
+            .swipe_once(direction)
+            .await
+            .map_err(|e| runner_failure("swipe_once", e))
     }
 
     async fn swipe_at_norm_coord(
@@ -652,23 +591,21 @@ impl Driver for AndroidDriver {
         self.runner
             .swipe_at_norm_coord(from, to)
             .await
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::swipe_at_norm_coord: {e}"),
-                    ..Default::default()
-                })
-            })
+            .map_err(|e| runner_failure("swipe_at_norm_coord", e))
     }
 
     async fn pinch(&self, pinch: &Pinch) -> Result<(), ExpectationFailure> {
-        self.runner.pinch_at_norm_coord(pinch).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::pinch: {e}"),
-                ..Default::default()
-            })
-        })
+        self.runner
+            .pinch_at_norm_coord(pinch)
+            .await
+            .map_err(|e| runner_failure("pinch", e))
+    }
+
+    async fn drag(&self, drag: &Drag) -> Result<(), ExpectationFailure> {
+        self.runner
+            .drag_at_norm_coord(drag)
+            .await
+            .map_err(|e| runner_failure("drag", e))
     }
 
     async fn mouse(&self, mouse: &Mouse) -> Result<(), ExpectationFailure> {
@@ -696,13 +633,10 @@ impl Driver for AndroidDriver {
     }
 
     async fn window_bounds(&self, app: Option<&str>) -> Result<WindowBounds, ExpectationFailure> {
-        self.runner.window_bounds(app).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::window_bounds: {e}"),
-                ..Default::default()
-            })
-        })
+        self.runner
+            .window_bounds(app)
+            .await
+            .map_err(|e| runner_failure("window_bounds", e))
     }
 
     async fn press_key_combo(&self, combo: &KeyCombo) -> Result<(), ExpectationFailure> {
@@ -716,13 +650,10 @@ impl Driver for AndroidDriver {
     }
 
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure> {
-        self.runner.hide_keyboard().await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::hide_keyboard: {e}"),
-                ..Default::default()
-            })
-        })
+        self.runner
+            .hide_keyboard()
+            .await
+            .map_err(|e| runner_failure("hide_keyboard", e))
     }
 
     async fn back(&self) -> Result<(), ExpectationFailure> {
@@ -739,13 +670,7 @@ impl Driver for AndroidDriver {
         self.runner
             .set_orientation(orientation.as_wire())
             .await
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::set_orientation: {e}"),
-                    ..Default::default()
-                })
-            })
+            .map_err(|e| runner_failure("set_orientation", e))
     }
 
     async fn foreground(&self, bundle_id: &str) -> Result<(), ExpectationFailure> {
@@ -763,12 +688,18 @@ impl Driver for AndroidDriver {
         // direct-bridge method (which dials 127.0.0.1:28080 on the HOST)
         // could never reach an Android app. This comment used to claim
         // the proxy while the code dialed the host port.
-        self.runner.webview_eval_via_runner(js).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::webview_eval: {e}"),
-                ..Default::default()
-            })
-        })
+        self.runner
+            .webview_eval_via_runner(js)
+            .await
+            .map_err(|e| runner_failure("webview_eval", e))
     }
+}
+
+/// A runner call that failed, named by the driver method that made it.
+fn runner_failure(method: &str, e: smix_runner_client::RunnerTransportError) -> ExpectationFailure {
+    ExpectationFailure::new(FailureInit {
+        code: Some(FailureCode::DriverError),
+        message: format!("AndroidDriver::{method}: {e}"),
+        ..Default::default()
+    })
 }
