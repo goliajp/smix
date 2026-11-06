@@ -90,9 +90,6 @@ pub enum Slot {
     /// `pinch: { over: <selector> }` — the element whose centre the two
     /// fingers meet at.
     PinchTarget,
-    /// `drag: { from: <selector>, to: <selector> }` — an end of the drag,
-    /// taken at the element's centre.
-    DragEnd,
     /// `hoverOn: <selector>` — the element the mouse pointer rests on.
     HoverTarget,
     /// `rightClickOn:`, `mouseWheel.on`, `mouseDrag.from` / `.to` — the
@@ -104,6 +101,9 @@ pub enum Slot {
     /// `neverVisible:` — the element that must not appear at any moment
     /// while the inner steps run.
     NeverVisibleTarget,
+    /// `drag: { from: <selector>, to: <selector> }` — an end of the drag,
+    /// taken at the element's centre.
+    DragEnd,
 }
 
 /// What a slot does with a form it cannot read from the tree.
@@ -226,11 +226,11 @@ impl Slot {
         Slot::AnnotationAnchor,
         Slot::SwipeOverTarget,
         Slot::PinchTarget,
-        Slot::DragEnd,
         Slot::HoverTarget,
         Slot::MouseTarget,
         Slot::BoundsTarget,
         Slot::NeverVisibleTarget,
+        Slot::DragEnd,
     ];
 }
 
