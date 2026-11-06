@@ -12,8 +12,8 @@
 #      default it spends at least one reading's wait
 #   3. `--give-up-when-still-ms` ends a 30 s wait for an element that
 #      never comes once the screen has stood still, and says so
-#   4. three flows in one `smix run` take less than the same three run
-#      one by one
+#   4. three flows in one `smix run` spend less time outside the flows
+#      than the same three run one by one
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -134,15 +134,30 @@ for seg in b c; do
   printf 'appId: %s\n---\n- tapOn: { id: uks_email }\n- inputText: "%s"\n' "$APPID" "$seg" >"$WORK/seg-$seg.yaml"
 done
 ms() { python3 -c 'import time; print(int(time.time()*1000))'; }
+# what one run saves is outside the flows (a process start and a runner
+# connection per flow); the flows themselves take what the app takes,
+# which under load swings by more than the whole saving. So each side is
+# judged by its wall time less the time its flows report.
+flow_ms() { # $@ stderr files; prints "<count> <sum>" over their `time:` lines
+  cat "$@" | awk '/^time: [0-9]+ ms/ { n++; s += $2 } END { print n+0, s+0 }'
+}
+: >"$WORK/alone.err"
 t0=$(ms)
-for seg in a b c; do run "$WORK/seg-$seg.yaml" || { tail -8 "$WORK/err" >&2; fail "segment $seg alone failed"; }; done
+for seg in a b c; do
+  run "$WORK/seg-$seg.yaml" || { tail -8 "$WORK/err" >&2; fail "segment $seg alone failed"; }
+  cat "$WORK/err" >>"$WORK/alone.err"
+done
 t1=$(ms)
 SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX_RUN" --device "$UDID" --runner-port "$IOS_PORT" \
   "$WORK/seg-a.yaml" "$WORK/seg-b.yaml" "$WORK/seg-c.yaml" >"$WORK/out" 2>"$WORK/err" \
   || { tail -8 "$WORK/err" >&2; fail "the three segments in one run failed"; }
 t2=$(ms)
-alone=$(( t1 - t0 )) together=$(( t2 - t1 ))
-log "three segments: one by one ${alone} ms, in one run ${together} ms"
-[ "$together" -lt "$alone" ] || fail "one run of three took ${together} ms, not less than ${alone} ms one by one"
+read -r alone_n alone_flows <<<"$(flow_ms "$WORK/alone.err")"
+read -r together_n together_flows <<<"$(flow_ms "$WORK/err")"
+[ "$alone_n" = 3 ] || fail "the three runs reported $alone_n flow times, not 3"
+[ "$together_n" = 3 ] || fail "the one run reported $together_n flow times, not 3"
+alone=$(( t1 - t0 - alone_flows )) together=$(( t2 - t1 - together_flows ))
+log "three segments, time outside the flows: one by one ${alone} ms, in one run ${together} ms (flows took ${alone_flows} and ${together_flows} ms)"
+[ "$together" -lt "$alone" ] || fail "one run of three spent ${together} ms outside its flows, not less than ${alone} ms one by one"
 
 log "V19.0-C2-E2E-PASS"
