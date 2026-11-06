@@ -300,6 +300,13 @@ log "cargo build -p smix-cli --release (for corpus gate)"
 # directory, the MCP parity scan whichever build was newer. They resolve
 # through scripts/lib/e2e-binary.sh now, which honours SMIX_BIN.
 export SMIX_BIN="$ROOT/target/release/smix"
+# The ship drives devices booted before it started, whose boot command has
+# long exited. To `smix sim boot` that is a device left behind once it has
+# sat idle for half an hour, and any boot inside the ship (the corpus
+# gate's, a tier script's) closes it: 23.5.0 lost a run to the corpus
+# gate shutting the emulator the android chain was about to use. The
+# check that judges the reclaim sets its own limit per command.
+export SMIX_IDLE_DEVICE_SECS=0
 
 
 # --- android instrumentation (device) ----------------------------------
@@ -1104,6 +1111,17 @@ the workspace build on this machine and mini (cargo build --release -p smix-cli 
     exit 0
   fi
   log "install v$VERSION on this machine"
+  # The plugin marketplace reads the default branch, not this tag: until
+  # the release is merged into develop and pushed, every profile finds
+  # nothing to update and the judgement below is red for that reason only.
+  git -C "$ROOT" fetch -q origin develop || true
+  on_develop="$(git -C "$ROOT" show origin/develop:plugin/.claude-plugin/plugin.json 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' 2>/dev/null || true)"
+  if [ "$on_develop" != "$VERSION" ]; then
+    fail "v$VERSION is published and nothing about that is in doubt; the plugin marketplace reads \
+develop, which carries ${on_develop:-no readable plugin version}. Merge this release into develop and push, \
+then: bash scripts/release/install-on-this-machine.sh $VERSION"
+  fi
   if bash "$ROOT/scripts/release/install-on-this-machine.sh" "$VERSION" \
        2>&1 | tee /tmp/smix-ship-this-machine.log; then
     note "SHIP COMPLETE — published, and this machine runs v$VERSION"
