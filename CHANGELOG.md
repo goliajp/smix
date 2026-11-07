@@ -2,7 +2,16 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [24.0.0] — 2026-11-08
+
+### Breaking
+
+- **Rust API: `smix_adb::Unlock` gains `Dismissed`, and `UnlockError` gains `NeedsCredentialAgain` and `LockScreenStayed`.**
+  A match over either needs the new arms: `Dismissed` is a lock screen
+  with no credential that was dismissed, `NeedsCredentialAgain` a lock
+  screen that came back over an unlocked user with no PIN given, and
+  `LockScreenStayed` a lock screen that did not go after the PIN or the
+  dismissal.
 
 ### Fixed
 
@@ -43,10 +52,6 @@ All notable changes to the `smix` workspace are documented here. The format foll
   other verbs drive an unregistered emulator without `--platform android`.
 - **`smix runner down` takes the device positionally**, as `runner up`
   does; `--device` still works.
-- **`smix_adb::Unlock` gains `Dismissed`, and `UnlockError` gains
-  `NeedsCredentialAgain` and `LockScreenStayed`.** A match over either
-  needs the new arms.
-
 ## [23.5.0] — 2026-11-06
 
 ### Added
