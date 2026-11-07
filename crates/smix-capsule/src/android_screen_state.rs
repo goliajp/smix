@@ -153,9 +153,10 @@ pub fn no_app_refusal(port: u16, serial: &str, why: &str, screen: ScreenState) -
             ..
         } => format!(
             "{head}\nThe lock screen is showing: the app is behind it, where the \
-             automation cannot read it. The runner is fine. Unlock the device — an \
-             emulator without a PIN unlocks with a swipe up — and bring the runner up \
-             again. smix does not unlock devices."
+             automation cannot read it. The runner is fine. Unlock the device and bring \
+             the runner up again:\n  smix sim boot {serial} --unlock-pin <pin>\n\
+             enters its PIN (or SMIX_UNLOCK_PIN) and dismisses a lock screen without one; \
+             it answers once the lock screen is gone."
         ),
         ScreenState {
             wakefulness: Some(Wakefulness::Awake),

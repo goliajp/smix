@@ -2,9 +2,12 @@
 //!
 //! With a PIN, pattern or password set, the user stays locked after a
 //! boot until the credential is entered, and no app that is not
-//! direct-boot aware can start. The credential is typed on the bouncer,
-//! which needs no window on the host: wake, dismiss the keyguard, type,
-//! Enter.
+//! direct-boot aware can start. Once it has been entered the user stays
+//! unlocked, but the lock screen comes back whenever the screen goes off,
+//! and an app launched under it is not on screen. So the device is
+//! unlocked only when both are true: the user is unlocked and the lock
+//! screen is gone. The credential is typed on the bouncer, which needs no
+//! window on the host: wake, dismiss the keyguard, type, Enter.
 
 use std::time::{Duration, Instant};
 
@@ -19,11 +22,18 @@ const UNLOCKS_ITSELF_WITHIN: Duration = Duration::from_secs(30);
 /// up go nowhere, which is what happened when the credential was typed
 /// right after a boot.
 const BOUNCER_UP_WITHIN: Duration = Duration::from_secs(20);
-/// How long the user state takes to turn after Enter on the bouncer.
-const ENTRY_TAKES_HOLD_WITHIN: Duration = Duration::from_secs(8);
-/// Where the bouncer is read to: `/sdcard` does not exist while the user
-/// is locked.
-const DUMP: &str = "/data/local/tmp/smix-bouncer.xml";
+/// How long the user state takes to turn and the lock screen to leave
+/// after Enter on the bouncer. The lock screen leaves up to 3 s after
+/// the user state turns.
+const ENTRY_TAKES_HOLD_WITHIN: Duration = Duration::from_secs(12);
+/// How long a lock screen without a credential takes to leave once
+/// dismissed.
+const DISMISSED_WITHIN: Duration = Duration::from_secs(8);
+/// Where the bouncer is read: system UI's own state, which a running smix
+/// runner does not stand in the way of. A `uiautomator dump` did, and
+/// was killed whenever the runner held the device's UI automation.
+const BOUNCER_READ: &str =
+    "dumpsys activity service com.android.systemui | grep -F 'isBouncerShowing()'; true";
 
 /// `CredentialType: PIN` in `dumpsys lock_settings`; `NONE` without one.
 #[must_use]
@@ -32,6 +42,19 @@ pub fn credential_type(dumpsys_lock_settings: &str) -> Option<&str> {
         .lines()
         .find_map(|l| l.trim().strip_prefix("CredentialType:"))
         .map(str::trim)
+}
+
+/// `isKeyguardShowing=true` in `dumpsys window`.
+#[must_use]
+pub fn keyguard_showing(dumpsys_window: &str) -> Option<bool> {
+    dumpsys_window
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("isKeyguardShowing="))
+        .and_then(|v| match v.trim() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        })
 }
 
 /// Whether `input text` types `credential` as it is: 1–16 ASCII letters
@@ -44,11 +67,15 @@ pub fn typeable_credential(credential: &str) -> bool {
 /// What [`AdbClient::unlock_user`] found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unlock {
-    /// The user was unlocked already, or unlocked itself having no credential.
+    /// The user was unlocked and the lock screen gone already, or the
+    /// user unlocked itself having no credential.
     WasNotLocked,
-    /// The credential was entered and the user is unlocked.
+    /// The credential was entered: the user is unlocked and the lock
+    /// screen gone.
     Entered,
-    /// `dumpsys user` did not say.
+    /// The lock screen had no credential behind it and was dismissed.
+    Dismissed,
+    /// `dumpsys user` or `dumpsys window` did not say.
     Unknown,
 }
 
@@ -61,6 +88,12 @@ pub enum UnlockError {
          --unlock-pin <pin> or SMIX_UNLOCK_PIN"
     )]
     NeedsCredential { serial: String, credential: String },
+    #[error(
+        "{serial} shows its lock screen again (it was unlocked once since it booted), and \
+         an app launched under it is not on screen. Give its {credential} with \
+         --unlock-pin <pin> or SMIX_UNLOCK_PIN"
+    )]
+    NeedsCredentialAgain { serial: String, credential: String },
     #[error(
         "{serial} is locked by a pattern, which smix cannot enter; a PIN or a password \
          of letters and digits can be"
@@ -84,6 +117,12 @@ pub enum UnlockError {
     },
     #[error("{serial} has no credential and stayed locked for {} s", .after.as_secs())]
     DidNotUnlockItself { serial: String, after: Duration },
+    #[error(
+        "{serial} has no credential and its lock screen was still showing {} s after it \
+         was dismissed",
+        .after.as_secs()
+    )]
+    LockScreenStayed { serial: String, after: Duration },
     #[error("{serial}: typing the credential failed (adb exited {code})")]
     Typing { serial: String, code: i32 },
     #[error(transparent)]
@@ -99,35 +138,43 @@ fn spoken(kind: &str) -> String {
     }
 }
 
-/// Whether a UI dump holds the field the bouncer types into.
+/// `isBouncerShowing(): true` in system UI's dump, from its
+/// `StatusBarKeyguardViewManager` section.
 #[must_use]
-pub fn bouncer_is_up(ui_dump: &str) -> bool {
-    [
-        "com.android.systemui:id/pinEntry",
-        "com.android.systemui:id/passwordEntry",
-    ]
-    .iter()
-    .any(|id| ui_dump.contains(&format!("resource-id=\"{id}\"")))
+pub fn bouncer_showing(systemui_dump: &str) -> Option<bool> {
+    systemui_dump
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("isBouncerShowing():"))
+        .and_then(|v| match v.trim() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        })
 }
 
 impl AdbClient {
-    /// Leaves the user of `serial` unlocked, entering `credential` on the
-    /// bouncer when the device has one and is locked.
+    /// Leaves `serial` unlocked — its user unlocked and its lock screen
+    /// gone — entering `credential` on the bouncer when it has one.
     ///
     /// # Errors
     ///
-    /// [`UnlockError::NeedsCredential`] when it is locked behind a
-    /// credential and none was given; [`UnlockError::StillLocked`] when
-    /// the one given did not unlock it.
+    /// [`UnlockError::NeedsCredential`] / [`UnlockError::NeedsCredentialAgain`]
+    /// when it is locked behind a credential and none was given;
+    /// [`UnlockError::StillLocked`] when the one given did not unlock it.
     pub async fn unlock_user(
         &self,
         serial: &str,
         credential: Option<&str>,
     ) -> Result<Unlock, UnlockError> {
-        match self.user_locked(serial).await? {
-            None => return Ok(Unlock::Unknown),
-            Some(false) => return Ok(Unlock::WasNotLocked),
-            Some(true) => {}
+        let Some(user_locked) = self.user_locked(serial).await? else {
+            return Ok(Unlock::Unknown);
+        };
+        // a `dumpsys window` without the line leaves the user's state to decide, as
+        // it did before the lock screen was read
+        match (user_locked, self.keyguard_showing(serial).await?) {
+            (false, Some(false)) => return Ok(Unlock::WasNotLocked),
+            (false, None) => return Ok(Unlock::Unknown),
+            _ => {}
         }
         let settings = self.shell(serial, &["dumpsys", "lock_settings"]).await?;
         let kind = credential_type(&settings)
@@ -136,12 +183,24 @@ impl AdbClient {
         let serial_s = || serial.to_string();
         match kind.as_str() {
             "NONE" => {
-                return if self.unlocked_within(serial, UNLOCKS_ITSELF_WITHIN).await? {
-                    Ok(Unlock::WasNotLocked)
-                } else {
-                    Err(UnlockError::DidNotUnlockItself {
+                if user_locked && !self.unlocked_within(serial, UNLOCKS_ITSELF_WITHIN).await? {
+                    return Err(UnlockError::DidNotUnlockItself {
                         serial: serial_s(),
                         after: UNLOCKS_ITSELF_WITHIN,
+                    });
+                }
+                if self.keyguard_showing(serial).await? != Some(true) {
+                    return Ok(Unlock::WasNotLocked);
+                }
+                self.shell(serial, &["input", "keyevent", "KEYCODE_WAKEUP"])
+                    .await?;
+                self.shell(serial, &["wm", "dismiss-keyguard"]).await?;
+                return if self.open_within(serial, DISMISSED_WITHIN).await? {
+                    Ok(Unlock::Dismissed)
+                } else {
+                    Err(UnlockError::LockScreenStayed {
+                        serial: serial_s(),
+                        after: DISMISSED_WITHIN,
                     })
                 };
             }
@@ -149,9 +208,16 @@ impl AdbClient {
             _ => {}
         }
         let Some(credential) = credential else {
-            return Err(UnlockError::NeedsCredential {
-                serial: serial_s(),
-                credential: spoken(&kind),
+            return Err(if user_locked {
+                UnlockError::NeedsCredential {
+                    serial: serial_s(),
+                    credential: spoken(&kind),
+                }
+            } else {
+                UnlockError::NeedsCredentialAgain {
+                    serial: serial_s(),
+                    credential: spoken(&kind),
+                }
             });
         };
         self.raise_bouncer(serial).await?;
@@ -167,10 +233,7 @@ impl AdbClient {
             })?;
         self.shell(serial, &["input", "keyevent", "KEYCODE_ENTER"])
             .await?;
-        if self
-            .unlocked_within(serial, ENTRY_TAKES_HOLD_WITHIN)
-            .await?
-        {
+        if self.open_within(serial, ENTRY_TAKES_HOLD_WITHIN).await? {
             return Ok(Unlock::Entered);
         }
         Err(UnlockError::StillLocked {
@@ -184,13 +247,12 @@ impl AdbClient {
     /// entry field is on screen.
     async fn raise_bouncer(&self, serial: &str) -> Result<(), UnlockError> {
         let deadline = Instant::now() + BOUNCER_UP_WITHIN;
-        let read = format!("uiautomator dump {DUMP} >/dev/null && cat {DUMP}; rm -f {DUMP}");
         loop {
             let looked = Instant::now();
             self.shell(serial, &["input", "keyevent", "KEYCODE_WAKEUP"])
                 .await?;
             self.shell(serial, &["wm", "dismiss-keyguard"]).await?;
-            if bouncer_is_up(&self.shell(serial, &[read.as_str()]).await?) {
+            if bouncer_showing(&self.shell(serial, &[BOUNCER_READ]).await?) == Some(true) {
                 return Ok(());
             }
             if looked >= deadline {
@@ -207,6 +269,30 @@ impl AdbClient {
         Ok(user_is_locked(
             &self.shell(serial, &["dumpsys", "user"]).await?,
         ))
+    }
+
+    async fn keyguard_showing(&self, serial: &str) -> Result<Option<bool>, AdbError> {
+        Ok(keyguard_showing(
+            &self.shell(serial, &["dumpsys", "window"]).await?,
+        ))
+    }
+
+    /// Whether the user is unlocked and the lock screen not showing within
+    /// `within`.
+    async fn open_within(&self, serial: &str, within: Duration) -> Result<bool, AdbError> {
+        let deadline = Instant::now() + within;
+        loop {
+            let looked = Instant::now();
+            if self.user_locked(serial).await? == Some(false)
+                && self.keyguard_showing(serial).await? != Some(true)
+            {
+                return Ok(true);
+            }
+            if looked >= deadline {
+                return Ok(false);
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
     }
 
     async fn unlocked_within(&self, serial: &str, within: Duration) -> Result<bool, AdbError> {
@@ -242,14 +328,30 @@ mod tests {
     }
 
     #[test]
-    fn the_bouncer_is_up_when_its_entry_field_is_on_screen() {
-        // from `uiautomator dump` on the API 36 emulator, locked, before
-        // and after `wm dismiss-keyguard` brought the PIN pad up
-        let pad = r#"<node resource-id="com.android.systemui:id/keyguard_pin_view"><node resource-id="com.android.systemui:id/pinEntry" class="android.widget.EditText"/></node>"#;
-        let lock = r#"<node resource-id="com.android.systemui:id/keyguard_long_press"/><node resource-id="com.android.systemui:id/keyguard_indication_area"/>"#;
-        assert!(bouncer_is_up(pad));
-        assert!(!bouncer_is_up(lock));
+    fn the_bouncer_is_read_from_system_ui() {
+        // what BOUNCER_READ prints on the API 36.1 emulator, the PIN pad up
+        // after `wm dismiss-keyguard`, then after the PIN went in
+        assert_eq!(
+            bouncer_showing("      isBouncerShowing(): true\n"),
+            Some(true)
+        );
+        assert_eq!(
+            bouncer_showing("      isBouncerShowing(): false\n"),
+            Some(false)
+        );
+        assert_eq!(bouncer_showing(""), None);
         assert_eq!(spoken("PIN"), "PIN");
         assert_eq!(spoken("PASSWORD"), "password");
+    }
+
+    #[test]
+    fn the_lock_screen_is_read_from_dumpsys_window() {
+        // `dumpsys window` on the API 36.1 emulator: its user RUNNING_UNLOCKED,
+        // the lock screen back after the screen went off and on, then entered
+        let shown = "    mKeyguardDrawComplete=false mWindowManagerDrawComplete=false\n    isKeyguardShowing=true\n";
+        let gone = "    mKeyguardDrawComplete=true mWindowManagerDrawComplete=true\n    isKeyguardShowing=false\n";
+        assert_eq!(keyguard_showing(shown), Some(true));
+        assert_eq!(keyguard_showing(gone), Some(false));
+        assert_eq!(keyguard_showing("    deviceHasKeyguard=true\n"), None);
     }
 }

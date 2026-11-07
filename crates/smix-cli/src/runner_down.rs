@@ -63,18 +63,18 @@ pub(crate) fn run(
     if platform == RunPlatform::Android {
         let serial = device.ok_or_else(|| {
             CliError::Other(
-                "runner down --platform android needs --device \
-                 <adb-serial>: an adb command without one acts on \
+                "runner down --platform android needs the device \
+                 (<adb-serial>, or --device): an adb command without one acts on \
                  whichever device is attached"
                     .to_string(),
             )
         })?;
-        let port = port_flag.unwrap_or_else(|| {
-            std::env::var("SMIX_RUNNER_PORT")
-                .ok()
-                .and_then(|p| p.parse().ok())
-                .unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT)
-        });
+        // flag → SMIX_RUNNER_PORT → the device's live runner → its
+        // registered runnerPort → the Android default
+        let port = port_flag
+            .or_else(crate::act::runner_port_from_env_opt)
+            .or_else(|| crate::runner_target::device_port(&serial))
+            .unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT);
         let serial = crate::resolve_android_serial(&serial)?;
         return smix_capsule::runner_android::down_with(&serial, port, take_over)
             .map_err(CliError::Other);
