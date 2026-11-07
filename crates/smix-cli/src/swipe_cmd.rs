@@ -19,7 +19,7 @@ pub struct SwipeArgs {
     /// Where the finger ends, same form as `--from`.
     #[arg(long = "to")]
     pub to_point: Option<String>,
-    /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+    /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
     /// `--runner-port` is accepted too — `smix run` spells it that way.
     #[arg(long, alias = "runner-port")]
     pub port: Option<u16>,
