@@ -2,6 +2,51 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **`smix sim boot --unlock-pin` leaves the emulator unlocked, lock screen
+  included.** Once its PIN has been entered an emulator's user stays
+  unlocked, but the lock screen comes back whenever the screen goes off.
+  `sim boot` judged by the user alone, so on an emulator whose lock screen
+  was back it printed `booted` having entered nothing, and on a cold boot
+  it answered while the lock screen was still on its way out. It now
+  answers once the user is unlocked and the lock screen is gone: a lock
+  screen that came back has the PIN entered again, one without a PIN is
+  dismissed, and one given no PIN fails with "shows its lock screen
+  again".
+- **`--unlock-pin` works with the Android runner up.** The PIN pad was
+  looked for with `uiautomator dump`, which is killed while the runner
+  holds the device's UI automation; it is now read from system UI's own
+  state.
+- **A verb given `--device` and no port dials the runner that was brought
+  up on that device.** The port came from the registry's `runnerPort` or
+  the iOS default, so a runner brought up on Android's 28080, or on a port
+  of its own, was unreachable from `long-press`, `drag`, `tap`, `run` and
+  the rest until `--port` was given. The order is now: the flag or
+  `SMIX_RUNNER_PORT`, the runner smix brought up on the device (while its
+  process is still the one recorded), the registered `runnerPort`, then
+  22087 on iOS and 28080 on Android. `runner up` on Android binds the
+  registered `runnerPort` when one is set, as on iOS.
+- **An app under the lock screen is reported as being under the lock
+  screen.** A step on Android failed with "in the background … the home
+  screen"; it now says the lock screen is showing over the app and how to
+  unlock it. `runner up`'s advice for a locked device names `sim boot
+  --unlock-pin` rather than saying smix does not unlock devices.
+
+### Changed
+
+- **`--platform` is needed only when nothing knows the device.** A device
+  not in the registry is classified by what it is — an emulator adb
+  lists, a simulator simctl lists — so `long-press`, `drag`, `run` and the
+  other verbs drive an unregistered emulator without `--platform android`.
+- **`smix runner down` takes the device positionally**, as `runner up`
+  does; `--device` still works.
+- **`smix_adb::Unlock` gains `Dismissed`, and `UnlockError` gains
+  `NeedsCredentialAgain` and `LockScreenStayed`.** A match over either
+  needs the new arms.
+
 ## [23.5.0] — 2026-11-06
 
 ### Added
