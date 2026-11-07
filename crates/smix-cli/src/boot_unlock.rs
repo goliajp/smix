@@ -33,8 +33,8 @@ pub(crate) fn credential(
     }
 }
 
-/// Leaves `serial`'s user unlocked, entering `credential` if it is locked
-/// behind one.
+/// Leaves `serial` unlocked — its user unlocked and its lock screen gone —
+/// entering `credential` if it is locked behind one.
 pub(crate) async fn leave_unlocked(serial: &str, credential: Option<&str>) -> Result<(), String> {
     match smix_adb::AdbClient::new()
         .unlock_user(serial, credential)
@@ -44,11 +44,17 @@ pub(crate) async fn leave_unlocked(serial: &str, credential: Option<&str>) -> Re
             eprintln!("unlocked: {serial} (its credential was entered)");
             Ok(())
         }
+        Ok(smix_adb::Unlock::Dismissed) => {
+            eprintln!(
+                "unlocked: {serial} (its lock screen, which has no credential, was dismissed)"
+            );
+            Ok(())
+        }
         Ok(smix_adb::Unlock::WasNotLocked) => Ok(()),
         Ok(smix_adb::Unlock::Unknown) => {
             eprintln!(
-                "note: {serial} did not say whether its user is locked (`dumpsys user`); \
-                 nothing was entered"
+                "note: {serial} did not say whether it is locked (`dumpsys user` / \
+                 `dumpsys window`); nothing was entered"
             );
             Ok(())
         }

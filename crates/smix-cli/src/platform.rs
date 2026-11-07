@@ -70,15 +70,16 @@ impl RunPlatform {
 }
 
 /// What the caller learned about a `--device` flag before dialing a
-/// driver for a CLI verb. `Registered` carries the kind the registry
-/// classified it as; `Unregistered` means `--device X` named something
-/// the registry does not know. Absent `--device` is `None` — then the
+/// driver for a CLI verb. `Known` carries its kind, from the registry or
+/// from the device itself (an emulator adb lists, a simulator simctl
+/// lists); `Unknown` means nothing says what `--device X` is. Absent
+/// `--device` is `None` — then the
 /// dialed port's registered holder decides, the same way the consumer's
 /// `--port 22088` usage does (5560 was registered with `--runner-port
 /// 22088`).
 pub(crate) enum DeviceDial {
-    Registered(smix_simctl::registry::DeviceKind),
-    Unregistered,
+    Known(smix_simctl::registry::DeviceKind),
+    Unknown,
 }
 
 /// Dial the platform a CLI verb should drive, so `fill` / `find` reach
@@ -86,8 +87,8 @@ pub(crate) enum DeviceDial {
 /// simctl one. This is C1's rule — the platform is a property of the
 /// device — brought to the act verbs' entrance: one rule, both entrances.
 ///
-/// `--device` given and registered: its kind decides (reusing C1's
-/// mapping). `--device` given but unknown to the registry: an error
+/// `--device` given and its kind known: that decides (reusing C1's
+/// mapping). `--device` given and nothing knows it: an error
 /// naming the fix, never a silent iOS guess. No `--device`: the dialed
 /// port's registered holders decide — one platform among them wins, none
 /// keeps the bare-port iOS default (a wrong guess there ends in a loud
@@ -98,10 +99,10 @@ pub(crate) fn dial_platform(
     port_holder_kinds: &[smix_simctl::registry::DeviceKind],
 ) -> Result<RunPlatform, String> {
     match device {
-        Some(DeviceDial::Registered(k)) => resolve_run_platform(None, Some(k)),
-        Some(DeviceDial::Unregistered) => Err(
+        Some(DeviceDial::Known(k)) => resolve_run_platform(None, Some(k)),
+        Some(DeviceDial::Unknown) => Err(
             "cannot tell which platform this --device is — it is not in the \
-             registry, so its kind is unknown. Pass --platform to say it once, or \
+             registry, and neither adb nor simctl lists it. Pass --platform to say it once, or \
              register it (`smix sim register <alias> --udid <id> --kind \
              emulator|simulator`) so the platform is read from the device."
                 .to_string(),

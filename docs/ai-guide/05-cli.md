@@ -14,8 +14,8 @@ smix run [FLAGS] <FLOW.yaml>
 |---|---|---|---|
 | `--device <DEVICE>` | `SMIX_UDID` | (none, required) | Target simulator UDID or Android device id (e.g. `emulator-5554`) |
 | `--bundle-id <ID>` | `SMIX_BUNDLE_ID` | (unset) | Default app under test (overrideable by `appId:` in YAML) |
-| `--runner-port <PORT>` | `SMIX_RUNNER_PORT` | `22087` | Runner HTTP port. iOS = 22087, Android = 28080 by convention |
-| `--platform <ios\|android>` | `SMIX_PLATFORM` | inferred from `--device` | Optional. Read from the named device's registered kind (emulator / physical-android → android, simulator / physical-ios → ios). An explicit value wins and is **required** when naming a device that is not registered — an unregistered bare name with no platform is an error, not a silent iOS default |
+| `--runner-port <PORT>` | `SMIX_RUNNER_PORT` | the device's | Runner HTTP port. Left out, the port of the runner smix brought up on `--device` (while it is still running), else the device's registered `runnerPort`, else 22087 on iOS and 28080 on Android. The same for every verb that takes `--device` |
+| `--platform <ios\|android>` | `SMIX_PLATFORM` | inferred from `--device` | Optional. Read from the named device: its registered kind (emulator / physical-android → android, simulator / physical-ios → ios), else what the device is — an emulator adb lists, a simulator simctl lists. An explicit value wins and is **required** only when nothing knows the device — an unknown name with no platform is an error, not a silent iOS default |
 | `--apps-config <PATH>` | `SMIX_APPS_CONFIG` | (unset) | Path to `apps.yaml` for cross-platform `app:` logical key resolution |
 | `--no-launch` | — | (off) | Skip initial `foreground()` call. Use when you launched the app via other means |
 | `--trace-dir <PATH>` | — | `./.smix/trace/<runid>` | Where screenshots / video / JSON traces go |
@@ -216,7 +216,7 @@ smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is take
 smix sim boot <ALIAS> --no-window  # an Android emulator runs with no window on the desktop, driven as usual; refused on an emulator already running and on a phone
 SMIX_EMULATOR_NO_WINDOW=1 smix sim boot <ALIAS>   # the same for every boot under this setting; an emulator already running is left as it is
 smix sim boot <ALIAS> --cold   # an Android emulator boots from scratch instead of its Quick Boot snapshot, which keeps whatever state the device stopped in (a system UI that died stays dead); refused on anything else, and on an emulator already running
-smix sim boot <ALIAS> --unlock-pin 1357   # an Android emulator with a lock-screen PIN (or a password of letters and digits) is unlocked once it is up, with no window, before `booted` is printed; SMIX_UNLOCK_PIN is the default. Without one, a locked emulator fails the boot with "is locked"; a pattern cannot be entered. The PIN is never written down
+smix sim boot <ALIAS> --unlock-pin 1357   # an Android emulator with a lock-screen PIN (or a password of letters and digits) is unlocked once it is up, with no window, before `booted` is printed; SMIX_UNLOCK_PIN is the default. Unlocked means both the user unlocked and the lock screen gone: the lock screen comes back whenever the screen goes off, so an emulator already running whose lock screen is back has its PIN entered again, and one without a PIN has its lock screen dismissed. Without a PIN, a locked emulator fails the boot with "is locked" or "shows its lock screen again"; a pattern cannot be entered. Works with the runner up. The PIN is never written down
 smix sim shutdown <ALIAS|UDID> # shutdown; for an emulator, returns once adb no longer lists it
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
 smix sim repair <ALIAS|UDID>   # rebuild PosterBoard's store when PosterBoard cannot load it; a running simulator is shut down and booted again, refused unless smix booted it and nobody holds it
@@ -660,8 +660,8 @@ The device is an adb serial or a registered alias. An emulator's alias
 resolves to the AVD it was registered as, wherever that AVD is running now —
 a serial is a port, and an AVD can come up on a different one — and a
 checkout's book that gives the alias to another device stops the command
-(see *Which book answered*). Default port is 28080; `--runner-port` sets the host side, which
-adb forwards to the runner's own port inside the device. `runner up` is
+(see *Which book answered*). Default port is the device's registered `runnerPort`, else 28080; `--runner-port` sets the host side, which
+adb forwards to the runner's own port inside the device. Verbs given `--device` and no port dial the port the runner was brought up on. `runner down` takes the device positionally too, as `runner up` does. `runner up` is
 idempotent: if `/health` already answers on that port it says so and
 returns rather than stacking a second instrumentation onto it.
 
