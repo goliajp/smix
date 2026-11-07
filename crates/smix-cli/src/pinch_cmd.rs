@@ -45,7 +45,7 @@ pub struct PinchArgs {
     /// `none` starts at once.
     #[arg(long, default_value = "spread")]
     pub run_up: String,
-    /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+    /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
     #[arg(long, alias = "runner-port")]
     pub port: Option<u16>,
     /// Device UDID, or an alias in this machine's registry.
