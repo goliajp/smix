@@ -1450,8 +1450,11 @@ enum RunnerAction {
         #[arg(long, value_enum)]
         platform: Option<RunPlatform>,
         /// The device whose runner to stop: an adb serial, a simulator, or
-        /// an alias. On iOS the port is the one this device's runner is
-        /// recorded on.
+        /// an alias, positional as `runner up` takes it or as `--device`.
+        /// The port is the one this device's runner is recorded on.
+        #[arg(value_name = "DEVICE", conflicts_with = "device")]
+        device_pos: Option<String>,
+        /// The device, named rather than positional. See `device_pos`.
         #[arg(long)]
         device: Option<String>,
         /// Also stop a runner on this port that this workspace has no
@@ -3762,8 +3765,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     if platform == RunPlatform::Android {
                         reject_ios_only_up_flags(runner_project.is_some(), supervise)
                             .map_err(CliError::Other)?;
-                        let port =
-                            port_flag.unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT);
+                        let port = port_flag
+                            .or_else(|| lookup_registered(&device).and_then(|s| s.runner_port))
+                            .unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT);
                         // The adb serial is the device id, but it still
                         // has to be a device smix was invited to touch:
                         // this installs an APK.
@@ -3882,13 +3886,18 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 RunnerAction::Down {
                     platform,
+                    device_pos,
                     device,
                     include_unrecorded,
                     take_over,
                     runner_port,
-                } => {
-                    runner_down::run(platform, device, include_unrecorded, take_over, runner_port)?
-                }
+                } => runner_down::run(
+                    platform,
+                    device_pos.or(device),
+                    include_unrecorded,
+                    take_over,
+                    runner_port,
+                )?,
                 RunnerAction::Cycle {
                     platform,
                     runner_project,
@@ -4557,15 +4566,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             // undriveable. `attribution_bundle` below is best-effort for
             // .ips crash attribution only.
             let bundle = bundle_id.clone();
-            // Same priority chain as `runner up`: flag/env → the
-            // registry's per-sim runnerPort → 22087. `smix run` used to
-            // skip the registry, so a sim registered on a dedicated port
-            // got its runner bound there and then dialed on 22087.
+            // flag/env → the device's live runner → its registered
+            // runnerPort → its platform's default
             let port = run_port(runner_port, || {
-                device
-                    .as_deref()
-                    .and_then(lookup_registered)
-                    .and_then(|sim| sim.runner_port)
+                device.as_deref().and_then(runner_target::device_port)
             });
             // Read the platform from the device rather than an argument
             // that defaulted to iOS. A run with no --device has no kind
@@ -4576,8 +4580,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             let plat = match device.as_deref() {
                 None => platform.unwrap_or(RunPlatform::Ios),
                 Some(d) => {
-                    let kind = lookup_registered(d).map(|s| s.kind);
-                    match resolve_run_platform(platform, kind) {
+                    match resolve_run_platform(platform, runner_target::known_device_kind(d)) {
                         Ok(p) => p,
                         Err(e) => return Err(CliError::Other(e)),
                     }
@@ -6954,21 +6957,17 @@ mod dial_platform {
     #[test]
     fn a_registered_device_decides_by_its_kind() {
         assert_eq!(
-            dial_platform(Some(DeviceDial::Registered(DeviceKind::Emulator)), &[]).unwrap(),
+            dial_platform(Some(DeviceDial::Known(DeviceKind::Emulator)), &[]).unwrap(),
             RunPlatform::Android,
             "an emulator names the Android driver"
         );
         assert_eq!(
-            dial_platform(Some(DeviceDial::Registered(DeviceKind::Simulator)), &[]).unwrap(),
+            dial_platform(Some(DeviceDial::Known(DeviceKind::Simulator)), &[]).unwrap(),
             RunPlatform::Ios,
             "a simulator names the iOS driver"
         );
         assert_eq!(
-            dial_platform(
-                Some(DeviceDial::Registered(DeviceKind::PhysicalAndroid)),
-                &[]
-            )
-            .unwrap(),
+            dial_platform(Some(DeviceDial::Known(DeviceKind::PhysicalAndroid)), &[]).unwrap(),
             RunPlatform::Android,
         );
     }
@@ -6993,7 +6992,7 @@ mod dial_platform {
 
     #[test]
     fn an_unregistered_device_refuses_and_names_register() {
-        let err = dial_platform(Some(DeviceDial::Unregistered), &[]).unwrap_err();
+        let err = dial_platform(Some(DeviceDial::Unknown), &[]).unwrap_err();
         assert!(
             err.to_lowercase().contains("register"),
             "the error must name the durable fix: {err}"
