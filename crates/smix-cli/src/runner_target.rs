@@ -4,7 +4,7 @@ use crate::platform::RunPlatform;
 
 #[derive(clap::Args, Debug)]
 pub struct RunnerTarget {
-    /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+    /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
     /// `--runner-port` is accepted too — `smix run` spells it that way.
     #[arg(long, alias = "runner-port")]
     pub port: Option<u16>,
@@ -43,7 +43,8 @@ pub(crate) fn runner_dial_port(flag: Option<u16>, device: Option<&str>) -> u16 {
 
 /// Dial both the port and the platform a CLI verb should drive, so
 /// `fill` / `find` reach the driver the flow path already uses. The port
-/// keeps `runner_dial_port`'s flag → env → registry → default ladder;
+/// keeps `runner_dial_port`'s flag → env → recorded runner → registry →
+/// platform default ladder;
 /// the platform is read from the device the same way `smix run` reads it
 /// (C1) — one rule at both entrances. No `--device` lets the dialed
 /// port's registered holder decide (the consumer's `--port 22088`
@@ -139,4 +140,51 @@ pub(crate) fn device_port(device: &str) -> Option<u16> {
         .or_else(|| {
             is_android(device).then_some(smix_capsule::runner_android::DEFAULT_ANDROID_PORT)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    fn port_helps(cmd: &clap::Command, path: &str, out: &mut Vec<(String, String)>) {
+        for arg in cmd.get_arguments() {
+            if arg.get_long() == Some("port") {
+                let help = arg
+                    .get_long_help()
+                    .or(arg.get_help())
+                    .map(|h| h.to_string());
+                out.push((path.to_string(), help.unwrap_or_default()));
+            }
+        }
+        for sub in cmd.get_subcommands() {
+            port_helps(sub, &format!("{path} {}", sub.get_name()), out);
+        }
+    }
+
+    // every verb that dials a runner by device says where an unset port
+    // comes from; 24.0.0 changed the order and left the old sentence on
+    // every `--port` that still read "SMIX_RUNNER_PORT env or 22087"
+    #[test]
+    fn a_port_left_unset_is_described_by_the_dial_order() {
+        let mut helps = Vec::new();
+        port_helps(&crate::Cli::command(), "smix", &mut helps);
+        let dialled: Vec<_> = helps
+            .iter()
+            .filter(|(_, h)| h.contains("SMIX_RUNNER_PORT"))
+            .collect();
+        assert!(
+            dialled.len() >= 19,
+            "only {} `--port` helps name SMIX_RUNNER_PORT — the walk lost the verbs",
+            dialled.len()
+        );
+        let stale: Vec<_> = dialled
+            .iter()
+            .filter(|(_, h)| !(h.contains("--device") && h.contains("28080")))
+            .map(|(p, _)| p.as_str())
+            .collect();
+        assert!(
+            stale.is_empty(),
+            "`--port` help still says the old order: {stale:?}"
+        );
+    }
 }

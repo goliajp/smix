@@ -301,7 +301,7 @@ enum Cmd {
         /// fail, it misreads.
         #[arg(long = "ocr-locale")]
         ocr_locale: Vec<String>,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -340,7 +340,7 @@ enum Cmd {
         /// fail, it misreads.
         #[arg(long = "ocr-locale")]
         ocr_locale: Vec<String>,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -372,7 +372,7 @@ enum Cmd {
         /// fail, it misreads.
         #[arg(long = "ocr-locale")]
         ocr_locale: Vec<String>,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -414,7 +414,7 @@ enum Cmd {
         /// refuses it. A flow spells it `method: setText`.
         #[arg(long = "set-text", default_value_t = false)]
         set_text: bool,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -440,7 +440,7 @@ enum Cmd {
     PressKey {
         /// The key's name, read as a flow's `pressKey` reads it.
         key: String,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -506,7 +506,7 @@ enum Cmd {
         /// SEE, not the finger's path. `up` / `down` / `left` / `right`.
         #[arg(long)]
         direction: String,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -531,7 +531,7 @@ enum Cmd {
         /// Emit machine-readable JSON instead of the human outline.
         #[arg(long)]
         json: bool,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -575,7 +575,7 @@ enum Cmd {
         /// Emit machine-readable JSON instead of the human outline.
         #[arg(long)]
         json: bool,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -593,7 +593,7 @@ enum Cmd {
         /// Emit machine-readable JSON instead of the human outline.
         #[arg(long)]
         json: bool,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -614,7 +614,7 @@ enum Cmd {
         popup_id: String,
         /// Which button on it, as that same listing reports it.
         button_id: String,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -635,7 +635,7 @@ enum Cmd {
     RunScript {
         /// Path to the script yaml file.
         path: PathBuf,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         /// `--runner-port` is accepted too — `smix run` spells it that way.
         #[arg(long, alias = "runner-port")]
         port: Option<u16>,
@@ -1016,7 +1016,7 @@ enum AuthoringAction {
     Suggest {
         /// Partial selector spec.
         partial: String,
-        /// Runner HTTP port. Defaults to SMIX_RUNNER_PORT env or 22087.
+        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
         #[arg(long, env = "SMIX_RUNNER_PORT")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's

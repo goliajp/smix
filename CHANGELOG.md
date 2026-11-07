@@ -2,6 +2,16 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **`--port` help states where an unset port comes from.** Every verb that
+  dials a runner still said "defaults to SMIX_RUNNER_PORT env or 22087"
+  after 24.0.0 changed the order; it now names it: `SMIX_RUNNER_PORT`, the
+  runner smix brought up on `--device`, the registered `runnerPort`, then
+  22087 on iOS or 28080 on Android.
+
 ## [24.0.0] — 2026-11-08
 
 ### Breaking
