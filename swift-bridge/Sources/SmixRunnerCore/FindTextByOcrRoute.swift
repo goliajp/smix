@@ -120,6 +120,27 @@ public enum FindTextByOcrRoute {
     return envelope(.ok, body)
   }
 
+  /// Why this platform reads no text from pixels, or nil where it does.
+  /// "Not found" would be a different answer: it says the words are not
+  /// on the screen, when here nothing was looked for.
+  public static var unavailableHere: String? {
+    #if os(watchOS)
+      return "watchOS has no text recognition (Vision's text requests are not on a watch); "
+        + "name the element by id, text or label instead"
+    #else
+      return nil
+    #endif
+  }
+
+  /// The refusal for a platform with no text recognition: `ok:false`, the
+  /// name, and the reason in `saw` where the host reads it.
+  public static func unavailable(_ saw: String) -> HTTPResponse {
+    let body = try! JSONSerialization.data(
+      withJSONObject: ["found": false, "ok": false, "error": "unsupported_on_platform", "saw": saw],
+      options: [.sortedKeys])
+    return HTTPResponse(statusCode: .ok, headers: [.contentType: "application/json"], body: body)
+  }
+
   public static func badRequest(reason: String) -> HTTPResponse {
     let escaped = reason.replacingOccurrences(of: "\\", with: "\\\\")
       .replacingOccurrences(of: "\"", with: "\\\"")

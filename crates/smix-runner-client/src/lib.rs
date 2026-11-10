@@ -1887,6 +1887,9 @@ impl HttpRunnerClient {
         struct Resp {
             found: bool,
             frame: Option<[f64; 4]>,
+            // a platform with no text recognition refuses by name
+            #[serde(flatten)]
+            refusal: OkEnvelope,
         }
         let resp: Resp = self
             .json_post(
@@ -1899,6 +1902,7 @@ impl HttpRunnerClient {
                 None,
             )
             .await?;
+        resp.refusal.require_ok("/find-text-by-ocr")?;
         if !resp.found {
             return Ok(None);
         }
