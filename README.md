@@ -7,7 +7,7 @@
 [![crates.io](https://img.shields.io/crates/v/smix-cli?label=crates.io%20smix-cli&logo=rust&style=flat-square)](https://crates.io/crates/smix-cli)
 [![Maven Central](https://img.shields.io/maven-central/v/jp.golia.smix/smix-sdk?label=Maven%20Central%20jp.golia.smix&logo=apachemaven&style=flat-square)](https://central.sonatype.com/artifact/jp.golia.smix/smix-sdk)
 
-AI-native UI automation for the iOS Simulator, the Android Emulator, and — once registered — physical iPhones and Android devices. Written in Rust; distributed as a CLI (`smix`), a Rust SDK, and native SDKs for Swift and Kotlin. A TypeScript package ships the same typed API surface and drives a device through the napi addon; three surfaces (`App.screenshot`, `App.openUrl`, `App.launchFresh`) still throw `SmixNotImplementedError` pending their transport — see the [npm package README](./npm/smix-rn/README.md).
+AI-native UI automation for the iOS Simulator — and the Apple Watch, Apple TV and Apple Vision Pro simulators — the Android Emulator, and, once registered, physical iPhones and Android devices. Written in Rust; distributed as a CLI (`smix`), a Rust SDK, and native SDKs for Swift and Kotlin. A TypeScript package ships the same typed API surface and drives a device through the napi addon; three surfaces (`App.screenshot`, `App.openUrl`, `App.launchFresh`) still throw `SmixNotImplementedError` pending their transport — see the [npm package README](./npm/smix-rn/README.md).
 
 Designed for LLM-authored test flows:
 
