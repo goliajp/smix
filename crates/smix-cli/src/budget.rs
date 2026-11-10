@@ -60,7 +60,7 @@ impl Class {
         }
     }
 
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Class::Phone => "iPhone",
             Class::Tablet => "iPad",

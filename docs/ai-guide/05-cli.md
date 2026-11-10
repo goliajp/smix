@@ -979,6 +979,17 @@ smix sim boot sim-smix-02 --wait 600    # queue for up to ten minutes instead of
 `--wait` looks again every ten seconds and boots as soon as there is room;
 when the time runs out it refuses with the same names.
 
+To ask before booting anything, `smix sim budget` lists what is running, what
+each holds and how much of the budget is free. `--need <kind>` (repeatable:
+`phone`, `tablet`, `tv`, `vision`, `watch`, `android-phone`,
+`android-tablet`) checks the devices about to be booted against it, in order,
+and exits 1 naming the first that would be refused and how many GiB are
+short:
+
+```bash
+smix sim budget --need phone --need android-phone
+```
+
 ### Taking down one task's resources (`smix cleanup`)
 
 ```bash
