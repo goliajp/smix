@@ -181,3 +181,21 @@ func smixHasFocus(_ reported: Any?, identifier: String, hint: String?) -> Bool {
   return hint.map { !identifier.isEmpty && $0 == identifier } ?? false
   #endif
 }
+
+#if os(watchOS)
+/// Where a swipe that brings `direction` into view starts and ends on a
+/// watch, as shares of the screen. XCUI's own swipe on the app did nothing
+/// toward the earlier rows of a list (watchOS 27.2: a swipe down left it
+/// where it was, a drag from 30% to 80% of the height moved it back five
+/// rows), so the finger is put down and lifted well inside the screen, as a
+/// coordinate swipe is.
+func smixWatchSwipeEnds(_ direction: String) -> (from: (Double, Double), to: (Double, Double))? {
+  switch direction {
+  case "down": return ((0.5, 0.8), (0.5, 0.3))
+  case "up": return ((0.5, 0.3), (0.5, 0.8))
+  case "left": return ((0.2, 0.5), (0.8, 0.5))
+  case "right": return ((0.8, 0.5), (0.2, 0.5))
+  default: return nil
+  }
+}
+#endif
