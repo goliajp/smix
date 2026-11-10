@@ -119,9 +119,9 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "crc32fast"
-version = "1.5.4"
+version = "1.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f97d3416d5337d15c4b0d78c8c91df922ca143f57ec20e2d1c188333047ef04"
+checksum = "2b929dd2a135771f40afabd1073f85eed59c800b7c61901e5c254270497dad64"
 dependencies = [
  "cfg-if",
 ]
@@ -1024,7 +1024,7 @@ checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
 
 [[package]]
 name = "smix-adb"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1036,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "smix-authoring-ir"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "serde",
  "smix-input",
@@ -1045,7 +1045,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "async-trait",
  "png",
@@ -1064,7 +1064,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -1073,7 +1073,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "smix-input",
  "smix-screen",
@@ -1084,14 +1084,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-lease"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1101,7 +1101,7 @@ dependencies = [
 
 [[package]]
 name = "smix-recorder"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-client"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -1146,7 +1146,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1157,7 +1157,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1165,7 +1165,7 @@ dependencies = [
 
 [[package]]
 name = "smix-sdk"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1188,7 +1188,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "regex",
  "serde",
@@ -1197,7 +1197,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1205,14 +1205,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "libc",
  "serde",
@@ -1227,7 +1227,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "25.0.0"
+version = "25.1.0"
 dependencies = [
  "kevy-embedded",
  "serde",
