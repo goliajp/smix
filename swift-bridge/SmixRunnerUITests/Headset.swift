@@ -88,8 +88,9 @@ func smixHeadsetTap(
       let element = app.descendants(matching: .any).matching(identifier: id).firstMatch
       guard element.exists else { return false }
       #if os(tvOS)
-      // no press on a television: each is a focus-then-select
-      for _ in 0..<max(1, times) { guard smixActivate(element) else { return false } }
+      // no press on a television: focus it, then select as many times and
+      // as long as the touch would have been
+      guard SmixRemote.focusThenSelect(element, times: times, hold: hold) else { return false }
       #else
       for _ in 0..<max(1, times) { if hold > 0 { element.press(forDuration: hold) } else { element.tap() } }
       #endif

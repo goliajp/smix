@@ -63,14 +63,18 @@ enum SmixRemote {
   static let lock = NSLock()
 
   /// Move the focus onto `target`, a press at a time toward it, then press
-  /// select. False when the focus stops moving or never arrives.
-  static func focusThenSelect(_ target: XCUIElement) -> Bool {
+  /// select `times` times, each held `hold` seconds when that is above
+  /// zero — a double tap and a long press as the remote makes them. False
+  /// when the focus stops moving or never arrives.
+  static func focusThenSelect(_ target: XCUIElement, times: Int = 1, hold: TimeInterval = 0) -> Bool {
     guard target.exists else { return say("the target is gone") }
     let remote = XCUIRemote.shared
     var last: CGRect?
     for _ in 0..<maxPresses {
       if target.hasFocus {
-        remote.press(.select)
+        for _ in 0..<max(1, times) {
+          if hold > 0 { remote.press(.select, forDuration: hold) } else { remote.press(.select) }
+        }
         return true
       }
       guard let focused = focusedElement(), focused.exists else {
@@ -94,7 +98,9 @@ enum SmixRemote {
 
   /// The element a host aimed at by a normalised point: the smallest
   /// focusable element whose frame holds it. Focused and selected.
-  static func activate(at norm: CGVector, in app: XCUIApplication) -> Bool {
+  static func activate(
+    at norm: CGVector, in app: XCUIApplication, times: Int = 1, hold: TimeInterval = 0
+  ) -> Bool {
     let frame = app.frame
     let point = CGPoint(
       x: frame.minX + norm.dx * frame.width, y: frame.minY + norm.dy * frame.height)
@@ -116,7 +122,7 @@ enum SmixRemote {
       if best != nil, type == .cell || type == .button { break }
     }
     guard let target = best?.0 else { return say("nothing focusable under \(point)") }
-    let done = focusThenSelect(target)
+    let done = focusThenSelect(target, times: times, hold: hold)
     say("activate at \(point): \(target.elementType.rawValue) \(target.frame) → \(done)")
     return done
   }
