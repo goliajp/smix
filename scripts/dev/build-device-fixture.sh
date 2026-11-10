@@ -40,8 +40,10 @@ mkdir -p "$APP"
 xcrun --sdk "$SDK_NAME" swiftc ${LIBRARY[@]+"${LIBRARY[@]}"} -target "$TRIPLE" -sdk "$SDK" -o "$APP/$EXE" "$SRC" \
   || fail "swiftc failed"
 
-WATCH_KEYS=""
-[ "$KIND" = watch ] && WATCH_KEYS="<key>WKApplication</key><true/><key>WKWatchOnly</key><true/>"
+EXTRA_KEYS=""
+[ "$KIND" = watch ] && EXTRA_KEYS="<key>WKApplication</key><true/><key>WKWatchOnly</key><true/>"
+[ "$KIND" = tv ] && EXTRA_KEYS="<key>UIApplicationSceneManifest</key><dict>
+    <key>UIApplicationSupportsMultipleScenes</key><false/></dict>"
 cat > "$APP/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -55,7 +57,7 @@ cat > "$APP/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>1</string>
   <key>MinimumOSVersion</key><string>$MIN</string>
   <key>UIDeviceFamily</key><array><integer>$FAMILY</integer></array>
-  $WATCH_KEYS
+  $EXTRA_KEYS
 </dict>
 </plist>
 PLIST

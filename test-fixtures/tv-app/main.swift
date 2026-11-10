@@ -41,17 +41,31 @@ final class TVController: UIViewController {
 }
 
 final class AppDelegate: UIResponder, UIApplicationDelegate {
-  var window: UIWindow?
-
   func application(
     _ application: UIApplication,
-    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
-  ) -> Bool {
-    let window = UIWindow(frame: UIScreen.main.bounds)
+    configurationForConnecting connectingSceneSession: UISceneSession,
+    options: UIScene.ConnectionOptions
+  ) -> UISceneConfiguration {
+    let config = UISceneConfiguration(name: "Default", sessionRole: connectingSceneSession.role)
+    config.delegateClass = SceneDelegate.self
+    return config
+  }
+}
+
+/// tvOS 27 ends an app that makes its window without a scene, before its
+/// first frame.
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+  var window: UIWindow?
+
+  func scene(
+    _ scene: UIScene, willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+    guard let windowScene = scene as? UIWindowScene else { return }
+    let window = UIWindow(windowScene: windowScene)
     window.rootViewController = TVController()
     window.makeKeyAndVisible()
     self.window = window
-    return true
   }
 }
 
