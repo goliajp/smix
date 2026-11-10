@@ -1,6 +1,7 @@
 {
 "files": {
 "scripts/dev/build-fixture-app.sh": "bb2efc0d0bf12d1e748695ba1cd45e02e37d500497bdfa51ed2bca2d30347c1e",
+"test-fixtures/demo-app/Arrive.swift": "4806e5acea14b7633c6ad52b30fb55a6be69f5f539211e3df32ddfd2305fb0a0",
 "test-fixtures/demo-app/Blink.swift": "6bf6acc36bb61ef657848c5c559c1f06a6166193261a0c7bfb0a3a1a7199872d",
 "test-fixtures/demo-app/Live.swift": "cf1f730dd8622f0d300c02c46cfc011e5bc5348228f91b5c52e7bca985ffbd19",
 "test-fixtures/demo-app/PinchView.swift": "d4433e69eee54401d32e444620e0bd19d34564ac3371572503083f7e9b688011",
@@ -9,6 +10,6 @@
 "test-fixtures/demo-app/UIKitRows.swift": "1973f96484f44ecd94e2df9587cfbbbe3e8b8655dc36478c0bf151c0e672983f",
 "test-fixtures/demo-app/UIKitSignIn.swift": "90a94c914efb9064f65c1bdf1a625c16892ade6c515bb5ecaadc309049fbaccb",
 "test-fixtures/demo-app/Zoom.swift": "2d979a7b0b9a6a676deb8eb634d298c39470df71f38adafa1ee160fa05106750",
-"test-fixtures/demo-app/main.swift": "9aa3a87a8a98700127fbf73ea96debaf25b5f8ca9150d6e64585b3dedf0fd4e6"
+"test-fixtures/demo-app/main.swift": "ca20b6e26f34c53fbc5680b3718c63247c4d79b22dab366389ab46e9c6f8df9e"
 }
 }

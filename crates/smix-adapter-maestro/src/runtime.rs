@@ -30,6 +30,7 @@ const IMPLICIT_WAIT: Duration = Duration::from_secs(5);
 
 const MAX_REPEAT_ITERATIONS: u32 = 1000;
 use async_trait::async_trait;
+use smix_driver::ScreenAtTouch;
 use smix_sdk::{
     App, ExpectationFailure, FailureCode, FailureInit, KeyName, LaunchAppOptions, Pattern,
     PermissionAction, Selector, SwipeDirection, device_control::Permission,
@@ -127,24 +128,6 @@ fn launch_fresh_app_path_from_env(bundle_id: &str) -> Option<String> {
     std::env::var(&key).ok().filter(|s| !s.is_empty())
 }
 
-/// How a stillness wait ended.
-///
-/// Three, not two. A bool said "settled or not", and a window in which
-/// nothing could be looked at is neither — reporting it as "still
-/// moving" would claim an observation nobody made, and reporting it as
-/// a failure is what stopped a consumer's release pipeline on a verb
-/// that exists in order to wait.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Stillness {
-    /// Two consecutive frames matched within tolerance.
-    Settled,
-    /// The ceiling expired with the screen still changing.
-    StillMoving,
-    /// The ceiling expired without one usable pair of frames: every
-    /// capture in the window was refused as backpressure.
-    NeverObserved,
-}
-
 // ----------------------------------------------------------------------
 // AppLike trait + blanket impl for smix_sdk::App
 // ----------------------------------------------------------------------
@@ -186,7 +169,7 @@ pub trait AppLike: Send + Sync {
         keys: &[String],
     ) -> Result<(), ExpectationFailure>;
     /// Tap at normalized coordinates. Mirrors [`App::tap_at_coord`].
-    async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure>;
+    async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<ScreenAtTouch, ExpectationFailure>;
     /// Apple Vision OCR find. Mirrors [`App::find_by_text_ocr`].
     /// Returns the matching text observation's bounding box (UIKit
     /// normalized) or `None`.
@@ -430,7 +413,11 @@ pub trait AppLike: Send + Sync {
     /// nothing: a gesture that silently does not happen is the failure
     /// mode this whole line of work is about. Everything in this tree
     /// overrides it.
-    async fn double_tap_at_coord(&self, _nx: f64, _ny: f64) -> Result<(), ExpectationFailure> {
+    async fn double_tap_at_coord(
+        &self,
+        _nx: f64,
+        _ny: f64,
+    ) -> Result<ScreenAtTouch, ExpectationFailure> {
         Err(ExpectationFailure::new(FailureInit {
             code: Some(FailureCode::DriverError),
             message: "double_tap_at_coord: this App has no coordinate double-tap. \
@@ -447,7 +434,7 @@ pub trait AppLike: Send + Sync {
         _nx: f64,
         _ny: f64,
         _duration_ms: u64,
-    ) -> Result<(), ExpectationFailure> {
+    ) -> Result<ScreenAtTouch, ExpectationFailure> {
         Err(ExpectationFailure::new(FailureInit {
             code: Some(FailureCode::DriverError),
             message: "long_press_at_coord: this App has no coordinate long press. \
@@ -569,7 +556,7 @@ impl AppLike for App {
         App::webview_eval(self, js).await
     }
 
-    async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
+    async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<ScreenAtTouch, ExpectationFailure> {
         App::tap_at_coord(self, nx, ny).await
     }
     async fn tap_with_mode(
@@ -756,7 +743,11 @@ impl AppLike for App {
     async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         App::double_tap(self, selector).await
     }
-    async fn double_tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
+    async fn double_tap_at_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+    ) -> Result<ScreenAtTouch, ExpectationFailure> {
         App::double_tap_at_coord(self, nx, ny).await
     }
     async fn long_press_at_coord(
@@ -764,7 +755,7 @@ impl AppLike for App {
         nx: f64,
         ny: f64,
         duration_ms: u64,
-    ) -> Result<(), ExpectationFailure> {
+    ) -> Result<ScreenAtTouch, ExpectationFailure> {
         App::long_press_at_coord(self, nx, ny, duration_ms).await
     }
     async fn tap_burst(
@@ -2024,65 +2015,6 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         Ok(())
     }
 
-    /// Sample the screen until two consecutive frames are still or
-    /// `ceiling_ms` runs out: settled, still moving, or never given a look.
-    /// Screenshot backpressure ("not now, shortly") is waited through, as a
-    /// wait should; until 7.1 it failed the step and stopped a consumer's
-    /// release pipeline. An undecodable frame or an unreachable runner
-    /// still ends the step — a frame that cannot be compared is not motion.
-    async fn wait_until_still(&self, ceiling_ms: u64) -> Result<Stillness, RunError> {
-        // No sleep between successful samples: the capture is the
-        // interval. The raw-BGRA capture path grabs a frame directly from
-        // the resident IOSurface host (~sub-ms) and compares grayscale in
-        // place — no PNG encode/decode. It falls back to a simctl PNG
-        // frame when the surface is unavailable, and `frames_still`
-        // compares BGRA and PNG frames interchangeably.
-        //
-        // A refusal is different: re-asking a loaded capture path
-        // immediately is what put it under pressure, so a refused sample
-        // does sleep. The interval is ours rather than the window the
-        // pacer states, because the deadline below is what actually ends
-        // this — reading a duration back out of a message would be
-        // parsing prose for a decision.
-        const REFUSED_RETRY: Duration = Duration::from_millis(100);
-        let budget = smix_driver::poll::Budget::new(Duration::from_millis(ceiling_ms));
-
-        let mut previous = loop {
-            let look = budget.look();
-            match self.app.capture_frame().await {
-                Ok(frame) => break frame,
-                Err(e) if e.code == FailureCode::CaptureBackpressure => {
-                    if budget.spent_by(look) {
-                        return Ok(Stillness::NeverObserved);
-                    }
-                    tokio::time::sleep(REFUSED_RETRY).await;
-                }
-                Err(e) => return Err(RunError::Sdk(e)),
-            }
-        };
-        loop {
-            let look = budget.look();
-            let next = match self.app.capture_frame().await {
-                Ok(frame) => frame,
-                Err(e) if e.code == FailureCode::CaptureBackpressure => {
-                    if budget.spent_by(look) {
-                        return Ok(Stillness::NeverObserved);
-                    }
-                    tokio::time::sleep(REFUSED_RETRY).await;
-                    continue;
-                }
-                Err(e) => return Err(RunError::Sdk(e)),
-            };
-            if smix_sdk::quiescence::frames_still(&previous, &next, &self.quiescence)? {
-                return Ok(Stillness::Settled);
-            }
-            if budget.spent_by(look) {
-                return Ok(Stillness::StillMoving);
-            }
-            previous = next;
-        }
-    }
-
     async fn run_step(
         &mut self,
         step: &Step,
@@ -2220,17 +2152,18 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 }
             }
             Step::TapAtPoint { nx, ny } => {
-                self.app.tap_at_coord(*nx, *ny).await?;
+                let at = self.app.tap_at_coord(*nx, *ny).await?;
+                warnings.extend(at.caveat().map(|c| format!("tapOn point: {c}")));
                 Ok(RunStepReport::Ok)
             }
             Step::WaitForAnimationToEnd { ceiling_ms } => {
-                match self.wait_until_still(*ceiling_ms).await? {
-                    Stillness::Settled => {}
+                match crate::stillness::until_still(self.app, &self.quiescence, *ceiling_ms).await? {
+                    crate::stillness::Stillness::Settled => {}
                     // Not a failure. A screen that never settles is usually
                     // a spinner or a caret the flow doesn't care about, and
                     // failing here would make the verb unusable on any screen
                     // with one.
-                    Stillness::StillMoving => warnings.push(format!(
+                    crate::stillness::Stillness::StillMoving => warnings.push(format!(
                         "waitForAnimationToEnd: the screen was still moving after {ceiling_ms}ms; carrying on. Raise the ceiling if the animation really is longer."
                     )),
                     // Same answer, different reason, and the reason has to
@@ -2238,7 +2171,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     // is not something a flow author can act on, and
                     // reporting it sent one consumer looking at their own
                     // image diffs for a day.
-                    Stillness::NeverObserved => warnings.push(format!(
+                    crate::stillness::Stillness::NeverObserved => warnings.push(format!(
                         "waitForAnimationToEnd: never got a look at the screen in {ceiling_ms}ms — the device's capture path was refusing frames for the whole window, so nothing here saw whether it settled. Carrying on. This is about the device, not the flow: a simulator that has been up long enough to go slow is the usual cause."
                     )),
                 }

@@ -545,27 +545,35 @@ impl AppLike for MockApp {
             .push(MockCall::WebViewEval(js.to_string()));
         Ok(self.webview_result.lock().unwrap().clone())
     }
-    async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
+    async fn tap_at_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+    ) -> Result<smix_driver::ScreenAtTouch, ExpectationFailure> {
         self.calls
             .lock()
             .unwrap()
             .push(MockCall::TapAtCoord(nx, ny));
-        Ok(())
+        Ok(smix_driver::ScreenAtTouch::Unseen)
     }
-    async fn double_tap_at_coord(&self, _nx: f64, _ny: f64) -> Result<(), ExpectationFailure> {
-        Ok(())
+    async fn double_tap_at_coord(
+        &self,
+        _nx: f64,
+        _ny: f64,
+    ) -> Result<smix_driver::ScreenAtTouch, ExpectationFailure> {
+        Ok(smix_driver::ScreenAtTouch::Unseen)
     }
     async fn long_press_at_coord(
         &self,
         nx: f64,
         ny: f64,
         duration_ms: u64,
-    ) -> Result<(), ExpectationFailure> {
+    ) -> Result<smix_driver::ScreenAtTouch, ExpectationFailure> {
         self.calls
             .lock()
             .unwrap()
             .push(MockCall::LongPressAtCoord(nx, ny, duration_ms));
-        Ok(())
+        Ok(smix_driver::ScreenAtTouch::Unseen)
     }
     async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
         self.calls

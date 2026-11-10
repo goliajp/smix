@@ -77,19 +77,27 @@ impl AppLike for SilentMockApp {
         // SilentMockApp: webview_eval not used in corpus_full yaml coverage.
         Ok(serde_json::Value::Null)
     }
-    async fn tap_at_coord(&self, _: f64, _: f64) -> Result<(), ExpectationFailure> {
-        Ok(())
+    async fn tap_at_coord(
+        &self,
+        _: f64,
+        _: f64,
+    ) -> Result<smix_driver::ScreenAtTouch, ExpectationFailure> {
+        Ok(smix_driver::ScreenAtTouch::Unseen)
     }
-    async fn double_tap_at_coord(&self, _nx: f64, _ny: f64) -> Result<(), ExpectationFailure> {
-        Ok(())
+    async fn double_tap_at_coord(
+        &self,
+        _nx: f64,
+        _ny: f64,
+    ) -> Result<smix_driver::ScreenAtTouch, ExpectationFailure> {
+        Ok(smix_driver::ScreenAtTouch::Unseen)
     }
     async fn long_press_at_coord(
         &self,
         _nx: f64,
         _ny: f64,
         _duration_ms: u64,
-    ) -> Result<(), ExpectationFailure> {
-        Ok(())
+    ) -> Result<smix_driver::ScreenAtTouch, ExpectationFailure> {
+        Ok(smix_driver::ScreenAtTouch::Unseen)
     }
     async fn fill(&self, _: &Selector, _: &str) -> Result<(), ExpectationFailure> {
         Ok(())

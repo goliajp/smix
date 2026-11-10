@@ -1,5 +1,6 @@
 mod a_failure_is_given_the_screen;
 mod a_landing_is_judged_by_the_reader_that_aimed;
+mod a_point_waits_for_the_screen;
 mod a_runner_not_found_is_not_a_driver_error;
 mod a_runner_that_went_away_says_so;
 mod a_tap_nothing_reports_on;

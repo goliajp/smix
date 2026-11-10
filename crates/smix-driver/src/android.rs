@@ -385,12 +385,12 @@ impl Driver for AndroidDriver {
         Err(dispatch_unsupported_err())
     }
 
-    async fn double_tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
-        self.runner
-            .double_tap_at_norm_coord(nx, ny)
-            .await
-            .map(|_| ())
-            .map_err(|e| runner_failure("double_tap_at_norm_coord", e))
+    async fn double_tap_at_norm_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+    ) -> Result<crate::ScreenAtTouch, ExpectationFailure> {
+        self.double_tap_at_point(nx, ny).await
     }
 
     async fn long_press_at_norm_coord(
@@ -398,21 +398,16 @@ impl Driver for AndroidDriver {
         nx: f64,
         ny: f64,
         duration_ms: u64,
-    ) -> Result<(), ExpectationFailure> {
-        self.runner
-            .long_press_at_norm_coord(nx, ny, duration_ms)
-            .await
-            .map(|_| ())
-            .map_err(|e| runner_failure("long_press_at_norm_coord", e))
+    ) -> Result<crate::ScreenAtTouch, ExpectationFailure> {
+        self.long_press_at_point(nx, ny, duration_ms).await
     }
 
-    async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
-        // Direct passthru to Kotlin runner /tap-at-norm-coord.
-        self.runner
-            .tap_at_norm_coord(nx, ny)
-            .await
-            .map(|_| ())
-            .map_err(|e| runner_failure("tap_at_norm_coord", e))
+    async fn tap_at_norm_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+    ) -> Result<crate::ScreenAtTouch, ExpectationFailure> {
+        self.tap_at_point(nx, ny).await
     }
 
     async fn tap_by_id(&self, id: &str) -> Result<(), ExpectationFailure> {
@@ -696,7 +691,10 @@ impl Driver for AndroidDriver {
 }
 
 /// A runner call that failed, named by the driver method that made it.
-fn runner_failure(method: &str, e: smix_runner_client::RunnerTransportError) -> ExpectationFailure {
+pub(crate) fn runner_failure(
+    method: &str,
+    e: smix_runner_client::RunnerTransportError,
+) -> ExpectationFailure {
     ExpectationFailure::new(FailureInit {
         code: Some(FailureCode::DriverError),
         message: format!("AndroidDriver::{method}: {e}"),

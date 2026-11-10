@@ -732,6 +732,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       root = LiveController()
     } else if CommandLine.arguments.contains("-push") {
       root = PushController()
+    } else if CommandLine.arguments.contains("-arrive") {
+      root = ArriveController()
     } else if CommandLine.arguments.contains("-toast") {
       root = ToastController()
     } else if CommandLine.arguments.contains("-sheet-over-form") {

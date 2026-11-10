@@ -24,6 +24,7 @@
 mod frames;
 mod gestures;
 mod stdio;
+mod tap_report;
 
 use rmcp::ErrorData as McpError;
 use rmcp::ServiceExt;
@@ -516,12 +517,12 @@ impl SmixMcpService {
         if let Some(layers) = chain_of(&sel) {
             for (i, layer) in layers.iter().enumerate() {
                 let hit = match (point_of(layer), ocr_text_of(layer)) {
-                    (Some((nx, ny)), _) => app.tap_at_coord(nx, ny).await.map(|()| true),
+                    (Some((nx, ny)), _) => app.tap_at_coord(nx, ny).await.map(|_| true),
                     (_, Some(needle)) => match app
                         .find_by_text_ocr(needle, ocr_locales_of(layer))
                         .await
                     {
-                        Ok(Some(f)) => app.tap_at_coord(f.mid_x(), f.mid_y()).await.map(|()| true),
+                        Ok(Some(f)) => app.tap_at_coord(f.mid_x(), f.mid_y()).await.map(|_| true),
                         Ok(None) => Ok(false),
                         Err(e) => Err(e),
                     },
@@ -545,14 +546,15 @@ impl SmixMcpService {
                 None,
             ));
         }
+        let mut screen = None;
         let outcome = match (point_of(&sel), ocr_text_of(&sel)) {
             // A place, not a thing: the resolver has nothing to match, so
             // the touch is synthesised straight at the coordinate — the
             // same dispatch `tapOn: { point: … }` takes in a flow.
-            (Some((nx, ny)), _) => app
-                .tap_at_coord(nx, ny)
-                .await
-                .map(|()| smix_sdk::ActOutcome::unjudged()),
+            (Some((nx, ny)), _) => app.tap_at_coord(nx, ny).await.map(|at| {
+                screen = Some(at);
+                smix_sdk::ActOutcome::unjudged()
+            }),
             // An OCR hit is a text frame, not a resolved element, so
             // there is nothing to have missed.
             (_, Some(needle)) => app
@@ -562,36 +564,7 @@ impl SmixMcpService {
             _ => app.tap(&sel).await,
         }
         .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
-        // What the touch landed on, not just that one was sent. This
-        // used to answer "tapped: <selector>" — a claim about the
-        // selector, made on the evidence that a touch had been
-        // synthesised somewhere, which is the reading a consumer found
-        // out the hard way was not the same thing.
-        //
-        // The elements are listed even when the verdict passed: the
-        // verdict cannot see an element covered by something else and
-        // this list can, and an agent deciding whether to retry or to
-        // report upward is exactly who needs to know.
-        let mut report = format!("tapped: {}", smix_selector::describe_selector(&sel));
-        if !outcome.observed.is_empty() {
-            let at: Vec<String> = outcome
-                .observed
-                .iter()
-                .map(|e| {
-                    if !e.identifier.is_empty() {
-                        e.identifier.clone()
-                    } else if !e.label.is_empty() {
-                        format!("{:?}", e.label)
-                    } else {
-                        "<unnamed>".to_string()
-                    }
-                })
-                .collect();
-            report.push_str(&format!("\nthe tapped point is inside: {}", at.join(" < ")));
-        }
-        if let smix_sdk::ActVerdict::Unconfirmable(why) = &outcome.verdict {
-            report.push_str(&format!("\nnot verified: {why}"));
-        }
+        let report = tap_report::tapped(&sel, &outcome, screen);
         Ok(CallToolResult::success(vec![ContentBlock::text(report)]))
     }
 

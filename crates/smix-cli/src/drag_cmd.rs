@@ -84,9 +84,13 @@ pub async fn cmd_long_press(
             let (nx, ny) = smix_driver::locate(d.as_ref(), &sel)
                 .await
                 .map_err(failed)?;
-            d.long_press_at_norm_coord(nx, ny, args.duration_ms)
+            let at = d
+                .long_press_at_norm_coord(nx, ny, args.duration_ms)
                 .await
                 .map_err(failed)?;
+            if let Some(c) = at.caveat() {
+                println!("  {c}");
+            }
         }
         _ => {
             d.long_press(&sel, Duration::from_millis(args.duration_ms), None)
@@ -127,6 +131,21 @@ pub async fn cmd_drag(args: DragArgs, port: u16, platform: Platform) -> Result<(
         drag.hold_ms,
         drag.duration_ms,
         drag.release_ms
+    );
+    Ok(())
+}
+
+/// `smix tap point:…` — a place, not a thing: the touch goes straight to
+/// the coordinate, as `tapOn: { point }` does, once the screen has stopped
+/// moving, and the answer says when it had not.
+pub async fn tap_point(d: &dyn smix_driver::Driver, nx: f64, ny: f64) -> Result<(), ActError> {
+    let at = d
+        .tap_at_norm_coord(nx, ny)
+        .await
+        .map_err(|e| ActError::Transport(e.to_prompt()))?;
+    let note = at.caveat().map_or_else(String::new, |c| format!("\n  {c}"));
+    println!(
+        "tapped: point=({nx:.3}, {ny:.3}) — not verified: this path sends a touch without resolving a target{note}"
     );
     Ok(())
 }

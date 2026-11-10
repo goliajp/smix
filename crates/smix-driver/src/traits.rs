@@ -250,8 +250,13 @@ pub trait Driver: Send + Sync {
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure>;
 
-    /// Tap at viewport-normalized coordinate (escape hatch).
-    async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure>;
+    /// Tap at viewport-normalized coordinate (escape hatch), once the
+    /// screen has stopped moving; the answer says what it was doing.
+    async fn tap_at_norm_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+    ) -> Result<crate::ScreenAtTouch, ExpectationFailure>;
 
     /// Double-tap at a viewport-normalized coordinate.
     ///
@@ -259,7 +264,11 @@ pub trait Driver: Send + Sync {
     /// compiling, and the default refuses rather than doing nothing:
     /// a gesture that silently does not happen is the failure mode this
     /// whole line of work is about. Both drivers here override it.
-    async fn double_tap_at_norm_coord(&self, _nx: f64, _ny: f64) -> Result<(), ExpectationFailure> {
+    async fn double_tap_at_norm_coord(
+        &self,
+        _nx: f64,
+        _ny: f64,
+    ) -> Result<crate::ScreenAtTouch, ExpectationFailure> {
         Err(ExpectationFailure::new(FailureInit {
             code: Some(FailureCode::DriverError),
             message: "double_tap_at_norm_coord: this driver has no coordinate \
@@ -277,7 +286,7 @@ pub trait Driver: Send + Sync {
         _nx: f64,
         _ny: f64,
         _duration_ms: u64,
-    ) -> Result<(), ExpectationFailure> {
+    ) -> Result<crate::ScreenAtTouch, ExpectationFailure> {
         Err(ExpectationFailure::new(FailureInit {
             code: Some(FailureCode::DriverError),
             message: "long_press_at_norm_coord: this driver has no coordinate \
