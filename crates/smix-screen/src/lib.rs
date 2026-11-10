@@ -28,6 +28,8 @@ mod bounds;
 pub use bounds::{Movement, bounds_moved, rect_in_points};
 mod whole_screen;
 pub use whole_screen::beside_other_windows;
+mod facts;
+pub use facts::{ScreenFacts, screen_facts};
 
 use serde::{Deserialize, Serialize};
 
@@ -664,37 +666,6 @@ impl WindowInfo {
         } else {
             self.touchable_rects.clone()
         }
-    }
-}
-
-/// What a failure says about the screen it happened on.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ScreenFacts {
-    /// The first `limit` elements a reader could name, the focused app's first.
-    pub elements: Vec<ElementSummary>,
-    /// How many there were before the list was cut.
-    pub total: usize,
-    /// The windows on screen, focused application first.
-    pub windows: Vec<WindowInfo>,
-    /// Windows the reader could not read.
-    pub unreadable: u32,
-}
-
-/// The screen, as a failure should describe it.
-#[must_use]
-pub fn screen_facts(tree: &A11yNode, limit: usize) -> ScreenFacts {
-    let all = collect_visible_summaries(tree, usize::MAX);
-    let mut windows: Vec<WindowInfo> = tree.window.iter().cloned().collect();
-    windows.extend(
-        in_window_order(&tree.children)
-            .into_iter()
-            .filter_map(|c| c.window.clone()),
-    );
-    ScreenFacts {
-        total: all.len(),
-        elements: all.into_iter().take(limit).collect(),
-        windows,
-        unreadable: tree.unreadable_windows.unwrap_or(0),
     }
 }
 
@@ -1645,7 +1616,12 @@ mod screen_facts_tests {
     fn the_total_is_counted_before_the_list_is_cut() {
         let tree = android_screen();
         let facts = screen_facts(&tree, 10);
-        assert_eq!(facts.elements.len(), 10);
+        let worded = collect_visible_summaries(&tree, usize::MAX)
+            .iter()
+            .skip(10)
+            .filter(|e| crate::facts::carries_words(e))
+            .count();
+        assert_eq!(facts.elements.len(), 10 + worded);
         assert_eq!(facts.total, 30, "12 app + 15 status bar + 3 nav bar");
         assert_eq!(
             facts.total,

@@ -1617,7 +1617,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         let err = match self.app.tree().await {
             Ok(tree) => {
                 let mut e = err;
-                e.visible_elements = smix_sdk::collect_visible_summaries(&tree, 10);
+                e.visible_elements = smix_sdk::screen_facts(&tree, 10).elements;
                 e
             }
             Err(_) => err,

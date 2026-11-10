@@ -1146,9 +1146,7 @@ impl IosDriver {
                     let still = stillness.still_for_the_limit(poll::fingerprint(&tree));
                     if still || budget.spent_by(look) {
                         let screen = screen_facts(&tree, 10);
-                        let target = base_text_or_id(selector);
-                        let suggestions =
-                            smix_error::build_suggestions(target.as_deref(), &screen.elements);
+                        let suggestions = aim::suggestions_for(&tree, selector);
                         let hint = wait_miss_hint(selector, tree_hit_offscreen);
                         return Err(ExpectationFailure::new(
                             FailureInit {
@@ -1312,47 +1310,6 @@ pub(crate) fn wait_miss_hint(selector: &Selector, tree_hit_offscreen: bool) -> O
          Or look for it by pixels with `ocrText:`."
             .to_string()
     })
-}
-
-pub(crate) fn element_not_found(tree: &A11yNode, selector: &Selector) -> ExpectationFailure {
-    let screen = screen_facts(tree, 10);
-    let target = base_text_or_id(selector);
-    let suggestions = smix_error::build_suggestions(target.as_deref(), &screen.elements);
-    ExpectationFailure::new(
-        FailureInit {
-            code: Some(FailureCode::ElementNotFound),
-            message: format!("element not found: {}", describe_selector(selector)),
-            selector: Some(selector.clone()),
-            suggestions,
-            hint: Some(not_found_hint(tree, selector)),
-            ..Default::default()
-        }
-        .with_screen(screen),
-    )
-}
-
-/// What to do about a miss: an element the tree holds off screen is
-/// scrolled to, not looked for under another name.
-fn not_found_hint(tree: &A11yNode, selector: &Selector) -> String {
-    let off = smix_selector_resolver::matched_off_screen(tree, selector);
-    let Some(first) = off.first() else {
-        return "matched 0 nodes in the current a11y tree; check selector or wait for the screen to settle"
-            .into();
-    };
-    let b = &first.bounds;
-    let s = &tree.bounds;
-    format!(
-        "matched {} node(s) in the a11y tree, all off screen — the first at \
-         x={:.0} y={:.0} {:.0}x{:.0}, the screen {:.0}x{:.0}; scroll it into view \
-         first (`scrollUntilVisible`)",
-        off.len(),
-        b.x,
-        b.y,
-        b.w,
-        b.h,
-        s.w,
-        s.h
-    )
 }
 
 // The two spaces and the stamp are wire shapes — the runner reports
@@ -1944,7 +1901,7 @@ pub mod phases;
 mod point_settle;
 pub mod poll;
 mod system_ui;
-pub(crate) use aim::{aim_in, settle_reading};
+pub(crate) use aim::{aim_in, element_not_found, settle_reading};
 pub use landing::{Aimed, ChainCoverage, landing_outcome, tap_landed_within, verdict_reader};
 pub use locate::locate;
 mod ios;
