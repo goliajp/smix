@@ -112,12 +112,7 @@ struct PressKeyParams {
 /// The SDK's own no-UDID failure tells the caller to use `.with_udid(...)`
 /// — a Rust API an MCP caller cannot reach. Say the thing they can do.
 pub(crate) fn missing_udid_error() -> McpError {
-    McpError::invalid_params(
-        "SMIX_UDID is not set — set the SMIX_UDID env var in this MCP server's \
-         config to the target simulator's UDID (find it with `xcrun simctl list \
-         devices`), then restart the server",
-        None,
-    )
+    McpError::invalid_params(smix_mcp::UNBOUND_HINT, None)
 }
 
 /// Is any layer of a chain on screen, and which.
@@ -218,6 +213,8 @@ impl SmixMcpService {
         Parameters(params): Parameters<UseParams>,
     ) -> Result<CallToolResult, McpError> {
         let port = params.port.unwrap_or(22087);
+        smix_mcp::use_needs_a_bundle(params.bundle_id.as_deref(), &params.udid)
+            .map_err(|why| McpError::invalid_params(why, None))?;
 
         // Already here: bringing the runner up again would restart the app
         // and drop whatever state the conversation had built up.
@@ -409,7 +406,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Get a structured description of the current screen — visible elements + bounds. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Get a structured description of the current screen — visible elements + bounds. Needs smix_use, then the session smix_launch_app opens."
     )]
     /// CLI: smix describe
     async fn smix_describe(&self) -> Result<CallToolResult, McpError> {
@@ -423,7 +420,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Get the raw A11yNode tree of the current screen. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Get the raw A11yNode tree of the current screen. Needs smix_use, then the session smix_launch_app opens."
     )]
     /// CLI: smix tree
     async fn smix_tree(&self) -> Result<CallToolResult, McpError> {
@@ -437,7 +434,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Check whether an element is on screen, as a plain true/false. Use this to look before you act; use smix_assert_visible when absence should be a failure. An ocrText selector runs an Apple Vision OCR pass. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Check whether an element is on screen, as a plain true/false. Use this to look before you act; use smix_assert_visible when absence should be a failure. An ocrText selector runs an Apple Vision OCR pass. Needs smix_use, then the session smix_launch_app opens."
     )]
     /// CLI: smix find
     async fn smix_find(
@@ -499,7 +496,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Tap an element. Name it with exactly one of id / text / label / role / ocrText — prefer id, which survives copy changes and localization. An ocrText selector OCRs the screen and taps the matched text's center. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Tap an element. Name it with exactly one of id / text / label / role / ocrText — prefer id, which survives copy changes and localization. An ocrText selector OCRs the screen and taps the matched text's center. Needs smix_use, then the session smix_launch_app opens."
     )]
     /// CLI: smix tap
     async fn smix_tap(
@@ -569,7 +566,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Type text into a field, replacing what it holds. Names the field like smix_tap, except ocrText — an OCR hit is a text frame, not a focusable element. Tap the field first if it is not already focused. Filling the same field twice leaves the second value, not both. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Type text into a field, replacing what it holds. Names the field like smix_tap, except ocrText — an OCR hit is a text frame, not a focusable element. Tap the field first if it is not already focused. Filling the same field twice leaves the second value, not both. Needs smix_use, then the session smix_launch_app opens."
     )]
     /// CLI: smix fill
     async fn smix_fill(
@@ -617,7 +614,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Launch an app by bundle id, or bring it to the front if it is running. Opens the runner session the other tools drive through — call this before smix_describe / smix_tap / etc. Requires the SMIX_UDID env var (set it in the MCP server config)."
+        description = "Launch an app by bundle id, or bring it to the front if it is running. Opens the runner session the other tools drive through — call this before smix_describe / smix_tap / etc. Needs a device bound with smix_use."
     )]
     /// CLI: smix sim launch
     async fn smix_launch_app(
@@ -641,7 +638,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Terminate an app by bundle id. Already-stopped is a no-op success. Requires the SMIX_UDID env var (set it in the MCP server config)."
+        description = "Terminate an app by bundle id. Already-stopped is a no-op success. Needs a device bound with smix_use."
     )]
     /// CLI: smix sim terminate
     async fn smix_stop_app(
@@ -670,7 +667,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Assert an element is on screen, waiting up to 5s. Fails with the visible elements and near-miss suggestions when it is not — paste that failure back to yourself to see what the screen actually had. An ocrText selector polls Apple Vision OCR on the same 5s budget. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Assert an element is on screen, waiting up to 5s. Fails with the visible elements and near-miss suggestions when it is not — paste that failure back to yourself to see what the screen actually had. An ocrText selector polls Apple Vision OCR on the same 5s budget. Needs smix_use, then the session smix_launch_app opens."
     )]
     /// CLI: smix wait-for
     async fn smix_assert_visible(
@@ -760,7 +757,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Assert an element is NOT on screen (single probe, no waiting). An ocrText selector checks with one Apple Vision OCR pass. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Assert an element is NOT on screen (single probe, no waiting). An ocrText selector checks with one Apple Vision OCR pass. Needs smix_use, then the session smix_launch_app opens."
     )]
     /// CLI: smix wait-for --absent
     async fn smix_assert_not_visible(
@@ -838,7 +835,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Press a named key (return, delete, back, home, volume up, the arrows, maestro's spellings). `back` is navigation back and fails when nothing went back. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Press a named key (return, delete, back, home, volume up, the arrows, maestro's spellings). `back` is navigation back and fails when nothing went back. Needs smix_use, then the session smix_launch_app opens."
     )]
     /// CLI: smix press-key
     async fn smix_press_key(
@@ -911,23 +908,20 @@ impl ServerHandler for SmixMcpService {
         // smix_tap_text until those tools were generalized away — an
         // introduction advertising tools that no longer exist.
         info.instructions = Some(
-            "This MCP server drives one iOS Simulator, bound by SMIX_UDID. smix \
-             itself reaches further — its CLI drives Android emulators and \
-             registered physical devices too (`smix run`, `smix fill`, `smix find`, \
-             `smix tree` take a `--device`, and the platform is read from the \
-             device); use the `smix` CLI directly when you need Android or a phone. \
-             Through this server: call smix_launch_app first — it brings the app to \
-             the front and opens the runner session the other tools drive through. \
-             Then smix_describe to see what is on screen and learn the element ids, \
-             smix_tap / smix_fill / smix_press_key to interact, and \
+            "This MCP server drives one iOS Simulator. smix itself reaches further — \
+             its CLI drives Android emulators and registered physical devices too \
+             (`smix run`, `smix fill`, `smix find`, `smix tree` take a `--device`); \
+             use the `smix` CLI directly for Android or a phone. Through this server: \
+             smix_devices lists the simulators, smix_use { udid, bundleId } binds one \
+             and brings its runner up, smix_launch_app opens the session the other \
+             tools drive through. Then smix_describe to see what is on screen and learn \
+             the element ids, smix_tap / smix_fill / smix_press_key to interact, and \
              smix_assert_visible to check. Name elements with exactly one of id / \
              text / label / role / ocrText — prefer id, which survives copy edits and \
              translation. Failures come back with near-miss suggestions and the \
              elements that were on screen; read them rather than guessing again. \
-             The SMIX_UDID env var binds this server to one simulator and is \
-             required — smix_launch_app and the session every other tool drives \
-             through depend on it; set it in the MCP server config. \
-             SMIX_RUNNER_PORT (default 22087) finds its runner."
+             SMIX_UDID in the server config binds a simulator at startup instead of \
+             smix_use; SMIX_RUNNER_PORT (default 22087) finds its runner."
                 .into(),
         );
         info
