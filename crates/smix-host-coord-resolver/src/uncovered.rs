@@ -148,6 +148,34 @@ fn covers_of<'a>(tree: &'a A11yNode, node: &A11yNode, shows: Rect) -> Vec<Cover<
     covers
 }
 
+/// How much of the app's height, from its top, a status bar the tree
+/// carries as an element covers: `0.0` when there is none across the top.
+///
+/// A box partly under it is reached by a touch only below it, and on a
+/// watch not even there: a row half under the clock took no tap anywhere
+/// (watchOS 27.2), so a scroll that stops on it has not brought it in.
+#[must_use]
+pub fn status_bar_share(tree: &A11yNode) -> f64 {
+    let f = tree.bounds;
+    if f.h <= 0.0 {
+        return 0.0;
+    }
+    let mut bottom = f.y;
+    let mut stack = vec![tree];
+    while let Some(n) = stack.pop() {
+        if n.raw_type == "statusBar" {
+            let b = n.bounds;
+            // across the top: from the frame's top edge, its whole width
+            if (b.y - f.y).abs() <= 1.0 && b.w >= f.w * 0.9 {
+                bottom = bottom.max(b.y + b.h);
+            }
+            continue;
+        }
+        stack.extend(n.children.iter());
+    }
+    ((bottom - f.y) / f.h).clamp(0.0, 1.0)
+}
+
 /// Whether `node` is `n` or under it — by identity: two nodes can share
 /// every field.
 fn holds(n: &A11yNode, node: &A11yNode) -> bool {

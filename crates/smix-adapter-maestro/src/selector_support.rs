@@ -14,8 +14,9 @@
 //! There is no third answer: a slot either reads the form or refuses it
 //! by name.
 
+use crate::AnnotationPos;
 use crate::Step;
-use crate::{AnnotationPos, AnnotationSpec};
+use crate::annotate_bridge::annotation_positions;
 use smix_selector::Selector;
 
 /// A selector spelling the tree resolver cannot evaluate.
@@ -191,6 +192,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         | Step::AddMedia { .. }
         | Step::SetOrientation { .. }
         | Step::SetPosture { .. }
+        | Step::RotateCrown { .. }
         | Step::StartRecording { .. }
         | Step::StopRecording
         | Step::AssertScreenshot { .. }
@@ -518,6 +520,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
         | Step::AddMedia { .. }
         | Step::SetOrientation { .. }
         | Step::SetPosture { .. }
+        | Step::RotateCrown { .. }
         | Step::StartRecording { .. }
         | Step::StopRecording
         | Step::AssertScreenshot { .. }
@@ -547,19 +550,5 @@ pub fn standalone_unreadable(selector: &Selector) -> Option<UnreadableForm> {
         Selector::LocalizedText { .. } => Some(UnreadableForm::LocalizedText),
         Selector::AnchorRelative { .. } => Some(UnreadableForm::AnchorRelative),
         _ => None,
-    }
-}
-
-/// Every position an annotation names. Exhaustive over
-/// `AnnotationSpec`, so a new annotation shape has to say where it
-/// points before it compiles.
-fn annotation_positions(spec: &AnnotationSpec) -> Vec<&AnnotationPos> {
-    match spec {
-        AnnotationSpec::Circle { at, .. }
-        | AnnotationSpec::Text { at, .. }
-        | AnnotationSpec::Box { at, .. } => vec![at],
-        AnnotationSpec::Line { from, to, .. } | AnnotationSpec::Arrow { from, to, .. } => {
-            vec![from, to]
-        }
     }
 }

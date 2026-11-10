@@ -79,6 +79,9 @@ cp -R "$SRC/." "$STAGE/tree"
 python3 "$REPO_ROOT/scripts/release/runner-package-manifest.py" > "$STAGE/tree/Package.swift" \
   || { echo "error: could not build the runner manifest" >&2; exit 1; }
 
+# `.smix` is where a `smix runner up` started from inside this directory
+# keeps its build: once that happened, 272 MB of derived data went into the
+# archive, 109 MB against 0.33 MB.
 COPYFILE_DISABLE=1 tar \
   --exclude='./SmixCoreFFI.xcframework' \
   --exclude='./SmixCoreFFI.xcframework.zip' \
@@ -89,6 +92,7 @@ COPYFILE_DISABLE=1 tar \
   --exclude='./*.xcodeproj/project.xcworkspace/xcuserdata' \
   --exclude='./.bak-*' \
   --exclude='./.build' \
+  --exclude='./.smix' \
   --exclude='./.DS_Store' \
   --exclude='./__MACOSX' \
   -cf - -C "$STAGE/tree" . \

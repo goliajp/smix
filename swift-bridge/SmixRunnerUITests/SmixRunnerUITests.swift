@@ -1094,7 +1094,7 @@ final class SmixRunnerUITests: XCTestCase {
     let sessionIdleTimeoutSec: TimeInterval = 60.0
     /// How often the idle-close sweep runs.
     let sessionIdleSweepIntervalSec: TimeInterval = 15.0
-    let resolveApp: @Sendable () async -> XCUIApplication = {
+    let resolveAppUnremembered: @Sendable () async -> XCUIApplication = {
       let ctx = SmixRunnerServer.currentContext
       // Session-Id header path — hit the session table, no activation.
       if let sid = ctx.sessionId {
@@ -1121,6 +1121,13 @@ final class SmixRunnerUITests: XCTestCase {
       if ctx.activate {
         _ = await maybeActivate(bundleId, app)
       }
+      return app
+    }
+    // The app a request drives, remembered for the remote, whose focus
+    // is read from it (a television; nothing elsewhere).
+    let resolveApp: @Sendable () async -> XCUIApplication = {
+      let app = await resolveAppUnremembered()
+      smixRemember(app)
       return app
     }
     ForegroundGate.install { ctx in
@@ -1415,6 +1422,11 @@ final class SmixRunnerUITests: XCTestCase {
             // catches the vanished-element NSException, mapping it to
             // `.notFound` — the recheck added no coverage the trampoline
             // does not already provide, and was the regression's trigger.
+            #if os(tvOS)
+            // a television has no touch: focus the element, then select
+            _ = seeThrough
+            smixActivate(element)
+            #else
             if seeThrough {
               // Occlusion-tolerant: tap the resolved element's AX center
               // coordinate (not hittability-gated). nil scope is
@@ -1426,6 +1438,7 @@ final class SmixRunnerUITests: XCTestCase {
             } else {
               element.tap()
             }
+            #endif
             tapCallMs = Date().timeIntervalSince(tAfterFrameRead) * 1000
           case .daemonProxySynthesize:
             // RN Pressable JS-thread onPress unreliable
@@ -1645,10 +1658,10 @@ final class SmixRunnerUITests: XCTestCase {
               element = app.descendants(matching: .any).matching(anyText).firstMatch
             }
             if element.exists {
-              if !element.hasFocus { element.tap() }
+              if !element.hasFocus { smixActivate(element) }
             } else if scope == "all-windows",
                       let m = firstSeeThroughMatch(app: app, selector: .text(selectorText)) {
-              if !m.hasFocus { m.tap() }
+              if !m.hasFocus { smixActivate(m) }
             }
             return true
           }
@@ -1708,10 +1721,10 @@ final class SmixRunnerUITests: XCTestCase {
                 "elementType == 49 OR elementType == 50 OR elementType == 52 OR elementType == 45")
               element = app.descendants(matching: .any).matching(anyText).firstMatch
             }
-            if element.exists && !element.hasFocus { element.tap() }
+            if element.exists && !element.hasFocus { smixActivate(element) }
             else if !element.exists, scope == "all-windows",
                     let m = firstSeeThroughMatch(app: app, selector: .text(selectorText)) {
-              if !m.hasFocus { m.tap() }
+              if !m.hasFocus { smixActivate(m) }
             }
             return true
           }
@@ -1757,6 +1770,18 @@ final class SmixRunnerUITests: XCTestCase {
       },
       pressKeyHandler: { key in
         let t0 = DispatchTime.now()
+        #if os(tvOS)
+        // A television has no keyboard to send keys to: each key is the
+        // remote button that does the same — arrows move the focus,
+        // return selects, escape goes back (Menu), space plays or pauses.
+        let remote: [String: XCUIRemote.Button] = [
+          "arrowUp": .up, "arrowDown": .down, "arrowLeft": .left, "arrowRight": .right,
+          "return": .select, "escape": .menu, "back": .menu, "space": .playPause, "home": .home,
+        ]
+        guard let button = remote[key] else { return .notFound }
+        XCUIRemote.shared.press(button)
+        return .success(focusMs: 0, daemonSendMs: SmixRunnerServer.msBetween(t0, DispatchTime.now()))
+        #endif
         // `home` is not a keyboard event: it goes through XCUIDevice.
         // lock / volumeUp / volumeDown never reach here — the route
         // refuses them by name first (KeyboardRoute.missingButton),
@@ -2120,7 +2145,7 @@ final class SmixRunnerUITests: XCTestCase {
               + "hittable=\(wasHittable)"
           )
           if hadButton {
-            firstButton.tap()
+            smixActivate(firstButton)
             let (landed, why, seen) = navigated(from: beforeTitle)
             trail.append("afterTap[\(seen)]")
             if landed {
@@ -2178,9 +2203,14 @@ final class SmixRunnerUITests: XCTestCase {
           // Strategy 2: iOS interactive pop gesture (swipe right from left
           // edge). RN screens with `gestureEnabled:true` (default for stack
           // navigator screens, including Modal-presented screens) accept it.
+          // On a television, back is the remote's Menu button.
+          #if os(tvOS)
+          XCUIRemote.shared.press(.menu)
+          #else
           let leftEdge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
           let rightTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
           leftEdge.press(forDuration: 0.1, thenDragTo: rightTarget)
+          #endif
           let (landed, why, seen) = navigated(from: beforeTitle)
           trail.append("afterGesture[\(seen)]")
           if landed {
@@ -2265,6 +2295,10 @@ final class SmixRunnerUITests: XCTestCase {
       // Matches the convention in scrollHandler.
       swipeOnceHandler: { direction, _scope in
         let app = await resolveApp()  // Per-request target-app rebind.
+        #if os(watchOS)
+        guard let ends = smixWatchSwipeEnds(direction) else { return false }
+        return await smixSwipe(on: app, from: ends.from, to: ends.to)
+        #endif
         let outcome: Bool? = smixGuarded("swipe-once") {
           // All 4 directions follow maestro navigation
           // convention (the wire string names what content to SEE, not
@@ -2273,6 +2307,20 @@ final class SmixRunnerUITests: XCTestCase {
           // (navigate down = see below) → swipeUp (finger up = content
           // moves up). L/R follow the same navigation convention as U/D
           // and the Kotlin runner — NOT the finger-direction convention.
+          #if os(tvOS)
+          // a television scrolls by moving the focus: the remote's arrow
+          // toward what is to be seen
+          let press: XCUIRemote.Button
+          switch direction {
+          case "down":  press = .down
+          case "up":    press = .up
+          case "left":  press = .left
+          case "right": press = .right
+          default:      return false
+          }
+          XCUIRemote.shared.press(press)
+          return true
+          #else
           switch direction {
           case "down":  app.swipeUp();    return true   // see below ← finger up
           case "up":    app.swipeDown();  return true   // see above ← finger down
@@ -2280,6 +2328,7 @@ final class SmixRunnerUITests: XCTestCase {
           case "right": app.swipeLeft();  return true   // see right ← finger left
           default:      return false
           }
+          #endif
         }
         return outcome ?? false
       },
@@ -2405,7 +2454,15 @@ final class SmixRunnerUITests: XCTestCase {
         if let aimedAt, let saw = AimCheck.gone(target: aimedAt, chain: chain, readable: readable) {
           return (ok: false, chain: chain, press: nil, gone: saw)
         }
-        #if !os(iOS)
+        #if os(tvOS)
+          // A television takes no touch: the point names the element under
+          // it, which is focused with the remote and selected.
+          let activated = smixGuarded("tap-at-norm-coord-tv") {
+            SmixRemote.activate(
+              at: CGVector(dx: nx, dy: ny), in: app, times: times, hold: Double(holdMs) / 1000)
+          } == true
+          return (ok: activated, chain: chain, press: nil, gone: nil)
+        #elseif !os(iOS)
           return (ok: smixHeadsetTap(app, nx: nx, ny: ny, times: times, holdMs: holdMs, aimedAt: aimedAt, chain: chain), chain: chain, press: nil, gone: nil)
         #endif
         // Timed around the synthesise alone: this process authors the
@@ -2499,7 +2556,9 @@ final class SmixRunnerUITests: XCTestCase {
           // across the swipe and reports stale isHittable=false even after
           // the element is visually scrolled into view). Max 8 swipe-rounds.
           var current = resolved
-          if !current.isHittable {
+          // a television brings an element into view by focusing it,
+          // which the activation does; there is nothing to swipe
+          if smixCanSwipe && !current.isHittable {
             var attempts = 0
             while !current.isHittable && attempts < 8 {
               let elFrame = current.frame
@@ -2508,13 +2567,13 @@ final class SmixRunnerUITests: XCTestCase {
                 guard sv.exists else { continue }
                 let svFrame = sv.frame
                 if elFrame.midX > svFrame.maxX {
-                  sv.swipeLeft()
+                  smixSwipe(sv, .left)
                 } else if elFrame.midX < svFrame.minX {
-                  sv.swipeRight()
+                  smixSwipe(sv, .right)
                 } else if elFrame.midY > svFrame.maxY {
-                  sv.swipeUp()
+                  smixSwipe(sv, .up)
                 } else if elFrame.midY < svFrame.minY {
-                  sv.swipeDown()
+                  smixSwipe(sv, .down)
                 } else {
                   continue
                 }
@@ -2617,6 +2676,12 @@ final class SmixRunnerUITests: XCTestCase {
           // Screenshot via XCUIScreen.main (already wrapped by smixGuarded
           // pattern in /tap-by-id; OCR path doesn't trigger XCTIssue in
           // normal flow but we still wrap defensively below).
+          #if os(watchOS)
+          // Vision has no text recognition on watchOS
+          FileHandle.standardError.write(
+            Data("smix-runner: find-text-by-ocr: watchOS has no text recognition\n".utf8))
+          return nil as (Double, Double, Double, Double)?
+          #else
           let xcImage = smixScreen(showing: app).screenshot()
           let uiImage = xcImage.image
           guard let cgImage = uiImage.cgImage else {
@@ -2653,6 +2718,7 @@ final class SmixRunnerUITests: XCTestCase {
           let w = Double(vbox.size.width)
           let h = Double(vbox.size.height)
           return (nx, nyUiKit, w, h)
+          #endif
         }.value
         return result
       },
@@ -2750,6 +2816,7 @@ final class SmixRunnerUITests: XCTestCase {
           return smixSetDeviceOrientation(mapped)
         } ?? false
       },
+      crownHandler: { req in smixRotateCrown(req) },
       recordHandlers: recordEnabled ? SmixRunnerServer.RecordHandlers(
         start: {
           EventRecorder.shared.installSwizzle(appBundleId: bundleId)
@@ -3344,290 +3411,4 @@ private func collectPopupNodes(
   if let kids = val("children") as? [[XCUIElement.AttributeName: Any]] {
     for k in kids { collectPopupNodes(k, buttons: &buttons, texts: &texts) }
   }
-}
-
-/// On the iOS 26.5 sim, `XCUIElementSnapshot.dictionaryRepresentation`
-/// filters out the `hasKeyboardFocus` key (an Apple regression /
-/// deprecation dating to iOS 15; maestro #2842 hits the same wall and is
-/// still open). The underlying `XCElementSnapshot._hasKeyboardFocus` ivar
-/// still carries the true value, and Foundation KVC
-/// `value(forKey: "hasKeyboardFocus")` reads the ivar directly, straight
-/// through the filter. This walks the snapshot subtree depth-first and
-/// returns the identifier of the first node that hits.
-///
-/// Private-symbol compliance: private symbols must never be hard-linked —
-/// they are reached only via dlsym or Foundation KVC. This is a pure
-/// Foundation KVC selector chain: no hard-linked private symbols, no
-/// dlsym'd private constants, no `_XCT_*` private selectors. It relies
-/// only on Apple's public `value(forKey:)` entry point plus the naming
-/// stability of a private ivar (Apple has kept the same
-/// `_hasKeyboardFocus` name across iOS 17 / 18 / 26; if that ever
-/// changes, keyboard-focus detection breaks wholesale).
-///
-/// Verified behaviour: fill input-email → focused identifier =
-/// input-email; fill input-password → focused identifier =
-/// input-password. `_focused_` is read without re-tapping, so this is a
-/// genuine first-responder read rather than an echo of our own tap.
-enum FocusedIdentifier {
-  /// Return the identifier of the first descendant of `snap` whose
-  /// `_hasKeyboardFocus` ivar is true, or nil if none is focused —
-  /// typically because the keyboard is not up, focus is on a
-  /// non-typable element, or the app has just cold-launched.
-  static func find(in snap: XCUIElementSnapshot) -> String? {
-    var hit: String? = nil
-    func walk(_ node: AnyObject) {
-      if hit != nil { return }
-      if (node.value(forKey: "hasKeyboardFocus") as? Bool) == true {
-        let id = (node.value(forKey: "identifier") as? String) ?? ""
-        if !id.isEmpty { hit = id }
-        return
-      }
-      if let kids = node.value(forKey: "children") as? [AnyObject] {
-        for k in kids {
-          walk(k)
-          if hit != nil { return }
-        }
-      }
-    }
-    walk(snap as AnyObject)
-    return hit
-  }
-}
-
-/// Bridge XCUIElementSnapshot (XCUI / XCTest type) → A11ySnapshotData POCO
-/// (SmixRunnerCore type, no XCUI dependency). Maintains the invariant that
-/// SmixRunnerCore never imports XCTest/XCUI.
-///
-/// Uses the `dictionaryRepresentation` path (the same one maestro
-/// `cli-2.2.0` takes via
-/// `AXElement(_ dict: [XCUIElement.AttributeName: Any])`, which parses the
-/// a11y server's raw attribute dict).
-///
-/// The public `s.children` Swift API is NOT equivalent: it returns an
-/// Apple-curated subset. Child elements that are accessibility-rendered
-/// but filtered out by the Swift API — an RN drawer item, for instance —
-/// simply vanish from the `.children` array. The raw dict's `children` key
-/// contains ALL a11y server children.
-///
-/// `rootIdentifierOverride` is applied only at the top level call (children
-/// recurse with nil) and only when the snapshot's own identifier is empty.
-/// This compensates for `XCUIApplication.snapshot()` returning a root with
-/// an empty identifier even though the caller knows the bundle id.
-///
-/// `focusHint` is the live first responder's identifier, computed once by
-/// snapshotHandler via `FocusedIdentifier.find`. It is threaded down the
-/// subtree, and the matching POCO node gets `hasFocus=true`. `nil` ⇒ no
-/// node is focused (false across the whole tree; typically the keyboard is
-/// not up).
-private func convertSnapshot(
-  _ s: XCUIElementSnapshot,
-  rootIdentifierOverride: String? = nil,
-  focusHint: String? = nil
-) -> TreeRoute.A11ySnapshotData {
-  return convertSnapshotDict(
-    s.dictionaryRepresentation,
-    rootIdentifierOverride: rootIdentifierOverride,
-    focusHint: focusHint
-  )
-}
-
-/// Apple a11y server raw dict → A11ySnapshotData. The dict comes from
-/// `XCUIElementSnapshot.dictionaryRepresentation`; its key type
-/// `XCUIElement.AttributeName` is a public Swift type. Field extraction
-/// mirrors maestro's `AXElement.swift`.
-private func convertSnapshotDict(
-  _ dict: [XCUIElement.AttributeName: Any],
-  rootIdentifierOverride: String? = nil,
-  focusHint: String? = nil
-) -> TreeRoute.A11ySnapshotData {
-  func valueFor(_ name: String) -> Any? {
-    dict[XCUIElement.AttributeName(rawValue: name)]
-  }
-  let label = (valueFor("label") as? String) ?? ""
-  let elementTypeRaw = (valueFor("elementType") as? Int) ?? 1  // 1 = "other"
-  let rawIdentifier = (valueFor("identifier") as? String) ?? ""
-  let identifier: String = rawIdentifier.isEmpty ? (rootIdentifierOverride ?? "") : rawIdentifier
-  let titleStr: String? = (valueFor("title") as? String).flatMap { $0.isEmpty ? nil : $0 }
-  let placeholderStr: String? = (valueFor("placeholderValue") as? String).flatMap { $0.isEmpty ? nil : $0 }
-  let valueStr: String? = (valueFor("value") as? String).flatMap { $0.isEmpty ? nil : $0 }
-  let enabled = (valueFor("enabled") as? Bool) ?? true
-  let selected = (valueFor("selected") as? Bool) ?? false
-  // Match the live first-responder identifier (the one-shot KVC walk done
-  // in snapshotHandler) against this node's identifier. `focusHint == nil`
-  // ⇒ no node is focused (typically the keyboard is not up). The
-  // identifier must be non-empty to be tagged, so that a nil hint cannot
-  // empty-string-match a node that has no identifier.
-  let hasFocus = focusHint.map { hint in
-    !identifier.isEmpty && hint == identifier
-  } ?? false
-  let frame: CGRect
-  if let frameDict = valueFor("frame") as? [String: Double] {
-    frame = CGRect(
-      x: frameDict["X"] ?? 0,
-      y: frameDict["Y"] ?? 0,
-      width: frameDict["Width"] ?? 0,
-      height: frameDict["Height"] ?? 0
-    )
-  } else if let cgRect = valueFor("frame") as? CGRect {
-    frame = cgRect
-  } else {
-    frame = .zero
-  }
-  let kids: [TreeRoute.A11ySnapshotData]
-  if let childDicts = valueFor("children") as? [[XCUIElement.AttributeName: Any]] {
-    kids = childDicts.map { convertSnapshotDict($0, focusHint: focusHint) }
-  } else {
-    kids = []
-  }
-  return TreeRoute.A11ySnapshotData(
-    elementTypeRawValue: UInt(elementTypeRaw),
-    identifier: identifier,
-    label: label,
-    value: valueStr,
-    frame: frame,
-    isEnabled: enabled,
-    isSelected: selected,
-    hasFocus: hasFocus,
-    children: kids,
-    title: titleStr,
-    placeholderValue: placeholderStr
-  )
-}
-
-/// See-through tree for `GET /tree?include=all-windows`.
-///
-/// Root cause: `app.snapshot()` is rooted at a single app element, and any
-/// opaque native modal makes iOS accessibility mask the content beneath it
-/// out of that snapshot — yet XCUITest's own lower flat enumeration can
-/// still reach every element. Measured in one case: `app.snapshot()`
-/// returned a 96-node overlay while a direct `label ==` query still hit
-/// 2550 elements underneath it.
-///
-/// Strategy (defense in depth — trust no single point not to mask):
-///   1. Per-window: snapshot each `app.windows` element. A modal often
-///      occupies a window of its own, and sibling windows still expose
-///      the underlying content.
-///   2. Flat fallback: `app.descendants(.any)
-///      .allElementsBoundByAccessibilityElement` — snapshot every element
-///      XCUITest can enumerate. This is the only layer that reaches
-///      masked content present in NEITHER the app snapshot NOR the
-///      per-window snapshots.
-/// Both paths merge into the children of ONE synthetic application root
-/// and go through the UNCHANGED `convertSnapshot` / `TreeRoute.serialize`,
-/// so the serialized shape does not change — the wire contract holds. The
-/// synthetic root carries `bundleId` so a host smoke check of
-/// `.identifier == bundle` still passes.
-///
-/// Duplicates are deliberately NOT removed: a superset tree is the goal.
-/// The SDK-side resolver does its own DFS collection, and the driver only
-/// asks whether a content marker is reachable — a question a superset
-/// answers soundly.
-private func buildAllWindowsSnapshot(
-  app: XCUIApplication,
-  bundleId: String,
-  appFrame: CGRect
-) -> SmixRunnerServer.SnapshotResult? {
-  var children: [TreeRoute.A11ySnapshotData] = []
-
-  let windows = app.windows.allElementsBoundByIndex
-  for window in windows {
-    guard window.exists else { continue }
-    if let snap = try? window.snapshot() {
-      children.append(convertSnapshot(snap, focusHint: FocusedIdentifier.find(in: snap)))
-    }
-  }
-
-  // Flat fallback: every accessibility element XCUITest can enumerate.
-  // Each is snapshotted individually so masked-but-enumerable content
-  // (the AX-reachable content underneath any opaque modal) is captured as
-  // leaf nodes even when no window snapshot surfaced it.
-  //
-  // Perf cap. Measured: enumerating the RN expo-dev-menu's 50+ native
-  // elements costs ~1-2 s per `el.snapshot()`, totalling 60-120 s, which
-  // blows both the SDK's drainPopups hard cap and FlyingFox's 15 s socket
-  // timeout. Hence structural limits: maxElements=80 + budgetMs=8s,
-  // breaking out when either is hit.
-  //
-  // Bailing out is safe: the superset tree still contains the window
-  // snapshot and plain app snapshot main paths, which keep content
-  // markers reachable. 80 elements is ample for an RN dev-mode main
-  // screen, a SpringBoard system alert, or an ordinary modal; only a
-  // dev-menu or heavy native overlay hits the cap, and those are already
-  // captured by the windows snapshot above. Skipping the flat fallback
-  // there loses no marker reachability — only redundant leaf nodes — so
-  // the "superset tree" behavioural contract still holds.
-  let flat = app.descendants(matching: .any).allElementsBoundByAccessibilityElement
-  let flatStart = Date()
-  let flatMaxElements = 80
-  let flatBudgetSeconds: TimeInterval = 8.0
-  var flatProcessed = 0
-  for el in flat {
-    if flatProcessed >= flatMaxElements { break }
-    if Date().timeIntervalSince(flatStart) >= flatBudgetSeconds { break }
-    flatProcessed += 1
-    guard el.exists else { continue }
-    if let snap = try? el.snapshot() {
-      children.append(convertSnapshot(snap, focusHint: FocusedIdentifier.find(in: snap)))
-    }
-  }
-
-  // SpringBoard alert / sheet / dialog
-  // out-of-process windows. A `simctl openurl` confirm alert lives in
-  // com.apple.springboard, not the runner-bound app — neither `app.windows`
-  // nor `app.descendants` reach it. Merge active SpringBoard popup
-  // snapshots into the synthetic root so `/tree?include=all-windows`
-  // exposes the same nodes that `/find?include=all-windows` and
-  // `/tap?include=all-windows` will need.
-  for s in collectSpringBoardWindows() {
-    children.append(s)
-  }
-
-  // Always also include the plain app snapshot (it is a subset on the
-  // happy path; under masking it is the dev-menu overlay — harmless as
-  // an extra child, and guarantees the all-windows tree is a strict
-  // superset of the legacy tree).
-  if let appSnap = try? app.snapshot() {
-    children.append(
-      convertSnapshot(appSnap, focusHint: FocusedIdentifier.find(in: appSnap))
-        .inInterfaceShape(landscape: smixInterfaceIsLandscape(app)))
-  }
-
-  let synthetic = TreeRoute.A11ySnapshotData(
-    elementTypeRawValue: 2, // application
-    identifier: SmixRunnerServer.currentContext.bundleId ?? bundleId,
-    label: "",
-    value: nil,
-    frame: appFrame,
-    isEnabled: true,
-    isSelected: false,
-    children: children
-  )
-  return (root: synthetic, appFrame: appFrame)
-}
-
-private func collectSpringBoardWindows() -> [TreeRoute.A11ySnapshotData] {
-  var out: [TreeRoute.A11ySnapshotData] = []
-  let springboard = smixSystemUI()
-  let alerts = springboard.alerts.allElementsBoundByAccessibilityElement
-  for el in alerts {
-    guard el.exists else { continue }
-    if let snap = try? el.snapshot() {
-      out.append(convertSnapshot(snap, focusHint: FocusedIdentifier.find(in: snap)))
-    }
-  }
-  let sheets = springboard.sheets.allElementsBoundByAccessibilityElement
-  for el in sheets {
-    guard el.exists else { continue }
-    if let snap = try? el.snapshot() {
-      out.append(convertSnapshot(snap, focusHint: FocusedIdentifier.find(in: snap)))
-    }
-  }
-  let dialogs = springboard.dialogs.allElementsBoundByAccessibilityElement
-  for el in dialogs {
-    guard el.exists else { continue }
-    if let snap = try? el.snapshot() {
-      out.append(convertSnapshot(snap, focusHint: FocusedIdentifier.find(in: snap)))
-    }
-  }
-  return out
 }

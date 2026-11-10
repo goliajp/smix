@@ -126,3 +126,17 @@ fn parse_color(spec: &str, default: Color, field: &str, warnings: &mut Vec<Strin
         }
     }
 }
+
+/// Every position an annotation names. Exhaustive over
+/// `AnnotationSpec`, so a new annotation shape has to say where it
+/// points before it compiles.
+pub(crate) fn annotation_positions(spec: &AnnotationSpec) -> Vec<&AnnotationPos> {
+    match spec {
+        AnnotationSpec::Circle { at, .. }
+        | AnnotationSpec::Text { at, .. }
+        | AnnotationSpec::Box { at, .. } => vec![at],
+        AnnotationSpec::Line { from, to, .. } | AnnotationSpec::Arrow { from, to, .. } => {
+            vec![from, to]
+        }
+    }
+}

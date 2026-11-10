@@ -551,6 +551,13 @@ impl AppLike for MockApp {
     async fn set_posture(&self, _posture: smix_sdk::Posture) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn rotate_crown(
+        &self,
+        _rotations: f64,
+        _velocity: Option<f64>,
+    ) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     async fn start_recording(&self, _path: &str) -> Result<(), ExpectationFailure> {
         Ok(())
     }

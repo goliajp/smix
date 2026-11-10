@@ -12,6 +12,8 @@ use smix_selector::{Modifiers, Pattern, Role, Selector};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+mod device;
+
 // Parse the yaml `role:` value into a [`Role`] variant.
 //
 // The docs show docs-friendly lowercase forms
@@ -2657,19 +2659,6 @@ fn parse_start_recording(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// `setPosture: <closed|halfOpen|open>` (`half-open` accepted too).
-fn parse_set_posture(v: &Value) -> Result<Step, ParseError> {
-    let s = v.as_str().ok_or_else(|| ParseError::InvalidValue {
-        field: "setPosture".into(),
-        reason: "expected closed | halfOpen | open".into(),
-    })?;
-    let posture = s.parse().map_err(|reason| ParseError::InvalidValue {
-        field: "setPosture".into(),
-        reason,
-    })?;
-    Ok(Step::SetPosture { posture })
-}
-
 // `setOrientation: <portrait|portraitUpsideDown|landscapeLeft|
 // landscapeRight|landscape>`. The `landscape` alias maps to
 // LandscapeLeft, matching maestro.
@@ -3519,7 +3508,8 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "setPermissions" => parse_set_permissions(value),
         "addMedia" => parse_add_media(value),
         "setOrientation" => parse_set_orientation(value),
-        "setPosture" => parse_set_posture(value),
+        "setPosture" => device::parse_set_posture(value),
+        "rotateCrown" => device::parse_rotate_crown(value),
         "startRecording" => parse_start_recording(value),
         "stopRecording" => Ok(Step::StopRecording),
         // Visual regression.

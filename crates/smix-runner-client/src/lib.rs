@@ -41,6 +41,7 @@
 mod acts;
 pub use acts::{TapTarget, target_gone_before_touch};
 mod combo;
+mod device;
 mod drag;
 mod hide_keyboard;
 mod hittable;
@@ -1886,6 +1887,9 @@ impl HttpRunnerClient {
         struct Resp {
             found: bool,
             frame: Option<[f64; 4]>,
+            // a platform with no text recognition refuses by name
+            #[serde(flatten)]
+            refusal: OkEnvelope,
         }
         let resp: Resp = self
             .json_post(
@@ -1898,6 +1902,7 @@ impl HttpRunnerClient {
                 None,
             )
             .await?;
+        resp.refusal.require_ok("/find-text-by-ocr")?;
         if !resp.found {
             return Ok(None);
         }
@@ -1983,21 +1988,6 @@ impl HttpRunnerClient {
             });
         }
         Ok(resp.result)
-    }
-
-    /// `POST /set-orientation` — rotate sim via swift
-    /// `XCUIDevice.shared.orientation` setter. `orientation` literal:
-    /// "portrait" | "portraitUpsideDown" | "landscapeLeft" | "landscapeRight".
-    pub async fn set_orientation(&self, orientation: &str) -> Result<(), RunnerTransportError> {
-        #[derive(Serialize)]
-        struct Req<'a> {
-            orientation: &'a str,
-        }
-        let body: OkEnvelope = self
-            .json_post("/set-orientation", &Req { orientation }, None)
-            .await?;
-        body.require_ok("/set-orientation")?;
-        Ok(())
     }
 
     /// `POST /swipe-at-norm-coord` — Apple native UI event from-to
