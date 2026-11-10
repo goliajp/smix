@@ -121,6 +121,21 @@ pub(crate) struct Look {
     /// looks when nothing has moved. Text is left out: a clock ticking is
     /// not content gliding.
     pub layout: u64,
+    /// How much of the screen's height a status bar covers from the top
+    /// ([`smix_host_coord_resolver::status_bar_share`]).
+    pub bar: f64,
+}
+
+/// `b` as a share of the part of the screen below a status bar covering
+/// `bar` of it: what a touch can reach.
+fn below_bar(b: NormBox, bar: f64) -> NormBox {
+    let left = 1.0 - bar;
+    NormBox {
+        x: b.x,
+        y: (b.y - bar) / left,
+        w: b.w,
+        h: b.h / left,
+    }
 }
 
 /// [`Look::layout`] for `tree`: every node's box, to the pixel.
@@ -156,6 +171,8 @@ pub(crate) async fn run<E: Eyes>(
     let mut swipes = 0u32;
     let mut recentered = 0u32;
     let mut previous: Option<NormBox> = None;
+    // where the target was on the last look before the latest swipe
+    let mut before_swipe: Option<NormBox> = None;
     // Set by a swipe, cleared by two looks that agree on the layout. A
     // swipe leaves the content gliding, and a look taken mid-glide judged
     // a target that had not finished arriving as short of the mark, so
@@ -191,7 +208,7 @@ pub(crate) async fn run<E: Eyes>(
         // reported success and the row's own label never changed.
         let last = match look.seen {
             None => Last::NotSeen,
-            Some(b) => match verdict(b, &until.reach, direction, recentered) {
+            Some(b) => match verdict(below_bar(b, look.bar), &until.reach, direction, recentered) {
                 Verdict::Reached => match previous {
                     Some(p) if same_place(p, b) => return Ok(()),
                     Some(_) => Last::Moving,
@@ -200,6 +217,15 @@ pub(crate) async fn run<E: Eyes>(
                 Verdict::Recenter => {
                     recentered += 1;
                     Last::Short(visible_share(b))
+                }
+                // Short only for the status bar over it, and the swipe
+                // before this look did not move it: the screen goes no
+                // further, and this is as far in as it comes.
+                Verdict::Short { .. }
+                    if before_swipe.is_some_and(|p| same_place(p, b))
+                        && verdict(b, &until.reach, direction, recentered) == Verdict::Reached =>
+                {
+                    return Ok(());
                 }
                 Verdict::Short { share } => Last::Short(share),
             },
@@ -226,6 +252,7 @@ pub(crate) async fn run<E: Eyes>(
             tokio::time::sleep(SETTLE_INTERVAL).await;
             continue;
         }
+        before_swipe = look.seen;
         eyes.swipe(direction).await?;
         swipes += 1;
         // Where the target was before this swipe says nothing about whether
@@ -276,6 +303,7 @@ impl Eyes for DriverEyes<'_> {
         let tree = self.driver.tree(None).await?;
         let visible = screen_facts(&tree, 10);
         let layout = layout_of(&tree);
+        let bar = smix_host_coord_resolver::status_bar_share(&tree);
         if let Some(node) = resolve_selector_compiled(&tree, self.selector, &self.ctx)
             && self.driver.confirm_on_screen(&[node]).await?
         {
@@ -285,6 +313,7 @@ impl Eyes for DriverEyes<'_> {
                         seen: Some(b),
                         visible,
                         layout,
+                        bar,
                     });
                 }
                 // A node with no area is not on screen in any sense a
@@ -315,6 +344,7 @@ impl Eyes for DriverEyes<'_> {
                     seen: Some(seen),
                     visible,
                     layout,
+                    bar,
                 });
             }
         }
@@ -322,6 +352,7 @@ impl Eyes for DriverEyes<'_> {
             seen: None,
             visible,
             layout,
+            bar,
         })
     }
 
@@ -404,6 +435,7 @@ mod tests {
     struct Scripted {
         looks: Vec<Result<Option<NormBox>, ExpectationFailure>>,
         swipes: u32,
+        bar: f64,
     }
 
     #[async_trait]
@@ -418,6 +450,7 @@ mod tests {
                 seen,
                 visible: ScreenFacts::default(),
                 layout: layout_for(seen),
+                bar: self.bar,
             })
         }
         async fn swipe(&mut self, _: SwipeDirection) -> Result<(), ExpectationFailure> {
@@ -447,6 +480,7 @@ mod tests {
                 seen: Some(self.seen),
                 visible: ScreenFacts::default(),
                 layout: layout_for(Some(self.seen)),
+                bar: 0.0,
             })
         }
         async fn swipe(&mut self, _: SwipeDirection) -> Result<(), ExpectationFailure> {
@@ -494,6 +528,7 @@ mod tests {
                 seen,
                 visible: ScreenFacts::default(),
                 layout: layout_for(seen),
+                bar: 0.0,
             })
         }
         async fn swipe(&mut self, _: SwipeDirection) -> Result<(), ExpectationFailure> {
@@ -593,9 +628,45 @@ mod tests {
         looks: Vec<Result<Option<NormBox>, ExpectationFailure>>,
         until: ScrollUntil,
     ) -> (Result<(), ExpectationFailure>, u32) {
-        let mut eyes = Scripted { looks, swipes: 0 };
+        go_under(looks, until, 0.0).await
+    }
+
+    async fn go_under(
+        looks: Vec<Result<Option<NormBox>, ExpectationFailure>>,
+        until: ScrollUntil,
+        bar: f64,
+    ) -> (Result<(), ExpectationFailure>, u32) {
+        let mut eyes = Scripted {
+            looks,
+            swipes: 0,
+            bar,
+        };
         let r = run(&mut eyes, &sel(), SwipeDirection::Down, &until).await;
         (r, eyes.swipes)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_target_partly_under_the_status_bar_is_swiped_on_until_it_clears() {
+        // a watch: the clock covers the top 15%; the row stops a quarter
+        // under it, and only the swipe after brings it out whole
+        let (r, swipes) = go_under(
+            vec![Ok(Some(nb(0.07, 0.22))), Ok(Some(nb(0.21, 0.22)))],
+            ScrollUntil::default(),
+            0.15,
+        )
+        .await;
+        assert!(r.is_ok(), "{r:?}");
+        assert_eq!(swipes, 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_target_the_screen_cannot_bring_past_the_status_bar_is_taken_as_far_as_it_goes() {
+        // an edge-to-edge header that sits under the status bar at the top
+        // of its list: a swipe does not move it, and that is the end
+        let (r, swipes) =
+            go_under(vec![Ok(Some(nb(0.0, 0.3)))], ScrollUntil::default(), 0.06).await;
+        assert!(r.is_ok(), "{r:?}");
+        assert_eq!(swipes, 1);
     }
 
     /// A list with momentum: a swipe moves the content over the looks
@@ -619,6 +690,7 @@ mod tests {
                 seen,
                 visible: ScreenFacts::default(),
                 layout: (self.y * 1e6) as i64 as u64,
+                bar: 0.0,
             })
         }
         async fn swipe(&mut self, _: SwipeDirection) -> Result<(), ExpectationFailure> {

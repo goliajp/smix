@@ -2295,6 +2295,10 @@ final class SmixRunnerUITests: XCTestCase {
       // Matches the convention in scrollHandler.
       swipeOnceHandler: { direction, _scope in
         let app = await resolveApp()  // Per-request target-app rebind.
+        #if os(watchOS)
+        guard let ends = smixWatchSwipeEnds(direction) else { return false }
+        return await smixSwipe(on: app, from: ends.from, to: ends.to)
+        #endif
         let outcome: Bool? = smixGuarded("swipe-once") {
           // All 4 directions follow maestro navigation
           // convention (the wire string names what content to SEE, not
