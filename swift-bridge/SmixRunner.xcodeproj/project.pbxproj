@@ -8,17 +8,32 @@
 
 /* Begin PBXBuildFile section */
 		0C80F867AACF331D9AA67558 /* SmixRunnerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 62641A65907E912ED2C1A626 /* SmixRunnerCore */; };
+		11EA46FC2E5D6C89BFD20E6A /* EventRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */; };
 		1CB5D5E731634D61D9EE489A /* EventSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72197983C53848D29C050471 /* EventSynthesizer.swift */; };
+		32E371D74A4C235CBBF55B47 /* HideKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60ADEFEBB5644D83B0956CD1 /* HideKeyboard.swift */; };
 		39AC667CBBFB90AAF02D95F9 /* HideKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60ADEFEBB5644D83B0956CD1 /* HideKeyboard.swift */; };
+		3A64CFAC473C7585E7F6DFF4 /* SmixRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91F97A8EE7187D90CC587D0 /* SmixRunnerApp.swift */; };
+		3E1217E2E26D0B72AF292AF2 /* SmixRunnerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0AFC5872AE7EDFBAC1E683E1 /* SmixRunnerCore */; };
 		53169F0AFCECEB57F00B6D2F /* SmixA11ySwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 77E941BAAFA086830E4BCA33 /* SmixA11ySwizzle.m */; };
 		55BE0426E74C56855DCE98DF /* Headset.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC78B183001B5FA692E54B3 /* Headset.swift */; };
+		5871D72A8325B2F2161A96B9 /* Banners.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D2BB4CF0E98637789C98F1 /* Banners.swift */; };
+		58EEED923C9F292381626FC5 /* Gestures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C69C75F795D8AE23B9BE25 /* Gestures.swift */; };
 		5C28A1EFB4FFACB2067D1EFB /* SmixExceptionTrampoline.m in Sources */ = {isa = PBXBuildFile; fileRef = BCD3DBB82831D19910E77B87 /* SmixExceptionTrampoline.m */; };
+		6FD0DE64FFB94BD90A52ACB5 /* PlatformShims.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DAFC18F37943D45AED8EA76 /* PlatformShims.swift */; };
 		6FDCA06236F8D50E730C87AA /* Banners.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D2BB4CF0E98637789C98F1 /* Banners.swift */; };
 		7744A4808C0F9E0E2608C8A6 /* SmixQuiescenceSwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */; };
+		7BA1E05F935FFD0C24FBFA53 /* EventSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72197983C53848D29C050471 /* EventSynthesizer.swift */; };
 		7D800097302AA44BD0C96BB9 /* SmixRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */; };
 		826D4235E44CF76204CE5F73 /* Gestures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C69C75F795D8AE23B9BE25 /* Gestures.swift */; };
+		8AF80A0A6F69ABE46A696301 /* SmixQuiescenceSwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */; };
+		9B526DC876A13222EF1F513D /* PlatformShims.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DAFC18F37943D45AED8EA76 /* PlatformShims.swift */; };
+		AA058FC272D4A4E7FCEA2B45 /* SmixExceptionTrampoline.m in Sources */ = {isa = PBXBuildFile; fileRef = BCD3DBB82831D19910E77B87 /* SmixExceptionTrampoline.m */; };
+		AAF36372D48A36A10E012894 /* SmixRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */; };
+		B0AD205E17B715F57B7D4A6B /* AppsInFront.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AEABF27D53DA49BE5EB192B /* AppsInFront.swift */; };
+		CF1355C5A13A19E08C2E4D73 /* Headset.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC78B183001B5FA692E54B3 /* Headset.swift */; };
 		D0B65170676A011C0A27F1C4 /* EventRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */; };
 		EA1AFF5C3E59629B35203D66 /* AppsInFront.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AEABF27D53DA49BE5EB192B /* AppsInFront.swift */; };
+		FA5DBD8CE11D2E5321326EF9 /* SmixA11ySwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 77E941BAAFA086830E4BCA33 /* SmixA11ySwizzle.m */; };
 		FB2971E3FCA8356DD639970C /* SmixRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91F97A8EE7187D90CC587D0 /* SmixRunnerApp.swift */; };
 /* End PBXBuildFile section */
 
@@ -30,10 +45,18 @@
 			remoteGlobalIDString = 50210BD2BF6F192B893BD29E;
 			remoteInfo = SmixRunner;
 		};
+		F4DCFDD2CE031E73ECAFACA4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C192D7F383DDD953513E5139 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4DB9D645F55D8E45F1BF89E6;
+			remoteInfo = SmixRunnerWatch;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		036B2D309EEDEAEE780CFED8 /* SmixExceptionTrampoline.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmixExceptionTrampoline.h; sourceTree = "<group>"; };
+		039F01941B71D550BF4D6C3B /* Info-watchOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-watchOS.plist"; sourceTree = "<group>"; };
 		1AEABF27D53DA49BE5EB192B /* AppsInFront.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppsInFront.swift; sourceTree = "<group>"; };
 		29E63C356CE3614778CA640B /* SmixA11ySwizzle.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmixA11ySwizzle.h; sourceTree = "<group>"; };
 		43066DF5775A7FCC7E12F5A5 /* SmixRunnerUITests-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "SmixRunnerUITests-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -41,6 +64,7 @@
 		6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmixRunnerUITests.swift; sourceTree = "<group>"; };
 		72197983C53848D29C050471 /* EventSynthesizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventSynthesizer.swift; sourceTree = "<group>"; };
 		77E941BAAFA086830E4BCA33 /* SmixA11ySwizzle.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SmixA11ySwizzle.m; sourceTree = "<group>"; };
+		7DAFC18F37943D45AED8EA76 /* PlatformShims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformShims.swift; sourceTree = "<group>"; };
 		7F26B532CF67150468A83990 /* SmixRunnerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmixRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SmixQuiescenceSwizzle.m; sourceTree = "<group>"; };
 		95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventRecorder.swift; sourceTree = "<group>"; };
@@ -48,12 +72,15 @@
 		A8073835BE52181B5208E49B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B75B6B5792291DC048C4BECC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BCD3DBB82831D19910E77B87 /* SmixExceptionTrampoline.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SmixExceptionTrampoline.m; sourceTree = "<group>"; };
+		BD613BFD398D2DB067A345C9 /* SmixRunnerWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SmixRunnerWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C06792F2836DA1E905CD5EE2 /* Info-watchOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-watchOS.plist"; sourceTree = "<group>"; };
 		C216AAC0D648FE4B6D4EC9EC /* swift-bridge */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "swift-bridge"; path = .; sourceTree = SOURCE_ROOT; };
 		CBE545DCBDBD7B19B5102374 /* SmixQuiescenceSwizzle.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmixQuiescenceSwizzle.h; sourceTree = "<group>"; };
 		CF15C4D428CB8B2B34F9A061 /* SmixRunner.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SmixRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DFC78B183001B5FA692E54B3 /* Headset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Headset.swift; sourceTree = "<group>"; };
 		E91F97A8EE7187D90CC587D0 /* SmixRunnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmixRunnerApp.swift; sourceTree = "<group>"; };
 		F1D2BB4CF0E98637789C98F1 /* Banners.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Banners.swift; sourceTree = "<group>"; };
+		F7386BF7D405F82159D99777 /* SmixRunnerWatchUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SmixRunnerWatchUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -65,6 +92,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9FA4BA9BFA00EFEDA5830080 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3E1217E2E26D0B72AF292AF2 /* SmixRunnerCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -73,6 +108,8 @@
 			children = (
 				CF15C4D428CB8B2B34F9A061 /* SmixRunner.app */,
 				7F26B532CF67150468A83990 /* SmixRunnerUITests.xctest */,
+				BD613BFD398D2DB067A345C9 /* SmixRunnerWatch.app */,
+				F7386BF7D405F82159D99777 /* SmixRunnerWatchUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -80,6 +117,7 @@
 		6C5F0B1EE6695324C276790F /* SmixRunner */ = {
 			isa = PBXGroup;
 			children = (
+				039F01941B71D550BF4D6C3B /* Info-watchOS.plist */,
 				A8073835BE52181B5208E49B /* Info.plist */,
 				E91F97A8EE7187D90CC587D0 /* SmixRunnerApp.swift */,
 			);
@@ -96,7 +134,9 @@
 				96C69C75F795D8AE23B9BE25 /* Gestures.swift */,
 				DFC78B183001B5FA692E54B3 /* Headset.swift */,
 				60ADEFEBB5644D83B0956CD1 /* HideKeyboard.swift */,
+				C06792F2836DA1E905CD5EE2 /* Info-watchOS.plist */,
 				B75B6B5792291DC048C4BECC /* Info.plist */,
+				7DAFC18F37943D45AED8EA76 /* PlatformShims.swift */,
 				29E63C356CE3614778CA640B /* SmixA11ySwizzle.h */,
 				77E941BAAFA086830E4BCA33 /* SmixA11ySwizzle.m */,
 				036B2D309EEDEAEE780CFED8 /* SmixExceptionTrampoline.h */,
@@ -130,6 +170,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		4DB9D645F55D8E45F1BF89E6 /* SmixRunnerWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5908E22D1EAC7E2D8A299E5F /* Build configuration list for PBXNativeTarget "SmixRunnerWatch" */;
+			buildPhases = (
+				9E8C78BBD6958260548A8A9C /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SmixRunnerWatch;
+			packageProductDependencies = (
+			);
+			productName = SmixRunnerWatch;
+			productReference = BD613BFD398D2DB067A345C9 /* SmixRunnerWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
 		50210BD2BF6F192B893BD29E /* SmixRunner */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A0EC1D22DD00FAF3E666ACAB /* Build configuration list for PBXNativeTarget "SmixRunner" */;
@@ -146,6 +203,26 @@
 			productName = SmixRunner;
 			productReference = CF15C4D428CB8B2B34F9A061 /* SmixRunner.app */;
 			productType = "com.apple.product-type.application";
+		};
+		569DA7C4C04BFC3B0BCCF977 /* SmixRunnerWatchUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAA56A9C71E725AFE54F8B58 /* Build configuration list for PBXNativeTarget "SmixRunnerWatchUITests" */;
+			buildPhases = (
+				1B5725B83DF6226D74E32A48 /* Sources */,
+				9FA4BA9BFA00EFEDA5830080 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7073ECE50F3F5B00CF747137 /* PBXTargetDependency */,
+			);
+			name = SmixRunnerWatchUITests;
+			packageProductDependencies = (
+				0AFC5872AE7EDFBAC1E683E1 /* SmixRunnerCore */,
+			);
+			productName = SmixRunnerWatchUITests;
+			productReference = F7386BF7D405F82159D99777 /* SmixRunnerWatchUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		74C0C18B5BFC24A12DDF5FD8 /* SmixRunnerUITests */ = {
 			isa = PBXNativeTarget;
@@ -176,6 +253,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					569DA7C4C04BFC3B0BCCF977 = {
+						TestTargetID = 4DB9D645F55D8E45F1BF89E6;
+					};
 					74C0C18B5BFC24A12DDF5FD8 = {
 						TestTargetID = 50210BD2BF6F192B893BD29E;
 					};
@@ -200,11 +280,32 @@
 			targets = (
 				50210BD2BF6F192B893BD29E /* SmixRunner */,
 				74C0C18B5BFC24A12DDF5FD8 /* SmixRunnerUITests */,
+				4DB9D645F55D8E45F1BF89E6 /* SmixRunnerWatch */,
+				569DA7C4C04BFC3B0BCCF977 /* SmixRunnerWatchUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		1B5725B83DF6226D74E32A48 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B0AD205E17B715F57B7D4A6B /* AppsInFront.swift in Sources */,
+				5871D72A8325B2F2161A96B9 /* Banners.swift in Sources */,
+				11EA46FC2E5D6C89BFD20E6A /* EventRecorder.swift in Sources */,
+				7BA1E05F935FFD0C24FBFA53 /* EventSynthesizer.swift in Sources */,
+				58EEED923C9F292381626FC5 /* Gestures.swift in Sources */,
+				CF1355C5A13A19E08C2E4D73 /* Headset.swift in Sources */,
+				32E371D74A4C235CBBF55B47 /* HideKeyboard.swift in Sources */,
+				9B526DC876A13222EF1F513D /* PlatformShims.swift in Sources */,
+				FA5DBD8CE11D2E5321326EF9 /* SmixA11ySwizzle.m in Sources */,
+				AA058FC272D4A4E7FCEA2B45 /* SmixExceptionTrampoline.m in Sources */,
+				8AF80A0A6F69ABE46A696301 /* SmixQuiescenceSwizzle.m in Sources */,
+				AAF36372D48A36A10E012894 /* SmixRunnerUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		481E6E764D72884959B30767 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -216,10 +317,19 @@
 				826D4235E44CF76204CE5F73 /* Gestures.swift in Sources */,
 				55BE0426E74C56855DCE98DF /* Headset.swift in Sources */,
 				39AC667CBBFB90AAF02D95F9 /* HideKeyboard.swift in Sources */,
+				6FD0DE64FFB94BD90A52ACB5 /* PlatformShims.swift in Sources */,
 				53169F0AFCECEB57F00B6D2F /* SmixA11ySwizzle.m in Sources */,
 				5C28A1EFB4FFACB2067D1EFB /* SmixExceptionTrampoline.m in Sources */,
 				7744A4808C0F9E0E2608C8A6 /* SmixQuiescenceSwizzle.m in Sources */,
 				7D800097302AA44BD0C96BB9 /* SmixRunnerUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9E8C78BBD6958260548A8A9C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3A64CFAC473C7585E7F6DFF4 /* SmixRunnerApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -234,6 +344,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		7073ECE50F3F5B00CF747137 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4DB9D645F55D8E45F1BF89E6 /* SmixRunnerWatch */;
+			targetProxy = F4DCFDD2CE031E73ECAFACA4 /* PBXContainerItemProxy */;
+		};
 		B5FF0F12CF67A35BA51B8770 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 50210BD2BF6F192B893BD29E /* SmixRunner */;
@@ -242,6 +357,18 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		4565734307173E27CB358493 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				INFOPLIST_FILE = "SmixRunner/Info-watchOS.plist";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunner.watch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Debug;
+		};
 		508019CA06FC9E616E0368CA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -291,10 +418,11 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 				XROS_DEPLOYMENT_TARGET = 2.0;
 			};
 			name = Release;
@@ -355,10 +483,11 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 				XROS_DEPLOYMENT_TARGET = 2.0;
 			};
 			name = Debug;
@@ -375,11 +504,11 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunner;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator appletvos appletvsimulator xros xrsimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2,3,7";
 			};
 			name = Release;
 		};
@@ -395,13 +524,51 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunnerUITests;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator appletvos appletvsimulator xros xrsimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = "SmixRunnerUITests/SmixRunnerUITests-Bridging-Header.h";
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2,3,7";
 				TEST_TARGET_NAME = SmixRunner;
+			};
+			name = Debug;
+		};
+		C0ED5F78D268D962E99E4B5D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = "SmixRunnerUITests/Info-watchOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunnerUITests.watch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "SmixRunnerUITests/SmixRunnerUITests-Bridging-Header.h";
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = SmixRunnerWatch;
+			};
+			name = Release;
+		};
+		D230EDEB259C40AE527F8D3D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = "SmixRunnerUITests/Info-watchOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunnerUITests.watch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "SmixRunnerUITests/SmixRunnerUITests-Bridging-Header.h";
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = SmixRunnerWatch;
 			};
 			name = Debug;
 		};
@@ -417,12 +584,12 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunnerUITests;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator appletvos appletvsimulator xros xrsimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = "SmixRunnerUITests/SmixRunnerUITests-Bridging-Header.h";
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2,3,7";
 				TEST_TARGET_NAME = SmixRunner;
 			};
 			name = Release;
@@ -439,13 +606,25 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunner;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator appletvos appletvsimulator xros xrsimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2,3,7";
 			};
 			name = Debug;
+		};
+		FE8585A118AC5C2A6284A7A3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				INFOPLIST_FILE = "SmixRunner/Info-watchOS.plist";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunner.watch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
@@ -468,11 +647,29 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		5908E22D1EAC7E2D8A299E5F /* Build configuration list for PBXNativeTarget "SmixRunnerWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4565734307173E27CB358493 /* Debug */,
+				FE8585A118AC5C2A6284A7A3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		A0EC1D22DD00FAF3E666ACAB /* Build configuration list for PBXNativeTarget "SmixRunner" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				E690D832F7B777EB194B95CC /* Debug */,
 				9DB69DE5EC2402002B133745 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		AAA56A9C71E725AFE54F8B58 /* Build configuration list for PBXNativeTarget "SmixRunnerWatchUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D230EDEB259C40AE527F8D3D /* Debug */,
+				C0ED5F78D268D962E99E4B5D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -487,6 +684,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		0AFC5872AE7EDFBAC1E683E1 /* SmixRunnerCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SmixRunnerCore;
+		};
 		62641A65907E912ED2C1A626 /* SmixRunnerCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SmixRunnerCore;

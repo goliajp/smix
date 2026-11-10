@@ -87,10 +87,20 @@ func smixHeadsetTap(
     if let id {
       let element = app.descendants(matching: .any).matching(identifier: id).firstMatch
       guard element.exists else { return false }
+      #if os(tvOS)
+      // no press on a television: each is a focus-then-select
+      for _ in 0..<max(1, times) { guard smixActivate(element) else { return false } }
+      #else
       for _ in 0..<max(1, times) { if hold > 0 { element.press(forDuration: hold) } else { element.tap() } }
+      #endif
     } else {
+      #if os(tvOS)
+      // a television takes no touch at a point; only the focused element acts
+      return false
+      #else
       let point = app.coordinate(withNormalizedOffset: CGVector(dx: nx, dy: ny))
       for _ in 0..<max(1, times) { if hold > 0 { point.press(forDuration: hold) } else { point.tap() } }
+      #endif
     }
     return true
   } == true
@@ -169,6 +179,6 @@ func smixHeadsetSystemAlertAction(
   let buttons = w.buttons.allElementsBoundByAccessibilityElement
   guard buttonId.hasPrefix("b-"), let i = Int(buttonId.dropFirst(2)), buttons.indices.contains(i)
   else { return .notFound }
-  buttons[i].tap()
+  smixActivate(buttons[i])
   return .found
 }
