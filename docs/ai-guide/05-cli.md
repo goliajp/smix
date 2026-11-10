@@ -1029,6 +1029,11 @@ These act on the runner's currently-active sim. Used for ad-hoc debugging withou
 
 The selector is a positional argument in `<kind>:<value>` shorthand —
 `id:` / `text:` / `label:` / `role:` / `ocrText:` / `point:`.
+`tap`, `find`, `wait-for`, `fill`, `scroll` and `long-press` also take it
+as a flag, the way the MCP tools name it: `smix tap --text OK` is
+`smix tap text:OK`, and `--id`, `--label`, `--role`, `--ocr-text` likewise.
+On `fill`, `--text` stays the text to type. A selector given both ways, or
+two flags, is refused.
 
 `role:` takes the word a person writes, the same vocabulary yaml and MCP
 read: `button`, `Button`, `text_field`, `heading`, `tab`.

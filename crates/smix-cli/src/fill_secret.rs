@@ -3,6 +3,8 @@
 
 use clap::Parser;
 
+mod selector_flags;
+
 /// Flags of `smix fill` whose value is not what is typed.
 const SAFE_VALUES: &[&str] = &["--device", "--port", "--runner-port", "--platform"];
 
@@ -11,7 +13,13 @@ const SAFE_VALUES: &[&str] = &["--device", "--port", "--runner-port", "--platfor
 /// for a stray argument — a password, on 2026-11-02. For `fill` every
 /// value but the selector and the device's own flags is masked first.
 pub(crate) fn parse_or_exit<C: Parser>() -> C {
-    let argv: Vec<String> = std::env::args().collect();
+    let argv = match selector_flags::rewrite(std::env::args().collect()) {
+        Ok(a) => a,
+        Err(why) => {
+            eprintln!("error: {why}");
+            std::process::exit(2);
+        }
+    };
     match C::try_parse_from(&argv) {
         Ok(c) => c,
         Err(e) if e.use_stderr() && argv.get(1).map(String::as_str) == Some("fill") => {
