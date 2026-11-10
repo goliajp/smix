@@ -1770,6 +1770,18 @@ final class SmixRunnerUITests: XCTestCase {
       },
       pressKeyHandler: { key in
         let t0 = DispatchTime.now()
+        #if os(tvOS)
+        // A television has no keyboard to send keys to: each key is the
+        // remote button that does the same — arrows move the focus,
+        // return selects, escape goes back (Menu), space plays or pauses.
+        let remote: [String: XCUIRemote.Button] = [
+          "arrowUp": .up, "arrowDown": .down, "arrowLeft": .left, "arrowRight": .right,
+          "return": .select, "escape": .menu, "space": .playPause, "home": .home,
+        ]
+        guard let button = remote[key] else { return .notFound }
+        XCUIRemote.shared.press(button)
+        return .success(focusMs: 0, daemonSendMs: SmixRunnerServer.msBetween(t0, DispatchTime.now()))
+        #endif
         // `home` is not a keyboard event: it goes through XCUIDevice.
         // lock / volumeUp / volumeDown never reach here — the route
         // refuses them by name first (KeyboardRoute.missingButton),
