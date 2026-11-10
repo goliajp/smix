@@ -55,6 +55,7 @@ pub mod port_owner;
 pub mod route_limits;
 mod screen_read;
 mod unanswered;
+pub use unanswered::NEVER_ANSWERED;
 
 /// Which host-side authority can say who holds a port.
 ///
@@ -1236,8 +1237,8 @@ impl HttpRunnerClient {
             return Some(RunnerTransportError::Unreachable {
                 endpoint: endpoint.to_string(),
                 message: format!(
-                    "SmixRunner never answered at {} — start it with `smix runner up` ({err_str})",
-                    self.base
+                    "{} {} — start it with `smix runner up` ({err_str})",
+                    NEVER_ANSWERED, self.base
                 ),
             });
         }
@@ -1247,10 +1248,6 @@ impl HttpRunnerClient {
         })
     }
 
-    /// `GET /screenshot` — the whole screen as raw PNG bytes, taken
-    /// inside the runner by `XCUIScreen`.
-    ///
-    /// iOS only: the Android runner serves no such route.
     /// Ask the runner which spaces a tap is about to cross.
     ///
     /// `Ok(None)` means this runner has no such route. Every runner
@@ -1304,6 +1301,8 @@ impl HttpRunnerClient {
         }
     }
 
+    /// `GET /screenshot` — the whole screen as PNG bytes, taken inside the
+    /// runner (`XCUIScreen` on iOS; the Android runner serves it too).
     pub async fn screenshot(&self) -> Result<Vec<u8>, RunnerTransportError> {
         let endpoint = "/screenshot";
         let url = self.url(endpoint, None);

@@ -134,6 +134,7 @@ pub fn run(leases: &LeaseDir, prune: bool) -> Result<u8, crate::CliError> {
                             port: row.port,
                             serial: row.device_id.clone(),
                             proc: smix_lease::store::identify_self(),
+                            bundle: None,
                         },
                     ) {
                         Ok(()) => {

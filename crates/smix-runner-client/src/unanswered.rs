@@ -8,6 +8,10 @@
 
 use std::error::Error as _;
 
+/// How a request to a runner that has never answered begins its message.
+/// Exported so a caller that knows the device can say how to start one.
+pub const NEVER_ANSWERED: &str = "SmixRunner never answered at";
+
 impl crate::RunnerTransportError {
     /// For a request that went out unanswered: `Some(true)` when the host
     /// stopped waiting, `Some(false)` when the connection closed first.
