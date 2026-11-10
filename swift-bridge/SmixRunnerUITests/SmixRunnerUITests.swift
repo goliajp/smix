@@ -1094,7 +1094,7 @@ final class SmixRunnerUITests: XCTestCase {
     let sessionIdleTimeoutSec: TimeInterval = 60.0
     /// How often the idle-close sweep runs.
     let sessionIdleSweepIntervalSec: TimeInterval = 15.0
-    let resolveApp: @Sendable () async -> XCUIApplication = {
+    let resolveAppUnremembered: @Sendable () async -> XCUIApplication = {
       let ctx = SmixRunnerServer.currentContext
       // Session-Id header path — hit the session table, no activation.
       if let sid = ctx.sessionId {
@@ -1121,6 +1121,13 @@ final class SmixRunnerUITests: XCTestCase {
       if ctx.activate {
         _ = await maybeActivate(bundleId, app)
       }
+      return app
+    }
+    // The app a request drives, remembered for the remote, whose focus
+    // is read from it (a television; nothing elsewhere).
+    let resolveApp: @Sendable () async -> XCUIApplication = {
+      let app = await resolveAppUnremembered()
+      smixRemember(app)
       return app
     }
     ForegroundGate.install { ctx in
@@ -2431,7 +2438,14 @@ final class SmixRunnerUITests: XCTestCase {
         if let aimedAt, let saw = AimCheck.gone(target: aimedAt, chain: chain, readable: readable) {
           return (ok: false, chain: chain, press: nil, gone: saw)
         }
-        #if !os(iOS)
+        #if os(tvOS)
+          // A television takes no touch: the point names the element under
+          // it, which is focused with the remote and selected.
+          let activated = smixGuarded("tap-at-norm-coord-tv") {
+            SmixRemote.activate(at: CGVector(dx: nx, dy: ny), in: app)
+          } == true
+          return (ok: activated, chain: chain, press: nil, gone: nil)
+        #elseif !os(iOS)
           return (ok: smixHeadsetTap(app, nx: nx, ny: ny, times: times, holdMs: holdMs, aimedAt: aimedAt, chain: chain), chain: chain, press: nil, gone: nil)
         #endif
         // Timed around the synthesise alone: this process authors the
