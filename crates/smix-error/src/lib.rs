@@ -285,6 +285,17 @@ impl ExpectationFailure {
             for el in self.visible_elements.iter().take(10) {
                 lines.push(format!("    - {}", render_element(el)));
             }
+            let rest: Vec<String> = self.visible_elements[n..]
+                .iter()
+                .filter_map(|e| e.name.as_ref().or(e.text.as_ref()))
+                .map(|t| format!("{t:?}"))
+                .collect();
+            if !rest.is_empty() {
+                lines.push(format!(
+                    "  the rest of the screen's text: {}",
+                    rest.join(", ")
+                ));
+            }
         }
         if let Some(h) = &self.hint {
             lines.push(format!("  hint: {}", h));
@@ -387,120 +398,8 @@ fn render_element(el: &ElementSummary) -> String {
     bits.join(" ")
 }
 
-// -------------------- buildSuggestions ----------------------------------
-
-const SUGGESTION_THRESHOLD: f64 = 0.5;
-const SUGGESTION_TOP_N: usize = 3;
-
-/// Generate "Did you mean ...?" suggestions from the current visible
-/// element list. Contract: threshold > 0.5, top 3, score desc →
-/// field (name > text) → DFS index asc.
-///
-/// `target = None` → empty vec.
-#[must_use]
-pub fn build_suggestions(target: Option<&str>, visible: &[ElementSummary]) -> Vec<String> {
-    let Some(target) = target else {
-        return Vec::new();
-    };
-    let lower_target = target.to_lowercase();
-    let mut candidates: Vec<(f64, &'static str, String, usize)> = Vec::new();
-    for (i, el) in visible.iter().enumerate() {
-        let mut best: Option<(f64, &'static str, String)> = None;
-        if let Some(name) = &el.name
-            && !name.is_empty()
-        {
-            let s = similarity(&name.to_lowercase(), &lower_target);
-            if s > SUGGESTION_THRESHOLD {
-                best = Some((s, "name", name.clone()));
-            }
-        }
-        if let Some(id) = &el.id
-            && !id.is_empty()
-        {
-            let s = similarity(&id.to_lowercase(), &lower_target);
-            if s > SUGGESTION_THRESHOLD && best.as_ref().map(|(bs, _, _)| s > *bs).unwrap_or(true) {
-                best = Some((s, "id", id.clone()));
-            }
-        }
-        if let Some(text) = &el.text
-            && !text.is_empty()
-        {
-            let s = similarity(&text.to_lowercase(), &lower_target);
-            if s > SUGGESTION_THRESHOLD && best.as_ref().map(|(bs, _, _)| s > *bs).unwrap_or(true) {
-                best = Some((s, "text", text.clone()));
-            }
-        }
-        if let Some((score, field, value)) = best {
-            candidates.push((score, field, value, i));
-        }
-    }
-    // Sort: score desc → field name>text → index asc.
-    let field_rank = |f: &str| match f {
-        "name" => 0,
-        "id" => 1,
-        _ => 2, // text
-    };
-    candidates.sort_by(|a, b| {
-        b.0.partial_cmp(&a.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| field_rank(a.1).cmp(&field_rank(b.1)))
-            .then_with(|| a.3.cmp(&b.3))
-    });
-    candidates
-        .into_iter()
-        .take(SUGGESTION_TOP_N)
-        .map(|(score, field, value, _)| {
-            format!(
-                "Did you mean {:?}? (similarity {:.2}, field {})",
-                value, score, field
-            )
-        })
-        .collect()
-}
-
-/// Normalized `[0, 1]` string similarity. 1 = identical,
-/// 0 = completely different.
-#[must_use]
-pub fn similarity(a: &str, b: &str) -> f64 {
-    if a == b {
-        return 1.0;
-    }
-    let (longer, shorter) = if a.chars().count() >= b.chars().count() {
-        (a, b)
-    } else {
-        (b, a)
-    };
-    let llen = longer.chars().count();
-    if llen == 0 {
-        return 1.0;
-    }
-    let dist = edit_distance(longer, shorter);
-    (llen as f64 - dist as f64) / llen as f64
-}
-
-/// Levenshtein edit distance (Wagner-Fischer).
-#[must_use]
-pub fn edit_distance(a: &str, b: &str) -> usize {
-    let a_chars: Vec<char> = a.chars().collect();
-    let b_chars: Vec<char> = b.chars().collect();
-    let a_len = a_chars.len();
-    let b_len = b_chars.len();
-    let mut dp: Vec<usize> = (0..=b_len).collect();
-    for i in 1..=a_len {
-        let mut prev = dp[0];
-        dp[0] = i;
-        for j in 1..=b_len {
-            let tmp = dp[j];
-            dp[j] = if a_chars[i - 1] == b_chars[j - 1] {
-                prev
-            } else {
-                1 + dp[j].min(dp[j - 1]).min(prev)
-            };
-            prev = tmp;
-        }
-    }
-    dp[b_len]
-}
+mod suggest;
+pub use suggest::{build_suggestions, edit_distance, similarity};
 
 impl FailureCode {
     /// Every code, once.
