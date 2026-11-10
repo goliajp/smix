@@ -268,6 +268,7 @@ mod popup_tap;
 mod runtime;
 pub mod selector_support;
 pub mod send_push;
+mod stillness;
 mod timing;
 mod until_effect;
 mod watch;

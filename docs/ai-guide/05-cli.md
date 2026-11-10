@@ -1045,7 +1045,10 @@ where text was one look ago, not a field or an anchor.
 
 `point:` is the last resort — `point:50%,80%`, or the same point written
 `point:0.5,0.8`. A fraction of the viewport, never pixels, because a flow
-written in pixels runs on one screen size. Only `smix tap` takes one:
+written in pixels runs on one screen size. A point tap waits for the
+screen to stop moving first, and says so when it was still moving after
+3 s. `tap`, `long-press`, `drag` and `pinch` take one, `find`, `fill`,
+`scroll` and `wait-for` do not:
 there is nothing at a coordinate to find, fill, scroll to or wait for,
 and those four say so rather than resolving something that cannot
 resolve.

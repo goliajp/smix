@@ -172,7 +172,11 @@ impl Driver for IosDriver {
         IosDriver::tap_with_mode(self, selector, mode, include).await
     }
 
-    async fn double_tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
+    async fn double_tap_at_norm_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+    ) -> Result<crate::ScreenAtTouch, ExpectationFailure> {
         IosDriver::double_tap_at_norm_coord(self, nx, ny).await
     }
 
@@ -181,11 +185,15 @@ impl Driver for IosDriver {
         nx: f64,
         ny: f64,
         duration_ms: u64,
-    ) -> Result<(), ExpectationFailure> {
+    ) -> Result<crate::ScreenAtTouch, ExpectationFailure> {
         IosDriver::long_press_at_norm_coord(self, nx, ny, duration_ms).await
     }
 
-    async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
+    async fn tap_at_norm_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+    ) -> Result<crate::ScreenAtTouch, ExpectationFailure> {
         IosDriver::tap_at_norm_coord(self, nx, ny).await
     }
 

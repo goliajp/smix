@@ -243,6 +243,7 @@ async fn a_long_press_without_bounds_cannot_be_placed() {
 #[tokio::test]
 async fn a_coordinate_double_tap_and_long_press_use_the_route_the_runner_serves() {
     let server = MockServer::start().await;
+    crate::a_point_waits_for_the_screen::mount_a_still_screen(&server).await;
     Mock::given(method("POST"))
         .and(path("/tap-at-norm-coord"))
         .and(Body {
