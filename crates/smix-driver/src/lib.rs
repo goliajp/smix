@@ -1909,7 +1909,7 @@ mod ios_point;
 mod refusal_hint;
 mod scroll_until;
 pub mod settle;
-pub use point_settle::ScreenAtTouch;
+pub use point_settle::{ScreenAtTouch, ScreenRegion};
 pub mod still;
 mod touch_aimed;
 mod traits;
