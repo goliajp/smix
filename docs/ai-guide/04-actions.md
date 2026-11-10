@@ -172,9 +172,12 @@ before it acts.
 - Waits first, as a selector tap does: for the app to have a frame (a
   touch straight after `launchApp` waits for the first screen), then for
   two screenshots in a row to agree, for up to 3 s (`--settle-max-ms`;
-  `--settle-frames 1` turns the wait off). A screen that never stops — a
-  spinner, a video — is touched when the limit comes, and the step's
-  warnings say it was still moving. A screen that is still arriving but
+  `--settle-frames 1` turns the wait off). A part of the screen away from
+  the point that keeps changing for over a second — a video, a looping
+  animation — is left out of the comparison, and the step's warnings name
+  where it was. Motion near the point always counts: a screen still moving
+  there is touched when the limit comes, and the warnings say it was still
+  moving. A screen that is still arriving but
   draws nothing new until it has arrived cannot be seen to be arriving:
   wait for something on it by selector instead.
 - Brittle; only use when no element identifier is reliable.
