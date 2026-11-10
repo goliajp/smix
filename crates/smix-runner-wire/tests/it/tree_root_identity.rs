@@ -18,6 +18,9 @@
 
 const UITESTS: &str =
     include_str!("../../../../swift-bridge/SmixRunnerUITests/SmixRunnerUITests.swift");
+/// Where the see-through path builds its synthetic root.
+const CONVERSION: &str =
+    include_str!("../../../../swift-bridge/SmixRunnerUITests/SnapshotConversion.swift");
 
 #[test]
 fn tree_root_identifier_tracks_per_request_bundle() {
@@ -44,7 +47,7 @@ fn tree_root_identifier_tracks_per_request_bundle() {
 fn see_through_root_identifier_tracks_per_request_bundle_too() {
     let marker = "identifier: SmixRunnerServer.currentContext.bundleId ?? bundleId,";
     assert!(
-        UITESTS.contains(marker),
+        CONVERSION.contains(marker),
         "the all-windows synthetic root went back to the launch-time bundle, so \
          the two tree paths now disagree about which app answered."
     );

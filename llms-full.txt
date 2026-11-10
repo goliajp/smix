@@ -3549,6 +3549,8 @@ smix hover --away                          # …and leaves the app
 smix window-size 839x768 --app com.example # Android desktop window: resize to 839x768 dp, read it back
 smix window-size compact                   # …or a named size: compact / medium / expanded
 smix hide-keyboard
+smix rotate-crown 1                        # Apple Watch / Vision Pro: one full turn of the Digital Crown
+smix rotate-crown -0.5 --velocity 2        # …half a turn back, two turns a second
 
 smix tree --json | jq .                    # full a11y tree
 smix tree                                  # human-readable outline
