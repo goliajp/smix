@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0C80F867AACF331D9AA67558 /* SmixRunnerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 62641A65907E912ED2C1A626 /* SmixRunnerCore */; };
 		11EA46FC2E5D6C89BFD20E6A /* EventRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */; };
+		19A5E507B109CA9F898C87A5 /* SnapshotConversion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D4FF9E8E5063F27381930F /* SnapshotConversion.swift */; };
 		1CB5D5E731634D61D9EE489A /* EventSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72197983C53848D29C050471 /* EventSynthesizer.swift */; };
 		32E371D74A4C235CBBF55B47 /* HideKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60ADEFEBB5644D83B0956CD1 /* HideKeyboard.swift */; };
 		39AC667CBBFB90AAF02D95F9 /* HideKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60ADEFEBB5644D83B0956CD1 /* HideKeyboard.swift */; };
@@ -27,6 +28,7 @@
 		7D800097302AA44BD0C96BB9 /* SmixRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */; };
 		826D4235E44CF76204CE5F73 /* Gestures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C69C75F795D8AE23B9BE25 /* Gestures.swift */; };
 		8AF80A0A6F69ABE46A696301 /* SmixQuiescenceSwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */; };
+		9439E0D2CC0D2C8D00CF5957 /* SnapshotConversion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D4FF9E8E5063F27381930F /* SnapshotConversion.swift */; };
 		9B526DC876A13222EF1F513D /* PlatformShims.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DAFC18F37943D45AED8EA76 /* PlatformShims.swift */; };
 		AA058FC272D4A4E7FCEA2B45 /* SmixExceptionTrampoline.m in Sources */ = {isa = PBXBuildFile; fileRef = BCD3DBB82831D19910E77B87 /* SmixExceptionTrampoline.m */; };
 		AAF36372D48A36A10E012894 /* SmixRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */; };
@@ -65,6 +67,7 @@
 		43066DF5775A7FCC7E12F5A5 /* SmixRunnerUITests-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "SmixRunnerUITests-Bridging-Header.h"; sourceTree = "<group>"; };
 		60ADEFEBB5644D83B0956CD1 /* HideKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HideKeyboard.swift; sourceTree = "<group>"; };
 		6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmixRunnerUITests.swift; sourceTree = "<group>"; };
+		71D4FF9E8E5063F27381930F /* SnapshotConversion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotConversion.swift; sourceTree = "<group>"; };
 		72197983C53848D29C050471 /* EventSynthesizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventSynthesizer.swift; sourceTree = "<group>"; };
 		77E941BAAFA086830E4BCA33 /* SmixA11ySwizzle.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SmixA11ySwizzle.m; sourceTree = "<group>"; };
 		7DAFC18F37943D45AED8EA76 /* PlatformShims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformShims.swift; sourceTree = "<group>"; };
@@ -149,6 +152,7 @@
 				94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */,
 				43066DF5775A7FCC7E12F5A5 /* SmixRunnerUITests-Bridging-Header.h */,
 				6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */,
+				71D4FF9E8E5063F27381930F /* SnapshotConversion.swift */,
 			);
 			path = SmixRunnerUITests;
 			sourceTree = "<group>";
@@ -308,6 +312,7 @@
 				AA058FC272D4A4E7FCEA2B45 /* SmixExceptionTrampoline.m in Sources */,
 				8AF80A0A6F69ABE46A696301 /* SmixQuiescenceSwizzle.m in Sources */,
 				AAF36372D48A36A10E012894 /* SmixRunnerUITests.swift in Sources */,
+				9439E0D2CC0D2C8D00CF5957 /* SnapshotConversion.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -328,6 +333,7 @@
 				5C28A1EFB4FFACB2067D1EFB /* SmixExceptionTrampoline.m in Sources */,
 				7744A4808C0F9E0E2608C8A6 /* SmixQuiescenceSwizzle.m in Sources */,
 				7D800097302AA44BD0C96BB9 /* SmixRunnerUITests.swift in Sources */,
+				19A5E507B109CA9F898C87A5 /* SnapshotConversion.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

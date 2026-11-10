@@ -1883,9 +1883,7 @@ fn _silence_unused_imports() {
     let _ = summarize_node;
 }
 
-// ===========================================================================
 // Cross-platform Driver trait + Android-ready architecture
-// ===========================================================================
 
 mod aim;
 mod android;
