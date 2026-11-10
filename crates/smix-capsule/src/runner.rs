@@ -282,7 +282,7 @@ pub fn xcodebuild_argv_for(project: &Path, udid: &str, target: RunnerTarget<'_>)
         "-project".into(),
         project.display().to_string(),
         "-scheme".into(),
-        "SmixRunner".into(),
+        crate::runner_scheme::for_device(udid).into(),
         "-destination".into(),
         // A simulator is named by id alone, so xcodebuild reads its
         // platform (iOS, visionOS, tvOS) from the device. A phone keeps

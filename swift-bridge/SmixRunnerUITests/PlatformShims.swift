@@ -27,6 +27,16 @@ import Foundation
 
 import XCTest
 
+/// Remember the app the current request drives: on a television the
+/// focus is read from it. Nothing on the other platforms.
+func smixRemember(_ app: XCUIApplication) {
+  #if os(tvOS)
+  SmixRemote.lock.lock()
+  SmixRemote.current = app
+  SmixRemote.lock.unlock()
+  #endif
+}
+
 /// Act on `element` the way this platform acts on things: a touch where
 /// there is one, and on a television — which takes no touch — the remote:
 /// focus moved onto it, then select.
@@ -48,10 +58,14 @@ enum SmixRemote {
   /// never lands on is reported rather than chased.
   static let maxPresses = 40
 
+  /// The app the latest request drove (see `smixRemember`).
+  nonisolated(unsafe) static var current: XCUIApplication?
+  static let lock = NSLock()
+
   /// Move the focus onto `target`, a press at a time toward it, then press
   /// select. False when the focus stops moving or never arrives.
   static func focusThenSelect(_ target: XCUIElement) -> Bool {
-    guard target.exists else { return false }
+    guard target.exists else { return say("the target is gone") }
     let remote = XCUIRemote.shared
     var last: CGRect?
     for _ in 0..<maxPresses {
@@ -59,18 +73,60 @@ enum SmixRemote {
         remote.press(.select)
         return true
       }
-      guard let focused = focusedElement(), focused.exists else { return false }
+      guard let focused = focusedElement(), focused.exists else {
+        return say("nothing holds the focus")
+      }
       let from = focused.frame
-      if let last, last == from { return false }
+      if let last, last == from {
+        return say("the focus stayed at \(from) on the way to \(target.frame)")
+      }
       last = from
       remote.press(direction(from: from, to: target.frame))
     }
+    return say("the focus did not reach \(target.frame) in \(maxPresses) presses")
+  }
+
+  @discardableResult
+  private static func say(_ why: String) -> Bool {
+    FileHandle.standardError.write(Data("smix-runner: remote: \(why)\n".utf8))
     return false
   }
 
-  /// The element holding the focus, anywhere in the front app.
+  /// The element a host aimed at by a normalised point: the smallest
+  /// focusable element whose frame holds it. Focused and selected.
+  static func activate(at norm: CGVector, in app: XCUIApplication) -> Bool {
+    let frame = app.frame
+    let point = CGPoint(
+      x: frame.minX + norm.dx * frame.width, y: frame.minY + norm.dy * frame.height)
+    let focusable: [XCUIElement.ElementType] = [
+      .cell, .button, .link, .tab, .textField, .secureTextField, .searchField, .switch,
+      .segmentedControl, .slider, .image, .other,
+    ]
+    var best: (XCUIElement, CGFloat)?
+    for type in focusable {
+      for e in app.descendants(matching: type).allElementsBoundByIndex {
+        let f = e.frame
+        // a container the size of the screen is not what was pointed at
+        guard f.contains(point), f.width > 0, f.height > 0,
+          f.width * f.height < frame.width * frame.height / 2
+        else { continue }
+        let area = f.width * f.height
+        if best == nil || area < best!.1 { best = (e, area) }
+      }
+      if best != nil, type == .cell || type == .button { break }
+    }
+    guard let target = best?.0 else { return say("nothing focusable under \(point)") }
+    let done = focusThenSelect(target)
+    say("activate at \(point): \(target.elementType.rawValue) \(target.frame) → \(done)")
+    return done
+  }
+
+  /// The element holding the focus, anywhere in the app being driven.
   static func focusedElement() -> XCUIElement? {
-    let app = XCUIApplication()
+    lock.lock()
+    let driven = current
+    lock.unlock()
+    guard let app = driven else { return nil }
     let hit = app.descendants(matching: .any)
       .matching(NSPredicate(format: "hasFocus == true")).firstMatch
     return hit.exists ? hit : nil
