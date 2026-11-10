@@ -605,22 +605,6 @@ pub async fn cmd_swipe(
 /// It used to promise a title and a status bar. Neither exists anywhere
 /// in the tree, and two of the three metadata fields were empty on top
 /// of that — the help described a richer thing than the code produced.
-pub async fn cmd_describe(json: bool, port: u16) -> Result<(), ActError> {
-    let d = SimctlDriver::new(runner_client(port));
-    let desc = d
-        .describe()
-        .await
-        .map_err(|e| ActError::Transport(format!("{e}")))?;
-    if json {
-        let s = serde_json::to_string_pretty(&desc)
-            .map_err(|e| ActError::Transport(format!("serde: {e}")))?;
-        println!("{s}");
-    } else {
-        println!("{desc:#?}");
-    }
-    Ok(())
-}
-
 /// `smix system-popups [--json]` — print the runner's current SpringBoard
 /// system-popup list (camera permission alerts, "Open in `<App>`?", etc.).
 /// `--json` emits the wire JSON; default emits a pretty-printed Debug

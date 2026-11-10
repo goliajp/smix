@@ -28,6 +28,15 @@ struct ScreenshotParams {
     max_width: Option<u32>,
 }
 
+/// How much of the screen `smix_describe` gives back.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+struct DescribeParams {
+    /// One line per element — role, name, id — and no bounds: a fraction
+    /// of the size, enough to write the next selector.
+    #[serde(default)]
+    compact: bool,
+}
+
 /// Write `png` to `path`, or to a new file under the temporary directory,
 /// and say where and how big.
 fn keep(png: &[u8], path: Option<&str>) -> Result<String, McpError> {
@@ -59,6 +68,27 @@ fn keep(png: &[u8], path: Option<&str>) -> Result<String, McpError> {
 
 #[tool_router(router = frame_router, vis = "pub(crate)")]
 impl SmixMcpService {
+    #[tool(
+        description = "Describe the current screen: the visible elements a reader could name, each with its role, name, id and bounds, as JSON. Give compact: true for one line per element — role, name, id — without bounds, a fraction of the size. Needs smix_use, then the session smix_launch_app opens."
+    )]
+    /// CLI: smix describe
+    async fn smix_describe(
+        &self,
+        Parameters(params): Parameters<DescribeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let app = self.bound_app().await?;
+        let desc = app
+            .describe()
+            .await
+            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        let text = if params.compact {
+            desc.compact()
+        } else {
+            serde_json::to_string_pretty(&desc).unwrap_or_default()
+        };
+        Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
+    }
+
     #[tool(
         description = "Tap an element and take a frame in the same call, in that order. For UI that does not wait: something that hides itself after a few seconds outlives neither a second tool call nor the turn between them. Name the element with exactly one of id / text / label / role — prefer id. Returns a line saying where the frame came from and how many milliseconds after the tap it landed, and the file the PNG was written to. A tap that fails returns no frame. Needs the session smix_launch_app opens."
     )]

@@ -43,8 +43,8 @@
 //! standalone CLI invocations.
 
 use crate::act::{
-    self, cmd_describe, cmd_fill, cmd_find, cmd_hide_keyboard, cmd_press_key, cmd_scroll,
-    cmd_system_popups, cmd_tap, cmd_tree, cmd_wait_for,
+    self, cmd_fill, cmd_find, cmd_hide_keyboard, cmd_press_key, cmd_scroll, cmd_system_popups,
+    cmd_tap, cmd_tree, cmd_wait_for,
 };
 use serde_norway::Value;
 use smix_simctl::SimctlClient;
@@ -351,7 +351,7 @@ async fn run_step(
         } => cmd_scroll(selector.clone(), direction.clone(), port, platform).await,
         Step::HideKeyboard => cmd_hide_keyboard(port, platform).await,
         Step::Tree { json } => cmd_tree(*json, port, false, act::TreeReader::Auto, false).await,
-        Step::Describe { json } => cmd_describe(*json, port).await,
+        Step::Describe { json } => crate::describe_cmd::cmd_describe(*json, false, port).await,
         Step::SystemPopups { json } => cmd_system_popups(*json, port).await,
         // Lifecycle variants handled above.
         Step::Launch { .. }
