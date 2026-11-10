@@ -17,8 +17,10 @@
 # The fixture's touch screen has each shape and counts what it receives, so
 # where a tap went is read from the app: a tap on each, with no allowance for
 # a mismatch, and the counts. Then the other side, which has to stay red: a
-# tap at a control under a clickable scrim is a miss, and the app says the
-# scrim took it.
+# tap at a control a clickable scrim lies wholly over is refused NOT_VISIBLE
+# naming the scrim, and nothing is touched — the panel stays open (until
+# 25.1 the touch went in, the scrim took it and closed the panel, and the
+# step was judged TAP_MISSED after the fact).
 #
 # Against the 14.2.0 runner the handle, GO LIVE, label and panel taps are
 # each reported TAP_MISSED.
@@ -175,13 +177,14 @@ rc="$(flow under <<'FLOW'
 FLOW
 )"
 [ "$rc" -ne 0 ] || fail "a tap at a control under the clickable scrim passed"
-grep -q "TAP_MISSED" "$WORK/under.log" || { tail -10 "$WORK/under.log" >&2; fail "the tap under the scrim failed with something other than TAP_MISSED"; }
-grep -q 'Close panel' "$WORK/under.log" || { tail -10 "$WORK/under.log" >&2; fail "the miss does not name the scrim that took the touch"; }
-must_pass after "after the tap under the scrim the app is not where a scrim tap leaves it" <<'FLOW'
-- assertNotVisible: { id: touch-panel-30 }
+grep -q "NOT_VISIBLE" "$WORK/under.log" || { tail -10 "$WORK/under.log" >&2; fail "the tap under the scrim failed with something other than NOT_VISIBLE"; }
+grep -q 'Close panel' "$WORK/under.log" || { tail -10 "$WORK/under.log" >&2; fail "the refusal does not name the scrim over the control"; }
+grep -q 'nothing was touched' "$WORK/under.log" || { tail -10 "$WORK/under.log" >&2; fail "the refusal does not say nothing was touched"; }
+must_pass after "after the refused tap under the scrim the panel did not stay open, or something counted a touch" <<'FLOW'
+- assertVisible: { id: touch-panel-30 }
 - assertVisible: "handle=0 zone=0 pill=0 pill2=0 card=0 sheet=0 panel=0 polyA=0 polyB=0"
 FLOW
-log "under the scrim: reported TAP_MISSED naming the scrim, and the scrim is what the app says took it"
+log "under the scrim: refused NOT_VISIBLE naming the scrim, nothing touched, the panel still open"
 
 crashes="$(adb -s "$SERIAL" logcat -b crash -d 2>/dev/null | grep -c 'FATAL EXCEPTION' || true)"
 [ "$crashes" = 0 ] || fail "the app crashed $crashes time(s)"
