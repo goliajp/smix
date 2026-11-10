@@ -14,6 +14,8 @@
 # says (`dumpsys window`, `dumpsys user`):
 #   1. a flow run under the lock screen fails saying the lock screen is
 #      showing, not that the app is in the background
+#   1b. `runner up` again, the runner already answering, names the lock
+#      screen and `sim boot --unlock-pin` rather than a stuck runner
 #   2. `sim boot` without the PIN refuses the device the lock screen is
 #      over; with a wrong one it says it is still locked
 #   3. with the right one it answers once the lock screen is gone
@@ -125,6 +127,15 @@ log "a flow under the lock screen: exit $rc, $(grep -o 'FAIL \[[A-Z_]*\]' "$WORK
 grep -q "the lock screen is showing over it" "$WORK/run.err" \
   || { tail -4 "$WORK/run.err" >&2; fail "the failure does not say the lock screen is over the app"; }
 [ "$(keyguard)" = true ] || cannot_judge "the lock screen went away during the flow"
+
+# ---- 1b. runner up again under the lock screen ----
+rc=0; SMIX_RUNNER_PORT="$PORT" "$SMIX" runner up "$SERIAL" --runner-port "$PORT" >"$WORK/reup.log" 2>&1 || rc=$?
+log "runner up again under the lock screen: exit $rc"
+[ "$rc" != 0 ] || fail "runner up answered with the lock screen over the app"
+grep -q "the lock screen is showing" "$WORK/reup.log" && grep -q -- "--unlock-pin" "$WORK/reup.log" \
+  || { tail -6 "$WORK/reup.log" >&2; fail "runner up under the lock screen does not name it and the way to open it"; }
+! grep -q -- "--force" "$WORK/reup.log" || { tail -6 "$WORK/reup.log" >&2; fail "runner up under the lock screen still blames the runner"; }
+[ "$(keyguard)" = true ] || cannot_judge "the lock screen went away during runner up"
 
 # ---- 2. without the PIN, and with a wrong one ----
 rc=0; "$SMIX" sim boot "$SERIAL" >"$WORK/nopin.log" 2>&1 || rc=$?

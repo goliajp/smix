@@ -14,6 +14,13 @@ All notable changes to the `smix` workspace are documented here. The format foll
   answer names where it was; motion near the point still counts. Rust:
   `ScreenAtTouch::StillApartFrom { waited, playing: ScreenRegion }`.
 
+- **`runner up` on an Android device behind its lock screen says so, and
+  how to open it.** With a runner already answering, the refusal guessed at
+  "a lock screen, or a crashed instrumentation" — saying smix does not
+  unlock a device, which `sim boot --unlock-pin` has done since 23.3 — and
+  then offered `--force`. It now reads `isKeyguardShowing` and, with the
+  lock screen up, names `smix sim boot <serial> --unlock-pin <pin>`.
+
 ## [25.0.0] — 2026-11-10
 
 ### Breaking

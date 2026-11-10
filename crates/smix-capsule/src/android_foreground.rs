@@ -108,8 +108,7 @@ pub fn next_step(screen: &Screen, named: Option<&str>, collapsed_already: bool) 
         return Step::Refuse(format!(
             "only system UI is on the screen, and it is still there after putting \
              the notification shade away (windows: {}). Either a lock screen is up \
-             — smix does not unlock a device — or the instrumentation crashed and \
-             was restarted and sees nothing else",
+             or the instrumentation crashed and was restarted and sees nothing else",
             describe(&screen.windows),
         ));
     }
