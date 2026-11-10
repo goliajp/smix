@@ -287,6 +287,19 @@ pub struct TapTarget {
 /// or `None` for any other error.
 #[must_use]
 pub fn target_gone_before_touch(e: &RunnerTransportError) -> Option<String> {
+    refused_before_touch(e, "target_gone_before_touch")
+}
+
+/// The runner's note when it did not send a touch because something drawn
+/// over the element aimed at — a toast, a sheet's scrim — would have taken
+/// it at every part of the element it tried, or `None` for any other
+/// error. Android only: the iOS runner cannot see what is drawn over what.
+#[must_use]
+pub fn target_covered_before_touch(e: &RunnerTransportError) -> Option<String> {
+    refused_before_touch(e, "target_covered_before_touch")
+}
+
+fn refused_before_touch(e: &RunnerTransportError, kind: &str) -> Option<String> {
     let RunnerTransportError::NonSuccessStatus {
         status: 409, body, ..
     } = e
@@ -294,7 +307,7 @@ pub fn target_gone_before_touch(e: &RunnerTransportError) -> Option<String> {
         return None;
     };
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
-    (v.get("error")?.as_str()? == "target_gone_before_touch").then(|| {
+    (v.get("error")?.as_str()? == kind).then(|| {
         v.get("saw")
             .and_then(|s| s.as_str())
             .unwrap_or("")

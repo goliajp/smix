@@ -685,18 +685,17 @@ class SmixHttpServer(
         val (w, h) = displaySize()
         val px = RunnerWire.normToPixel(req.nx, w)
         val py = RunnerWire.normToPixel(req.ny, h)
-        // Before the touch: a confirm that lands takes its dialog away.
-        val chain = hitChainAt(session, RunnerWire.decodeAimedBy(payload), px, py)
-        AimCheck.decode(payload)?.let { t -> AimCheck.gone(t, chain)?.let { t to it } }?.let { (t, saw) ->
-            return newFixedLengthResponse(Response.Status.CONFLICT, "application/json", AimCheck.goneBody(saw, t))
-        }
+        // Before the touch: a confirm that lands takes its dialog away; a covered target is touched where it shows.
+        val placed = AimCheck.place(AimCheck.decode(payload), px, py, w, h) { x, y -> hitChainAt(session, RunnerWire.decodeAimedBy(payload), x, y) }
+        if (placed is AimCheck.Placement.Refuse) return newFixedLengthResponse(Response.Status.CONFLICT, "application/json", placed.body)
+        val (tx, ty, chain) = (placed as AimCheck.Placement.Touch).let { Triple(it.x, it.y, it.reading) }
         val ok = TapBurst.decode(payload).touch(
-            { device.click(px, py) }, { device.swipe(px, py, px, py, RunnerWire.longPressSteps(it)) }, Thread::sleep,
+            { device.click(tx, ty) }, { device.swipe(tx, ty, tx, ty, RunnerWire.longPressSteps(it)) }, Thread::sleep,
         )
         // Give the dispatched IO event time to render before /tree probes
         // observe the post-tap UI state.
         device.waitForIdle(500)
-        val body = RunnerWire.tapAtNormCoordBody(ok, w, h, px, py, chain)
+        val body = RunnerWire.tapAtNormCoordBody(ok, w, h, tx, ty, chain)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 

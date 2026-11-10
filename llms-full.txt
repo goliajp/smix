@@ -1732,6 +1732,13 @@ reports nothing about where a touch went fails the step and says so
 (until 11.0, every Android tap reported nothing and was printed as
 `not verified` — and passed).
 
+On Android the runner also reads, before a `tapOn` goes in, what a touch at
+the point would reach. When something drawn over your element — a toast, a
+banner, a sheet's scrim — would take it there, the touch goes to the part of
+your element that shows instead; when none of it shows, nothing is touched
+and the step fails `NOT_VISIBLE`, naming what is over it (after up to 5 s of
+aiming again, since a toast often goes away by itself).
+
 The gap between those two is not hypothetical. The comparison happens
 entirely in the coordinate space the snapshot describes; the
 synthesised event is read in whatever space it is stamped with, and

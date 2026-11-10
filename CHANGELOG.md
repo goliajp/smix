@@ -22,6 +22,15 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Fixed
 
+- **On Android a tap goes around what is drawn over its element.** A
+  consumer's menu button had a toast across its lower part, the toast's
+  close button over the button's centre: the tap went to the close button
+  and was judged missed afterwards. The runner now reads before the touch
+  what a touch would reach; when something covers the aimed point it
+  touches the part of the element that shows, and when nothing shows it
+  touches nothing and the step fails `NOT_VISIBLE` naming the cover — where
+  it used to press a sheet's scrim and close the sheet. Rust:
+  `smix_runner_client::target_covered_before_touch`.
 - **A scroll stops on a target only once it is clear of the status bar.** A
   row half under it was taken as reached; on a watch such a row took no tap
   at all, so the tap after `scrollUntilVisible` did nothing. A target the
