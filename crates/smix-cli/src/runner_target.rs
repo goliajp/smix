@@ -35,7 +35,7 @@ fn is_android(device: &str) -> bool {
 }
 
 pub(crate) fn runner_dial_port(flag: Option<u16>, device: Option<&str>) -> u16 {
-    crate::act::name_the_device(device, device.is_some_and(is_android));
+    name_the_device(device, device.is_some_and(is_android));
     crate::run_port(flag.or_else(crate::act::runner_port_from_env_opt), || {
         device.and_then(device_port)
     })
@@ -186,5 +186,100 @@ mod tests {
             stale.is_empty(),
             "`--port` help still says the old order: {stale:?}"
         );
+    }
+}
+
+/// The `smix runner up` that would bring back a runner for `device`, with
+/// the app it was last brought up for when its ledger still says, and a
+/// placeholder to fill in when it does not.
+pub(crate) fn runner_up_command(device: &str, android: bool) -> String {
+    use smix_lease::Resource;
+    let id = crate::lookup_registered(device).map_or_else(|| device.to_string(), |s| s.udid);
+    let bundle = smix_capsule::runner::machine_leases()
+        .ok()
+        .and_then(|leases| smix_lease::store::read(&leases, &id).ok().flatten())
+        .and_then(|lease| {
+            lease.known_resources().find_map(|r| match r {
+                Resource::Runner { bundle, .. } | Resource::AndroidRunner { bundle, .. } => {
+                    bundle.clone()
+                }
+                _ => None,
+            })
+        });
+    command_to_bring_up(device, android, bundle.as_deref())
+}
+
+fn command_to_bring_up(device: &str, android: bool, bundle: Option<&str>) -> String {
+    let platform = if android { " --platform android" } else { "" };
+    let bundle = bundle.unwrap_or("<your-app>");
+    format!("smix runner up {device}{platform} --bundle {bundle}")
+}
+
+#[cfg(test)]
+mod bring_up_tests {
+    use super::command_to_bring_up;
+
+    #[test]
+    fn the_command_names_the_device_the_platform_and_the_app() {
+        assert_eq!(
+            command_to_bring_up("emulator-5560", true, Some("com.example.app")),
+            "smix runner up emulator-5560 --platform android --bundle com.example.app"
+        );
+        assert_eq!(
+            command_to_bring_up("sim-a", false, None),
+            "smix runner up sim-a --bundle <your-app>"
+        );
+    }
+}
+
+/// The device the command line named, with the book that says which
+/// device a port reaches. Set once, when the verb dials its port.
+static NAMED_DEVICE: std::sync::OnceLock<(String, smix_runner_client::OwnerProbe)> =
+    std::sync::OnceLock::new();
+
+/// Record the device the command named, so every runner client this
+/// process builds refuses a port that reaches another one. `smix run`
+/// refused that before its first request; the one-shot verbs built
+/// their clients bare and read whichever device held the port.
+pub(crate) fn name_the_device(device: Option<&str>, android: bool) {
+    if let Some(d) = device {
+        let probe = if android {
+            smix_runner_client::OwnerProbe::Android
+        } else {
+            smix_runner_client::OwnerProbe::Ios
+        };
+        let _ = NAMED_DEVICE.set((d.to_string(), probe));
+    }
+}
+
+/// Print a command's failure, with how to start its runner when no runner
+/// ever answered, and exit 1.
+pub(crate) fn fail(error: &str) -> std::process::ExitCode {
+    eprintln!("error: {error}{}", how_to_start_the_runner(error));
+    std::process::ExitCode::from(1)
+}
+
+/// The full `smix runner up` for the device this command named, when what
+/// failed was that no runner ever answered; nothing otherwise.
+fn how_to_start_the_runner(error: &str) -> String {
+    match NAMED_DEVICE.get() {
+        Some((device, probe)) if error.contains(smix_runner_client::NEVER_ANSWERED) => format!(
+            "\n  start it with: {}",
+            runner_up_command(
+                device,
+                matches!(probe, smix_runner_client::OwnerProbe::Android)
+            )
+        ),
+        _ => String::new(),
+    }
+}
+
+/// A runner client on `port` that checks, before its first request, that
+/// the port reaches the device the command named.
+pub(crate) fn runner_client(port: u16) -> smix_runner_client::HttpRunnerClient {
+    let client = smix_runner_client::HttpRunnerClient::new(port);
+    match NAMED_DEVICE.get() {
+        Some((device, probe)) => client.with_port_owner_check(Some(device.clone()), *probe),
+        None => client,
     }
 }

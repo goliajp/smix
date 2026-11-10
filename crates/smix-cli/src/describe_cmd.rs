@@ -2,7 +2,8 @@
 
 use smix_driver::SimctlDriver;
 
-use crate::act::{ActError, runner_client};
+use crate::act::ActError;
+use crate::runner_target::runner_client;
 
 /// What `smix describe` was given.
 #[derive(clap::Args, Debug)]

@@ -23,10 +23,10 @@
 
 use smix_driver::{AndroidDriver, Driver, Platform, SimctlDriver};
 use smix_input::{KeyName, SwipeDirection};
-use smix_runner_client::HttpRunnerClient;
 use smix_selector::{Modifiers, Pattern, Selector};
 use std::time::Duration;
 
+use crate::runner_target::runner_client;
 #[cfg(test)]
 use crate::tree_cmd::outline_line;
 pub use crate::tree_cmd::{TreeReader, cmd_tree, fetch_tree_json};
@@ -174,36 +174,6 @@ pub enum ActError {
     Transport(String),
     #[error("wait_for timeout after {timeout_ms}ms: {selector}")]
     Timeout { selector: String, timeout_ms: u64 },
-}
-
-/// The device the command line named, with the book that says which
-/// device a port reaches. Set once, when the verb dials its port.
-static NAMED_DEVICE: std::sync::OnceLock<(String, smix_runner_client::OwnerProbe)> =
-    std::sync::OnceLock::new();
-
-/// Record the device the command named, so every runner client this
-/// process builds refuses a port that reaches another one. `smix run`
-/// refused that before its first request; the one-shot verbs built
-/// their clients bare and read whichever device held the port.
-pub(crate) fn name_the_device(device: Option<&str>, android: bool) {
-    if let Some(d) = device {
-        let probe = if android {
-            smix_runner_client::OwnerProbe::Android
-        } else {
-            smix_runner_client::OwnerProbe::Ios
-        };
-        let _ = NAMED_DEVICE.set((d.to_string(), probe));
-    }
-}
-
-/// A runner client on `port` that checks, before its first request, that
-/// the port reaches the device the command named.
-pub(crate) fn runner_client(port: u16) -> HttpRunnerClient {
-    let client = HttpRunnerClient::new(port);
-    match NAMED_DEVICE.get() {
-        Some((device, probe)) => client.with_port_owner_check(Some(device.clone()), *probe),
-        None => client,
-    }
 }
 
 /// Dial the driver a CLI verb should drive through, by platform. The act

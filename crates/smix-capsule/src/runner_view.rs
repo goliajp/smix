@@ -499,6 +499,7 @@ mod tests {
                     port: 7100,
                     serial: "emulator-5554".into(),
                     proc: proc(4242),
+                    bundle: None,
                 },
             )],
             &[],
@@ -558,6 +559,7 @@ mod android_liveness {
                     port,
                     serial: device.into(),
                     proc: proc(pid),
+                    bundle: None,
                 })],
             },
         )
