@@ -32,7 +32,15 @@ log()  { printf '[c9-teardown] %s\n' "$*"; }
 step() { printf '[c9-teardown] --- %s\n' "$*"; }
 fail() { printf '[c9-teardown] FAIL: %s\n' "$*" >&2; exit 1; }
 
-ips_count() { ls -1 "$REPORTS" 2>/dev/null | grep -c '\.ips$' || true; }
+# Crash reports a teardown of these could leave: the runner, what drives it,
+# smix's supervisor, and the app under test. Not every report in the
+# directory — the machine runs other sessions' simulators, whose own daemons
+# (maild, geoanalyticsd, …) crash on their schedule, and a count of all of
+# them failed this run for crashes that were none of its doing.
+ips_count() {
+  ls -1 "$REPORTS" 2>/dev/null \
+    | grep -cE '^(SmixRunner|XCTRunner|xctest|xcodebuild|smix|Preferences)[^/]*\.ips$' || true
+}
 
 cd "$ROOT"
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX"
