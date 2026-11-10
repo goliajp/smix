@@ -87,7 +87,7 @@ public enum ForegroundGate {
   public static func hint(_ seen: AppNotInFront) -> String {
     let front: String
     switch seen.inFront.count {
-    case 0: front = "SpringBoard shows no app in front (the home screen, or it could not tell)"
+    case 0: front = "the system shows no app in front (its home screen, or it could not tell)"
     case 1: front = "\(seen.inFront[0]) is in front"
     default: front = "\(seen.inFront.joined(separator: ", ")) are in front"
     }

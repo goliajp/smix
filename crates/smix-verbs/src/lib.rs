@@ -485,6 +485,13 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Device,
         ArgShape::BareString,
     ),
+    // smix's own: maestro drives no watch or headset.
+    v(
+        "rotateCrown",
+        "rotateCrown",
+        VerbCategory::Device,
+        ArgShape::Mapping,
+    ),
     // smix's own: maestro has no desktop window to resize.
     v(
         "setWindowSize",

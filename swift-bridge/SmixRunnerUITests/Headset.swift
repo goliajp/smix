@@ -107,8 +107,9 @@ func smixHeadsetTap(
 }
 
 /// The process that shows system alerts over the app. SpringBoard on a
-/// phone or tablet; a headset has none, and its system alerts are hosted
-/// by one of these, the first that is running with an alert up.
+/// phone or tablet, Carousel on a watch, PineBoard on a television; a
+/// headset has none, and its system alerts are hosted by one of these,
+/// the first that is running with an alert up.
 private let headsetSystemUI = [
   "com.apple.RealityChrome", "com.apple.RealityHUD", "com.apple.RealityNotifications",
   "com.apple.RealityLauncher",
@@ -117,6 +118,11 @@ private let headsetSystemUI = [
 func smixSystemUIBundle() -> String {
   #if os(iOS)
     return "com.apple.springboard"
+  #elseif os(watchOS)
+    // the watch's SpringBoard; measured running on watchOS 27.2
+    return "com.apple.Carousel"
+  #elseif os(tvOS)
+    return "com.apple.PineBoard"
   #else
     let running = headsetSystemUI.filter {
       XCUIApplication(bundleIdentifier: $0).state != .notRunning

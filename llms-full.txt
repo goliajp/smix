@@ -786,6 +786,7 @@ modifiers' meta state; iOS refuses a combination by name.
 ```yaml
 - setOrientation: LANDSCAPE_LEFT         # PORTRAIT / LANDSCAPE_LEFT / LANDSCAPE_RIGHT / PORTRAIT_UPSIDE_DOWN
 - setPosture: open                       # closed / halfOpen / open — foldable iOS simulators only
+- rotateCrown: 1                         # Digital Crown turns (or { rotations, velocity }) — Apple Watch / Vision Pro only
 - setLocation:
     latitude: 35.6812
     longitude: 139.7671
@@ -2339,6 +2340,21 @@ with `from`, `to` and `holdMs` / `durationMs` / `releaseMs`.
 - A device with one screen is refused ("it has one screen, so it does not fold"); Android emulators and phones are refused by name.
 - Taps, swipes, screenshots and OCR follow the lit screen in either posture, including an app laid out landscape on the inner screen.
 - From the shell: `smix sim posture <device> closed|half-open|open`.
+
+## Digital Crown (Apple Watch, Vision Pro)
+
+```yaml
+- rotateCrown: 1                            # one full turn; negative turns back
+- rotateCrown: { rotations: -0.5, velocity: 2 }   # velocity: turns a second
+```
+
+- An Apple Watch or Apple Vision Pro simulator: the runner turns the crown with
+  `XCUIDevice.rotateDigitalCrown`. A positive turn scrolls a list on towards its later rows; on a
+  watch's Settings list one full turn moved it about three rows.
+- XCTest takes about 5 s for a turn of any size, before the time the turn itself takes at the speed
+  given (three turns at half a turn a second: about 11 s).
+- Any other device refuses by name ("an iPhone or iPad has no Digital Crown …"); Android refuses
+  the same way.
 
 ## Vision Pro (visionOS simulators)
 
@@ -6655,6 +6671,7 @@ that is why.
 | `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure. Android reads the display's rotation back before answering, so a rotation that does not arrive is a failure rather than a silent no-op. A foldable iOS simulator ignores the system call, so it is turned the way Device Hub turns it and read back; a facing its posture cannot reach is refused |
 | `setWindowSize` | ❌ | ✅ | smix's own verb. An app's desktop window (Chromebook, Android's desktop mode) resized to a width and height in dp, caption bar included, then read back; another size read back fails naming it. A fullscreen app, a size below the system's smallest window or larger than the display are refused by name, and so is iOS |
 | `setPosture` | ✅ | ❌ | Foldable iOS simulators (iPhone Duo): `closed` / `halfOpen` / `open`, read back from which screen is lit. A one-screen device is refused, and Android refuses by name: nothing drives an emulator's hinge yet |
+| `rotateCrown` | ✅ | ❌ | Apple Watch and Apple Vision Pro simulators only: `rotateCrown: <turns>` or `{ rotations, velocity }`, through `XCUIDevice.rotateDigitalCrown`. A positive turn scrolls a list on; XCTest takes about 5 s for any turn. Every other device, and Android, refuses by name |
 
 ## smix-native extensions
 

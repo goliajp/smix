@@ -121,6 +121,8 @@ enum MockCall {
     /// `App::set_orientation(orientation)`.
     SetOrientation(smix_sdk::MaestroOrientation),
     SetPosture(smix_sdk::Posture),
+    /// `App::rotate_crown(rotations, velocity)`.
+    RotateCrown(f64, Option<f64>),
     /// `App::start_recording(path)`.
     StartRecording(String),
     /// `App::stop_recording()` bare.
@@ -1148,6 +1150,17 @@ impl AppLike for MockApp {
             .lock()
             .unwrap()
             .push(MockCall::SetPosture(posture));
+        Ok(())
+    }
+    async fn rotate_crown(
+        &self,
+        rotations: f64,
+        velocity: Option<f64>,
+    ) -> Result<(), ExpectationFailure> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(MockCall::RotateCrown(rotations, velocity));
         Ok(())
     }
     async fn start_recording(&self, path: &str) -> Result<(), ExpectationFailure> {
@@ -2772,6 +2785,23 @@ async fn set_posture_reaches_the_app_with_the_posture_named() {
             MockCall::SetPosture(smix_sdk::Posture::HalfOpen),
             MockCall::SetPosture(smix_sdk::Posture::Closed),
             MockCall::SetPosture(smix_sdk::Posture::HalfOpen),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn rotate_crown_reaches_the_app_with_its_turns_and_speed() {
+    let flow = parse_inline(
+        "appId: com.t.o\n---\n- rotateCrown: 1.5\n- rotateCrown: { rotations: -2, velocity: 0.5 }\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("rotateCrown dispatch");
+    assert_eq!(
+        app.calls(),
+        vec![
+            MockCall::RotateCrown(1.5, None),
+            MockCall::RotateCrown(-2.0, Some(0.5)),
         ]
     );
 }
