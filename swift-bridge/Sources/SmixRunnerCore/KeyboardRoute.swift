@@ -170,6 +170,19 @@ public enum KeyboardRoute {
   /// step that did nothing. Every sentence names what to do instead —
   /// a refusal without a way out gets worked around rather than read.
   public static func missingButton(key: String, onSimulator: Bool) -> String? {
+    #if os(watchOS)
+      if key != "home" {
+        return "pressKey \(key): an Apple Watch has no keyboard, and the one button the "
+          + "runner presses is home (the Digital Crown pressed in). Turn the crown with "
+          + "rotateCrown, and type nothing: a watch has no text field smix fills"
+      }
+    #elseif os(tvOS)
+      if !tvRemoteKeys.contains(key) {
+        return "pressKey \(key): an Apple TV takes its remote's buttons only — "
+          + tvRemoteKeys.joined(separator: ", ")
+          + " (arrows move the focus, return selects, escape or back is Menu, space is play/pause)"
+      }
+    #endif
     switch key {
     case "lock":
       return "pressKey lock: XCUIDevice has no lock button on any iOS target, and neither "
@@ -187,6 +200,11 @@ public enum KeyboardRoute {
       return nil
     }
   }
+
+  /// The keys an Apple TV runner presses on the remote.
+  public static let tvRemoteKeys = [
+    "arrowUp", "arrowDown", "arrowLeft", "arrowRight", "return", "escape", "back", "space", "home",
+  ]
 
   /// Whether this runner is running in the iOS Simulator.
   public static var runsOnSimulator: Bool {

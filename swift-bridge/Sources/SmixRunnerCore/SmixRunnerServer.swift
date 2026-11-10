@@ -2107,6 +2107,7 @@ public actor SmixRunnerServer {
         return await Self.contextGuardedResponse(request: request,
           fallback: FindTextByOcrRoute.success(found: false, frame: nil)
         ) {
+          if let why = FindTextByOcrRoute.unavailableHere { return FindTextByOcrRoute.unavailable(why) }
           let frame = await findTextByOcrHandler(req.text, req.locales, req.recognitionLevel)
           return FindTextByOcrRoute.success(found: frame != nil, frame: frame)
         }
