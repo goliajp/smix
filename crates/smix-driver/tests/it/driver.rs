@@ -627,12 +627,12 @@ async fn find_with_text_plus_ancestor_modifier_falls_back_to_host_resolve() {
 
 #[tokio::test]
 async fn tap_at_norm_coord_passthrough() {
-    // SimctlDriver::tap_at_norm_coord(nx, ny) thin
-    // wrapper on runner. wiremock only mounts POST /tap-at-norm-coord;
-    // any other route (e.g. /tree) is wiremock 404 → test fail. Body
-    // must contain {nx, ny} per swift-bridge TapAtNormCoordRoute wire
-    // shape.
+    // SimctlDriver::tap_at_norm_coord(nx, ny) on the runner, after the
+    // wait for a still screen (the tree and screenshots it reads are
+    // served). Body must contain {nx, ny} per swift-bridge
+    // TapAtNormCoordRoute wire shape.
     let server = MockServer::start().await;
+    crate::a_point_waits_for_the_screen::mount_a_still_screen(&server).await;
     Mock::given(method("POST"))
         .and(path("/tap-at-norm-coord"))
         .and(body_partial_json(

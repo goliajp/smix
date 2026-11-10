@@ -981,49 +981,6 @@ impl IosDriver {
         Ok(())
     }
 
-    /// Tap at normalized (nx, ny) coordinates — escape hatch for
-    /// coord-based maestro yaml ports.
-    ///
-    /// (nx, ny) must be in [0, 1] (normalized to viewport). The runner
-    /// converts to device pixels via the Apple native event chain
-    /// (same path as the regular `tap()` centroid pipeline).
-    ///
-    /// **Escape hatch only — the selector path (`tap(&selector)`) is the
-    /// canonical surface.** This bypasses a11y resolve entirely.
-    pub async fn double_tap_at_norm_coord(
-        &self,
-        nx: f64,
-        ny: f64,
-    ) -> Result<(), ExpectationFailure> {
-        self.runner
-            .tap_at_norm_coord_burst(nx, ny, 2, None, None)
-            .await
-            .map_err(transport_to_failure)?;
-        Ok(())
-    }
-
-    pub async fn long_press_at_norm_coord(
-        &self,
-        nx: f64,
-        ny: f64,
-        duration_ms: u64,
-    ) -> Result<(), ExpectationFailure> {
-        let hold_ms = u32::try_from(duration_ms).unwrap_or(u32::MAX);
-        self.runner
-            .tap_at_norm_coord_burst(nx, ny, 1, None, Some(hold_ms))
-            .await
-            .map_err(transport_to_failure)?;
-        Ok(())
-    }
-
-    pub async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
-        self.runner
-            .tap_at_norm_coord(nx, ny)
-            .await
-            .map_err(transport_to_failure)?;
-        Ok(())
-    }
-
     /// `POST /tap-by-id {id}` passthru — `XCUIElement.tap()` via the
     /// XCTest gesture-recognizer chain. SwiftUI `.sheet` / `.alert` /
     /// `.confirmationDialog` / `.fullScreenCover` dismiss buttons need
@@ -1979,19 +1936,24 @@ mod android;
 mod android_aim;
 mod android_input;
 mod android_notes;
+mod android_point;
 mod app_away;
 mod landing;
 mod locate;
 pub mod phases;
+mod point_settle;
 pub mod poll;
 mod system_ui;
 pub(crate) use aim::{aim_in, settle_reading};
 pub use landing::{Aimed, ChainCoverage, landing_outcome, tap_landed_within, verdict_reader};
 pub use locate::locate;
 mod ios;
+mod ios_point;
 mod refusal_hint;
 mod scroll_until;
 pub mod settle;
+pub use point_settle::ScreenAtTouch;
+pub mod still;
 mod touch_aimed;
 mod traits;
 

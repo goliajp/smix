@@ -2324,10 +2324,18 @@ final class SmixRunnerUITests: XCTestCase {
         var tapLayout = SmixLayout(size: .zero, orientation: .portrait, source: "frame", displayID: nil)
         let setupOk = smixGuarded("tap-at-norm-coord-setup") {
           let frame = smixAppFrame(app)
+          // An app just launched has no frame yet, and a point scaled by
+          // nothing is not on the screen: XCTest asserts on such a touch
+          // and the assertion ends this process.
+          guard frame.width > 0, frame.height > 0 else {
+            FileHandle.standardError.write(
+              Data("smix-runner: tap-at-norm-coord: the app has no frame yet\n".utf8))
+            return false
+          }
           px = frame.origin.x + frame.size.width * CGFloat(nx)
           py = frame.origin.y + frame.size.height * CGFloat(ny)
           tapLayout = smixLayout(of: app)
-          return true
+          return px.isFinite && py.isFinite
         }
         guard setupOk == true else { return (ok: false, chain: [], press: nil, gone: nil) }
 

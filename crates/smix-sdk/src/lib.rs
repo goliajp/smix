@@ -26,6 +26,7 @@
 /// `App::assert_screenshot`, not part of the SDK surface.
 mod drag;
 pub(crate) mod png_gray;
+mod point_touch;
 pub mod screenshot_compare;
 pub(crate) mod screenshot_hash;
 /// Smaller copies of a screenshot, for a caller that cannot take the full one.
@@ -103,6 +104,7 @@ fn swipe_endpoint(start: (f64, f64), direction: SwipeDirection) -> (f64, f64) {
 
 /// What a scroll-until-visible asks of its target; part of [`ScrollUntil`].
 pub use smix_driver::Reach;
+pub use smix_driver::ScreenAtTouch;
 /// Which device a runner port actually reaches — the check that
 /// stands between `--device` and acting on somebody else's machine.
 pub use smix_driver::port_owner;
@@ -2237,48 +2239,6 @@ impl App {
         self.driving()?.back().await
     }
 
-    /// Tap at normalized (nx, ny) coordinates — escape hatch for
-    /// coord-based maestro yaml port and other no-a11y-semantic
-    /// scenarios. (nx, ny) MUST be in [0, 1] (normalized to viewport).
-    ///
-    /// **Escape hatch**: the Selector surface still forbids xpath/coord
-    /// — this method is NOT a Selector, it is the direct
-    /// Apple-native-event-chain wire entry. Only `tap` is exposed;
-    /// `fill_at_coord` / `anchor_at_coord` are intentionally NOT
-    /// provided.
-    ///
-    /// Prefer `tap(&selector)` for any path with a11y semantic. Use this
-    /// only for yaml-port edge cases (e.g. maestro `point: "X%,Y%"`).
-    pub async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
-        self.ledger.record_tap_at_coord(now_ms(), nx, ny);
-        self.driving()?.tap_at_norm_coord(nx, ny).await
-    }
-
-    /// Double-tap at a viewport-normalized coordinate.
-    ///
-    /// The counterpart of [`Self::tap_at_coord`] for the verbs that
-    /// reach a place rather than an element: OCR returns a box and an
-    /// anchor plus a shift returns a point, and neither is a node to
-    /// hand to `double_tap`.
-    pub async fn double_tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
-        self.ledger.record_tap_at_coord(now_ms(), nx, ny);
-        self.driving()?.double_tap_at_norm_coord(nx, ny).await
-    }
-
-    /// Long-press at a viewport-normalized coordinate. See
-    /// [`Self::double_tap_at_coord`].
-    pub async fn long_press_at_coord(
-        &self,
-        nx: f64,
-        ny: f64,
-        duration_ms: u64,
-    ) -> Result<(), ExpectationFailure> {
-        self.ledger.record_tap_at_coord(now_ms(), nx, ny);
-        self.driving()?
-            .long_press_at_norm_coord(nx, ny, duration_ms)
-            .await
-    }
-
     /// Tap via `XCUIElement.tap()` over the XCTest gesture-recognizer
     /// chain instead of the default host-HID-at-coord path. The id
     /// selector is resolved runner-side via
@@ -2351,6 +2311,7 @@ impl App {
                 self.driver
                     .tap_at_norm_coord(frame.mid_x(), frame.mid_y())
                     .await
+                    .map(|_| ())
             }
             None => Err(ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::ElementNotFound),
