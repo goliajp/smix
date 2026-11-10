@@ -21,6 +21,13 @@ All notable changes to the `smix` workspace are documented here. The format foll
   then offered `--force`. It now reads `isKeyguardShowing` and, with the
   lock screen up, names `smix sim boot <serial> --unlock-pin <pin>`.
 
+- **A tap refused as missed says why.** The hint said "the element moved
+  between the tree fetch and the tap" for every miss, including one where
+  the element stayed exactly where it was and a toast added over it took
+  the touch. On a miss the screen is now read again, by the reader the
+  touch was aimed from, and the hint says whether the element moved (with
+  both places), went, or is still there under what it names.
+
 ## [25.0.0] — 2026-11-10
 
 ### Breaking
