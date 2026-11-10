@@ -165,3 +165,19 @@ func smixSwipe(_ element: XCUIElement, _ direction: SmixSwipeDirection) {
   }
   #endif
 }
+
+/// Whether a node of the tree holds the focus.
+///
+/// On a television the focus is the focus engine's, the one thing the
+/// remote moves, and each element reports whether it has it. Elsewhere it
+/// is the keyboard's: the live first responder's identifier (one KVC walk
+/// per tree) matched against this node's. A nil hint means nothing is
+/// focused, and the identifier must be non-empty, so that a node without
+/// one cannot match an empty string.
+func smixHasFocus(_ reported: Any?, identifier: String, hint: String?) -> Bool {
+  #if os(tvOS)
+  return (reported as? Bool) ?? false
+  #else
+  return hint.map { !identifier.isEmpty && $0 == identifier } ?? false
+  #endif
+}

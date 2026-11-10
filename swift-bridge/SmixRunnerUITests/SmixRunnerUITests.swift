@@ -1776,7 +1776,7 @@ final class SmixRunnerUITests: XCTestCase {
         // return selects, escape goes back (Menu), space plays or pauses.
         let remote: [String: XCUIRemote.Button] = [
           "arrowUp": .up, "arrowDown": .down, "arrowLeft": .left, "arrowRight": .right,
-          "return": .select, "escape": .menu, "space": .playPause, "home": .home,
+          "return": .select, "escape": .menu, "back": .menu, "space": .playPause, "home": .home,
         ]
         guard let button = remote[key] else { return .notFound }
         XCUIRemote.shared.press(button)
@@ -2811,6 +2811,7 @@ final class SmixRunnerUITests: XCTestCase {
           return smixSetDeviceOrientation(mapped)
         } ?? false
       },
+      crownHandler: { req in smixRotateCrown(req) },
       recordHandlers: recordEnabled ? SmixRunnerServer.RecordHandlers(
         start: {
           EventRecorder.shared.installSwizzle(appBundleId: bundleId)
@@ -3513,14 +3514,7 @@ private func convertSnapshotDict(
   let valueStr: String? = (valueFor("value") as? String).flatMap { $0.isEmpty ? nil : $0 }
   let enabled = (valueFor("enabled") as? Bool) ?? true
   let selected = (valueFor("selected") as? Bool) ?? false
-  // Match the live first-responder identifier (the one-shot KVC walk done
-  // in snapshotHandler) against this node's identifier. `focusHint == nil`
-  // ⇒ no node is focused (typically the keyboard is not up). The
-  // identifier must be non-empty to be tagged, so that a nil hint cannot
-  // empty-string-match a node that has no identifier.
-  let hasFocus = focusHint.map { hint in
-    !identifier.isEmpty && hint == identifier
-  } ?? false
+  let hasFocus = smixHasFocus(valueFor("hasFocus"), identifier: identifier, hint: focusHint)
   let frame: CGRect
   if let frameDict = valueFor("frame") as? [String: Double] {
     frame = CGRect(
