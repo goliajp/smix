@@ -1323,6 +1323,11 @@ itself.
   silently widen what they match — the failure that does not announce
   itself. The one exception is `|`, which has meant alternation here
   since before the explicit form existed.
+- A row that reads its title and its value as one element — a settings
+  row whose label is `"Time Zone, JST"` — does not match its title
+  alone: matching is on the whole text. Match the title with
+  `text: { regex: "^Time Zone\\b" }`; a miss on the title alone offers
+  exactly that as its first suggestion.
 
 ### 3. Label (accessibility label)
 
@@ -1827,6 +1832,14 @@ before it acts.
 
 - nx, ny in viewport normalized [0, 1].
 - Bypasses element resolution — direct touch dispatch at coord.
+- Waits first, as a selector tap does: for the app to have a frame (a
+  touch straight after `launchApp` waits for the first screen), then for
+  two screenshots in a row to agree, for up to 3 s (`--settle-max-ms`;
+  `--settle-frames 1` turns the wait off). A screen that never stops — a
+  spinner, a video — is touched when the limit comes, and the step's
+  warnings say it was still moving. A screen that is still arriving but
+  draws nothing new until it has arrived cannot be seen to be arriving:
+  wait for something on it by selector instead.
 - Brittle; only use when no element identifier is reliable.
 
 ### Tap with OCR fallback
@@ -3369,6 +3382,17 @@ smix sim boot sim-smix-02 --wait 600    # queue for up to ten minutes instead of
 `--wait` looks again every ten seconds and boots as soon as there is room;
 when the time runs out it refuses with the same names.
 
+To ask before booting anything, `smix sim budget` lists what is running, what
+each holds and how much of the budget is free. `--need <kind>` (repeatable:
+`phone`, `tablet`, `tv`, `vision`, `watch`, `android-phone`,
+`android-tablet`) checks the devices about to be booted against it, in order,
+and exits 1 naming the first that would be refused and how many GiB are
+short:
+
+```bash
+smix sim budget --need phone --need android-phone
+```
+
 ### Taking down one task's resources (`smix cleanup`)
 
 ```bash
@@ -3419,6 +3443,11 @@ These act on the runner's currently-active sim. Used for ad-hoc debugging withou
 
 The selector is a positional argument in `<kind>:<value>` shorthand —
 `id:` / `text:` / `label:` / `role:` / `ocrText:` / `point:`.
+`tap`, `find`, `wait-for`, `fill`, `scroll` and `long-press` also take it
+as a flag, the way the MCP tools name it: `smix tap --text OK` is
+`smix tap text:OK`, and `--id`, `--label`, `--role`, `--ocr-text` likewise.
+On `fill`, `--text` stays the text to type. A selector given both ways, or
+two flags, is refused.
 
 `role:` takes the word a person writes, the same vocabulary yaml and MCP
 read: `button`, `Button`, `text_field`, `heading`, `tab`.
@@ -3435,7 +3464,10 @@ where text was one look ago, not a field or an anchor.
 
 `point:` is the last resort — `point:50%,80%`, or the same point written
 `point:0.5,0.8`. A fraction of the viewport, never pixels, because a flow
-written in pixels runs on one screen size. Only `smix tap` takes one:
+written in pixels runs on one screen size. A point tap waits for the
+screen to stop moving first, and says so when it was still moving after
+3 s. `tap`, `long-press`, `drag` and `pinch` take one, `find`, `fill`,
+`scroll` and `wait-for` do not:
 there is nothing at a coordinate to find, fill, scroll to or wait for,
 and those four say so rather than resolving something that cannot
 resolve.
@@ -3475,6 +3507,7 @@ smix tree --json | jq .                    # full a11y tree
 smix tree                                  # human-readable outline
 smix tree --keyboard                       # …including the keyboard's keys
 smix describe                              # visible interactive elements
+smix describe --compact                    # …one line each: role, name, id
 smix system-popups                         # list active popups
 smix system-popup-action <popup-id> <button-id>
 ```
@@ -3673,7 +3706,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:24.0.0")
+    debugImplementation("jp.golia.smix:smix-probe:25.0.0")
 }
 ```
 
@@ -4226,7 +4259,14 @@ says the same in one line:
 ```
   on screen: com.example.app (application, focused) · com.android.systemui (system) ×2
   visible elements (10 of 57, the focused app's first):
+  …
+  the rest of the screen's text: "Storage", "1.2 GB", "Log out", …
 ```
+
+Ten elements are described in full; every other one on the screen that
+carries words follows on one line, so text the selector missed is in the
+failure even when it is far down the screen. `suggestions` are drawn from
+the whole screen too, not from the ten.
 
 On iOS the tree is the app you named, so `windows` holds that one app; the
 status bar belongs to SpringBoard and is not in it. All three fields are
@@ -4451,7 +4491,11 @@ point, which is why it has its own code.
 **Trigger**: catch-all for runner-side / IO / unexpected failures. Read the `message` for specifics.
 
 **Common subtypes**:
-- `runner unreachable`: runner crashed or wrong port — re-run `smix runner up`
+- `runner unreachable`: runner crashed or wrong port — re-run `smix runner up`.
+  A command given `--device` ends the error with the whole command for that
+  device — `start it with: smix runner up emulator-5554 --platform android
+  --bundle com.example.app` — the app taken from the last runner the device's
+  ledger records, or `<your-app>` when it records none
 - `socket timeout`: runner alive but slow (XCUITest hung) — `smix down` then re-up
 - `webview-bridge unreachable`: WebView-hosting screen never visited; navigate first OR `adb forward tcp:28081`
 - `JSON decode failed`: runner version mismatch — rebuild runner
@@ -5640,6 +5684,17 @@ Then point your MCP client at `smix-mcp`:
 One server process binds one simulator. Two simulators means two entries with
 different `SMIX_UDID`s.
 
+`SMIX_UDID` is optional. Without it, a session starts from nothing:
+
+```
+smix_devices                                          → the simulators, with UDIDs
+smix_use        { "udid": "<udid>", "bundleId": "com.example.app" }
+```
+
+`smix_use` boots the simulator if it is off and brings the runner up for that
+app; `bundleId` is required. Until a `smix_use` has succeeded, every other tool
+answers that no device is bound and names `smix_use`.
+
 ## A session
 
 What driving actually looks like:
@@ -5657,6 +5712,10 @@ smix_assert_visible { "id": "form-submitted-label" }
 `smix_describe` first, most of the time. It returns the visible elements and
 their ids, which is what you need to write the next call — guessing an id and
 getting `ELEMENT_NOT_FOUND` is the slow path.
+
+`smix_describe { "compact": true }` gives one line per element — role, name,
+id — without bounds, around a tenth of the size. An element is listed once: a
+button and the label inside it that carries the same name are one entry.
 
 ## Naming an element
 

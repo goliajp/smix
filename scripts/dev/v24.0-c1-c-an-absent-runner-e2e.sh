@@ -28,8 +28,11 @@ cannot_judge() { printf '[v24.0-c1-c] cannot judge: %s\n' "$*" >&2; exit 2; }
 
 SERIAL="" UP=0 WE_BOOTED=0
 cleanup() {
-  if [ "$UP" = 1 ]; then
-    "$SMIX" runner down --platform android --device "$SERIAL" --runner-port "$PORT" >/dev/null 2>&1 || true
+  local said
+  if [ "$UP" = 1 ] \
+    && ! said="$("$SMIX" runner down --platform android --device "$SERIAL" --runner-port "$PORT" 2>&1)"; then
+    log "warning: the Android runner on $PORT was not stopped:"
+    printf '%s\n' "$said" | tail -3 >&2
   fi
   if [ "$WE_BOOTED" = 1 ]; then "$SMIX" sim shutdown "$SERIAL" >/dev/null 2>&1 || true; fi
   rm -rf "$WORK"
