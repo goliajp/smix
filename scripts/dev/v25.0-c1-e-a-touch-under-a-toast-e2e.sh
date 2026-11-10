@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# v25.0-C1: a touch that a toast drawn over its element took.
+# v25.0-C1: a touch at an element something is drawn over.
 #
 # A consumer's menu button stayed where it was while a toast added after it
 # lay across it, the toast's close button over the button's centre. The tap
-# was refused as missed — rightly — and the hint said the element had
-# moved. Now a miss reads the screen again and says which it was. On a real
-# emulator, CoverActivity (a flat button, a card over its lower part):
-#   1. a tap on the button fails TAP_MISSED, and the hint says the button is
-#      still where it was and names the card's close button over it, not
-#      that the button moved
-#   2. the button was not pressed; the close button was
+# went to the close button and was refused afterwards as missed, with a hint
+# that said the element had moved. Now the Android runner reads, before the
+# touch, what a touch would reach: it touches the part of the target that
+# shows, and touches nothing when none does. On a real emulator,
+# CoverActivity:
+#   1. a tap on the menu button, the card over its lower part, presses the
+#      menu button and leaves the card's close button alone
+#   2. a tap on a button a panel lies wholly over is refused NOT_VISIBLE,
+#      naming the panel, and neither the button nor the panel is touched
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -50,6 +52,15 @@ for e in json.load(sys.stdin)['elements']:
 " "$1"
 }
 
+# $1 id, $2 wanted name
+wait_name() {
+  for _ in $(seq 1 12); do
+    [ "$(name_of "$1")" = "$2" ] && return 0
+    sleep 0.25
+  done
+  return 1
+}
+
 command -v adb >/dev/null 2>&1 || cannot_judge "no adb"
 if ! SERIAL="$("$SMIX" sim resolve "$E2E_ANDROID" 2>/dev/null | tail -1)" || [ -z "$SERIAL" ]; then
   with_deadline 300 "$SMIX" sim boot "$E2E_ANDROID" --no-window >"$WORK/aboot.log" 2>&1 \
@@ -70,19 +81,19 @@ for _ in $(seq 1 20); do
 done
 [ "$(name_of cover_count)" = "pressed 0" ] || cannot_judge "CoverActivity never showed"
 
-log "1. a tap on the button under the card is refused, and says what is over it"
-rc=0; "$SMIX" tap --id cover_menu --device "$SERIAL" --port "$AND_PORT" >"$WORK/tap.log" 2>&1 || rc=$?
-[ "$rc" != 0 ] || fail "1: a tap whose touch the card took passed: $(cat "$WORK/tap.log")"
-grep -q "TAP_MISSED" "$WORK/tap.log" || fail "1: the refusal is not TAP_MISSED: $(cat "$WORK/tap.log")"
-grep -q "id=cover_menu is still where it was aimed at" "$WORK/tap.log" \
-  || fail "1: the hint does not say the button stayed: $(cat "$WORK/tap.log")"
-grep -q "id=cover_close is drawn over it" "$WORK/tap.log" \
-  || fail "1: the hint does not name what is over it: $(cat "$WORK/tap.log")"
-! grep -q "moved between the tree fetch" "$WORK/tap.log" \
-  || fail "1: the hint still says the button moved: $(cat "$WORK/tap.log")"
+log "1. a tap on a button partly under a card presses the part that shows"
+"$SMIX" tap --id cover_menu --device "$SERIAL" --port "$AND_PORT" >"$WORK/tap.log" 2>&1 \
+  || fail "1: $(cat "$WORK/tap.log")"
+wait_name cover_count "pressed 1" || fail "1: the menu button says '$(name_of cover_count)'"
+[ "$(name_of cover_closes)" = "closed 0" ] || fail "1: the close button says '$(name_of cover_closes)'"
 
-log "2. the touch went to the card's close button, not the menu button"
-[ "$(name_of cover_count)" = "pressed 0" ] || fail "2: the menu button says '$(name_of cover_count)'"
-[ "$(name_of cover_closes)" = "closed 1" ] || fail "2: the close button says '$(name_of cover_closes)', not 'closed 1'"
+log "2. a tap on a button a panel lies wholly over is refused, naming the panel"
+rc=0; "$SMIX" tap --id cover_hidden --device "$SERIAL" --port "$AND_PORT" >"$WORK/hidden.log" 2>&1 || rc=$?
+[ "$rc" != 0 ] || fail "2: a tap on a covered button passed: $(cat "$WORK/hidden.log")"
+grep -q "NOT_VISIBLE" "$WORK/hidden.log" || fail "2: the refusal is not NOT_VISIBLE: $(cat "$WORK/hidden.log")"
+grep -q "cover_sheet" "$WORK/hidden.log" || fail "2: the refusal does not name the panel: $(cat "$WORK/hidden.log")"
+grep -q "nothing was touched" "$WORK/hidden.log" || fail "2: the refusal does not say nothing was touched"
+[ "$(name_of cover_hidden_count)" = "hidden 0" ] || fail "2: the hidden button says '$(name_of cover_hidden_count)'"
+[ "$(name_of cover_sheet_taps)" = "sheet 0" ] || fail "2: the panel says '$(name_of cover_sheet_taps)': it was touched"
 
 log "PASS"

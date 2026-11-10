@@ -5,7 +5,9 @@ use std::future::Future;
 use std::time::Duration;
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
-use smix_runner_client::{RunnerTransportError, TapTarget, target_gone_before_touch};
+use smix_runner_client::{
+    RunnerTransportError, TapTarget, target_covered_before_touch, target_gone_before_touch,
+};
 use smix_runner_wire::TapAtCoordResult;
 use smix_selector::Selector;
 
@@ -63,11 +65,22 @@ where
         {
             Ok(landed) => return Ok((aimed, landed)),
             Err(e) => {
-                let Some(saw) = target_gone_before_touch(&e) else {
-                    return Err(transport(e));
+                // a target that left and one under a toast both come back
+                // in a moment as often as not: aim again either way
+                let (saw, covered) = match (
+                    target_gone_before_touch(&e),
+                    target_covered_before_touch(&e),
+                ) {
+                    (Some(saw), _) => (saw, false),
+                    (None, Some(saw)) => (saw, true),
+                    (None, None) => return Err(transport(e)),
                 };
                 if budget.spent_by(look) {
-                    return Err(gone(selector, target.as_ref(), &saw));
+                    return Err(if covered {
+                        under(selector, target.as_ref(), &saw)
+                    } else {
+                        gone(selector, target.as_ref(), &saw)
+                    });
                 }
                 // A target leaving answers at once; without a pause the
                 // runner would be asked again as fast as it can answer.
@@ -95,6 +108,29 @@ fn gone(selector: &Selector, target: Option<&HitElement>, saw: &str) -> Expectat
             "the element is taking itself away (a control that hides after a while, a \
              screen in transition) — tap it as soon as it appears rather than after a \
              wait, or wait for the screen it belongs to"
+                .to_string(),
+        ),
+        ..Default::default()
+    })
+}
+
+fn under(selector: &Selector, target: Option<&HitElement>, saw: &str) -> ExpectationFailure {
+    let what = target.map_or_else(
+        || smix_selector::describe_selector(selector),
+        crate::landing::describe_hit,
+    );
+    ExpectationFailure::new(FailureInit {
+        code: Some(FailureCode::NotVisible),
+        message: format!(
+            "{what} is on the screen and something drawn over it would take a touch at \
+             every part of it the runner tried, for {} s; nothing was touched. What would \
+             take it: {saw}",
+            AIM_AGAIN_FOR.as_secs()
+        ),
+        selector: Some(selector.clone()),
+        hint: Some(
+            "dismiss or wait out what is in front of it (a toast, a banner, a sheet) before \
+             tapping it"
                 .to_string(),
         ),
         ..Default::default()
@@ -194,6 +230,31 @@ mod tests {
         assert!(
             e.message.contains("overlay_detections"),
             "what was under the point is not named: {}",
+            e.message
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_target_covered_everywhere_is_not_visible_and_the_cover_is_named() {
+        let e = touch_where_aimed(
+            &selector(),
+            || async { Ok(aimed()) },
+            |_, _, _, _| async {
+                Err(RunnerTransportError::NonSuccessStatus {
+                    endpoint: "/tap-at-norm-coord".into(),
+                    status: 409,
+                    body: r#"{"error":"target_covered_before_touch","saw":"id=toast_close < id=toast; it is drawn over id=btn_go_live"}"#.into(),
+                })
+            },
+            failed,
+        )
+        .await
+        .expect_err("a target covered at every touch was reported touched");
+        assert_eq!(e.code, FailureCode::NotVisible);
+        assert!(e.message.contains("nothing was touched"), "{}", e.message);
+        assert!(
+            e.message.contains("toast_close"),
+            "the cover is not named: {}",
             e.message
         );
     }
