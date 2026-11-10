@@ -65,6 +65,9 @@
             android:name=".LiveActivity"
             android:exported="true" />
         <activity
+            android:name=".PlayingActivity"
+            android:exported="true" />
+        <activity
             android:name=".TouchActivity"
             android:exported="true" />
         <activity

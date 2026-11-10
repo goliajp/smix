@@ -2,6 +2,18 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **A touch at a point no longer waits out the limit on a screen with a
+  video playing.** The wait for two screenshots in a row to agree counted
+  every change on the screen, so a live video anywhere held every point
+  touch to the full 3 s. A part of the screen away from the point that
+  keeps changing for over a second is now left out as playing, and the
+  answer names where it was; motion near the point still counts. Rust:
+  `ScreenAtTouch::StillApartFrom { waited, playing: ScreenRegion }`.
+
 ## [25.0.0] — 2026-11-10
 
 ### Breaking
