@@ -44,6 +44,7 @@ fn runner_row(serial: &str) -> Resource {
         port: 28080,
         serial: serial.into(),
         proc: proc(),
+        bundle: None,
     }
 }
 

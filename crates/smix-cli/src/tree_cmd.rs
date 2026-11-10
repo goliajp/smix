@@ -28,7 +28,7 @@ pub async fn cmd_tree(
     // when the answer looks thin. A screen the accessibility reader has
     // gone blind on and a screen with nothing on it print identically
     // otherwise.
-    let client = crate::act::runner_client(port);
+    let client = crate::runner_target::runner_client(port);
     let mut perceived = match reader {
         TreeReader::Auto => client.get_tree(None).await,
         TreeReader::Probe => client.semantics_tree_only().await,
@@ -72,7 +72,7 @@ pub(crate) fn collapse_keyboards(node: &mut smix_screen::A11yNode) -> usize {
 /// Helper for authoring subcommand to fetch the a11y
 /// tree as raw JSON (bypasses print_tree_outline).
 pub async fn fetch_tree_json(port: u16) -> Result<serde_json::Value, ActError> {
-    let d = SimctlDriver::new(crate::act::runner_client(port));
+    let d = SimctlDriver::new(crate::runner_target::runner_client(port));
     let tree = d
         .tree(None)
         .await

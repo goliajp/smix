@@ -2765,10 +2765,7 @@ async fn main() -> ExitCode {
     }
     match run(cli).await {
         Ok(code) => code,
-        Err(e) => {
-            eprintln!("error: {e}");
-            ExitCode::from(1)
-        }
+        Err(e) => runner_target::fail(&e.to_string()),
     }
 }
 
@@ -5870,7 +5867,7 @@ async fn cmd_session(action: SessionAction) -> Result<(), CliError> {
     match action {
         SessionAction::State { port, device } => {
             let p = runner_dial_port(port, device.as_deref());
-            let client = act::runner_client(p);
+            let client = runner_target::runner_client(p);
             let sessions = match client.list_sessions().await {
                 Ok(resp) => serde_json::to_value(&resp.sessions).unwrap_or(serde_json::Value::Null),
                 // Read-only: an unreachable runner is a state to report,

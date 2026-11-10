@@ -278,7 +278,11 @@ point, which is why it has its own code.
 **Trigger**: catch-all for runner-side / IO / unexpected failures. Read the `message` for specifics.
 
 **Common subtypes**:
-- `runner unreachable`: runner crashed or wrong port — re-run `smix runner up`
+- `runner unreachable`: runner crashed or wrong port — re-run `smix runner up`.
+  A command given `--device` ends the error with the whole command for that
+  device — `start it with: smix runner up emulator-5554 --platform android
+  --bundle com.example.app` — the app taken from the last runner the device's
+  ledger records, or `<your-app>` when it records none
 - `socket timeout`: runner alive but slow (XCUITest hung) — `smix down` then re-up
 - `webview-bridge unreachable`: WebView-hosting screen never visited; navigate first OR `adb forward tcp:28081`
 - `JSON decode failed`: runner version mismatch — rebuild runner
