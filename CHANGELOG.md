@@ -2,6 +2,17 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **`runner up` on an Android device behind its lock screen says so, and
+  how to open it.** With a runner already answering, the refusal guessed at
+  "a lock screen, or a crashed instrumentation" — saying smix does not
+  unlock a device, which `sim boot --unlock-pin` has done since 23.3 — and
+  then offered `--force`. It now reads `isKeyguardShowing` and, with the
+  lock screen up, names `smix sim boot <serial> --unlock-pin <pin>`.
+
 ## [25.0.0] — 2026-11-10
 
 ### Breaking
