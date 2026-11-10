@@ -41,6 +41,11 @@ use playback::{Look, Watch};
 pub enum ScreenAtTouch {
     /// Two screenshots in a row agreed, after waiting this long.
     Still { waited: Duration },
+    /// It was still changing when the limit came, and was touched anyway.
+    Moving { waited: Duration },
+    /// Not looked at: no wait was asked for, or no screenshot could be
+    /// taken.
+    Unseen,
     /// Two in a row agreed everywhere but inside `playing`, a part of the
     /// screen away from the point that kept changing for over a second
     /// and was left out as a video or animation playing.
@@ -48,11 +53,6 @@ pub enum ScreenAtTouch {
         waited: Duration,
         playing: ScreenRegion,
     },
-    /// It was still changing when the limit came, and was touched anyway.
-    Moving { waited: Duration },
-    /// Not looked at: no wait was asked for, or no screenshot could be
-    /// taken.
-    Unseen,
 }
 
 impl ScreenAtTouch {
