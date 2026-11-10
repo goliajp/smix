@@ -47,6 +47,9 @@ const ROSTER: &[&str] = &[
     // Two fingers at once; every other gesture here is one finger.
     "pinch",
     "press_key",
+    // An Apple Watch's or Apple Vision Pro's Digital Crown; every other
+    // device refuses by name.
+    "rotate_crown",
     "set_orientation",
     // `fill` without the keyboard (v18.0-C3): an input method in a CJK
     // mode composes typed keys into its own script. iOS refuses it.

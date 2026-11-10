@@ -1,5 +1,6 @@
 - setOrientation: LANDSCAPE_LEFT         # PORTRAIT / LANDSCAPE_LEFT / LANDSCAPE_RIGHT / PORTRAIT_UPSIDE_DOWN
 - setPosture: open                       # closed / halfOpen / open — foldable iOS simulators only
+- rotateCrown: 1                         # Digital Crown turns (or { rotations, velocity }) — Apple Watch / Vision Pro only
 - setLocation:
     latitude: 35.6812
     longitude: 139.7671

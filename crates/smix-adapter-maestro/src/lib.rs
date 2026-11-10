@@ -1035,6 +1035,16 @@ pub enum Step {
         /// How far the device is opened.
         posture: smix_sdk::Posture,
     },
+    /// `rotateCrown: <turns>` or `{ rotations, velocity }` — smix's own
+    /// step: turn the Digital Crown of an Apple Watch or Apple Vision Pro.
+    /// One is a full turn; a positive turn scrolls a list on.
+    RotateCrown {
+        /// Turns of the crown.
+        rotations: f64,
+        /// Turns a second, when given.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        velocity: Option<f64>,
+    },
     /// maestro `startRecording: <output-path>`. Spawns
     /// `xcrun simctl io recordVideo` as a long-running child via SDK::App.
     /// Pair with `stopRecording` for clean SIGINT-and-wait shutdown.
@@ -1350,40 +1360,7 @@ pub enum PinchAt {
     Point((f64, f64)),
 }
 
-mod scroll_until_serde {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use smix_driver::ScrollUntil;
-    use smix_host_coord_resolver::Reach;
-    use std::time::Duration;
-
-    #[derive(Serialize, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Wire {
-        visibility_percentage: f64,
-        center_element: bool,
-        timeout_ms: u64,
-    }
-
-    pub fn serialize<S: Serializer>(u: &ScrollUntil, s: S) -> Result<S::Ok, S::Error> {
-        Wire {
-            visibility_percentage: u.reach.visibility * 100.0,
-            center_element: u.reach.center_element,
-            timeout_ms: u64::try_from(u.timeout.as_millis()).unwrap_or(u64::MAX),
-        }
-        .serialize(s)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<ScrollUntil, D::Error> {
-        let w = Wire::deserialize(d)?;
-        Ok(ScrollUntil {
-            reach: Reach {
-                visibility: w.visibility_percentage / 100.0,
-                center_element: w.center_element,
-            },
-            timeout: Duration::from_millis(w.timeout_ms),
-        })
-    }
-}
+mod scroll_until_serde;
 
 /// A precondition, as maestro's `when:` / `repeat.while:` spell it. Every
 /// present field must hold (AND); the runtime checks them in maestro's

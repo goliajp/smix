@@ -2236,7 +2236,7 @@ public actor SmixRunnerServer {
 
     if let crownHandler {
       // OK MEANS: injected — the turn was handed to XCTest; what it scrolled is not read back.
-      // LONGEST WAIT /rotate-crown: 0 ms
+      // LONGEST WAIT /rotate-crown: from the request — rotations ÷ velocity
       await server.appendRoute("POST /rotate-crown") { request in
         let req: CrownRoute.Request
         do {

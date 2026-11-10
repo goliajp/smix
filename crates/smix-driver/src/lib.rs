@@ -1917,7 +1917,7 @@ pub use android::AndroidDriver;
 pub use scroll_until::{DEFAULT_SCROLL_TIMEOUT, ScrollUntil, scroll_until};
 /// What a scroll-until-visible asks of its target; part of [`ScrollUntil`].
 pub use smix_host_coord_resolver::Reach;
-pub use traits::{Driver, Platform};
+pub use traits::{Driver, Platform, crown_turn_check};
 
 /// The bundle id this description was taken from, read off the a11y
 /// tree's root identifier.

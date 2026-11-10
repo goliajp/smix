@@ -28,6 +28,9 @@ use smix_selector::Selector;
 
 use crate::Orientation;
 
+mod crown_turn;
+pub use crown_turn::crown_turn_check;
+
 /// Platform identifier for cross-platform dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Platform {
@@ -464,6 +467,26 @@ pub trait Driver: Send + Sync {
 
     /// Rotate the device.
     async fn set_orientation(&self, orientation: Orientation) -> Result<(), ExpectationFailure>;
+
+    /// Turn the Digital Crown `rotations` turns, at `velocity` turns a
+    /// second when given. One is a full turn; a positive turn scrolls a
+    /// list on towards its later rows. Callers check the turn with
+    /// [`crate::crown_turn_check`] first. Only an Apple Watch and an Apple
+    /// Vision Pro have a crown, so this is defaulted to a refusal, which the
+    /// Android driver keeps.
+    async fn rotate_crown(
+        &self,
+        _rotations: f64,
+        _velocity: Option<f64>,
+    ) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "rotateCrown: this device has no Digital Crown; only an Apple Watch or \
+                      Apple Vision Pro has one"
+                .into(),
+            ..Default::default()
+        }))
+    }
 
     /// Bring app to foreground.
     async fn foreground(&self, bundle_id: &str) -> Result<(), ExpectationFailure>;

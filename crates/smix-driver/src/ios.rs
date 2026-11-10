@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_input::{Drag, KeyCombo, KeyName, Mouse, Pinch, SwipeDirection, WindowBounds, WindowSize};
-use smix_runner_client::{IncludeScope, OcrFrame, SystemPopup, TapMode};
+use smix_runner_client::{IncludeScope, OcrFrame, RunnerTransportError, SystemPopup, TapMode};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
 
@@ -355,6 +355,30 @@ impl Driver for IosDriver {
 
     async fn set_orientation(&self, orientation: Orientation) -> Result<(), ExpectationFailure> {
         IosDriver::set_orientation(self, orientation).await
+    }
+
+    async fn rotate_crown(
+        &self,
+        rotations: f64,
+        velocity: Option<f64>,
+    ) -> Result<(), ExpectationFailure> {
+        // the device says what it is when it has no crown; that sentence is
+        // the whole answer
+        self.runner
+            .rotate_crown(rotations, velocity)
+            .await
+            .map_err(|e| match e {
+                RunnerTransportError::RefusedNaming { kind, saw, .. }
+                    if kind == "unsupported_on_platform" =>
+                {
+                    ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::DriverError),
+                        message: format!("rotateCrown: {saw}"),
+                        ..Default::default()
+                    })
+                }
+                e => crate::transport_to_failure(e),
+            })
     }
 
     async fn foreground(&self, bundle_id: &str) -> Result<(), ExpectationFailure> {

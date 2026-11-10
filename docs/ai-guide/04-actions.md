@@ -677,6 +677,21 @@ with `from`, `to` and `holdMs` / `durationMs` / `releaseMs`.
 - Taps, swipes, screenshots and OCR follow the lit screen in either posture, including an app laid out landscape on the inner screen.
 - From the shell: `smix sim posture <device> closed|half-open|open`.
 
+## Digital Crown (Apple Watch, Vision Pro)
+
+```yaml
+- rotateCrown: 1                            # one full turn; negative turns back
+- rotateCrown: { rotations: -0.5, velocity: 2 }   # velocity: turns a second
+```
+
+- An Apple Watch or Apple Vision Pro simulator: the runner turns the crown with
+  `XCUIDevice.rotateDigitalCrown`. A positive turn scrolls a list on towards its later rows; on a
+  watch's Settings list one full turn moved it about three rows.
+- XCTest takes about 5 s for a turn of any size, before the time the turn itself takes at the speed
+  given (three turns at half a turn a second: about 11 s).
+- Any other device refuses by name ("an iPhone or iPad has no Digital Crown …"); Android refuses
+  the same way.
+
 ## Vision Pro (visionOS simulators)
 
 The iOS runner also drives an Apple Vision Pro simulator: `smix runner up <udid> --platform ios`.

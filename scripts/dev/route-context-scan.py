@@ -55,6 +55,8 @@ DRIVES_THE_APP = {
     "GET /system-popups",
     "POST /system-popup-action",
     "POST /set-orientation",
+    # turns the crown of the device, and what it scrolls is the app in front
+    "POST /rotate-crown",
     "POST /record/start",
     "POST /record/stop",
     # Reports rather than acts, and still belongs here: half of what it

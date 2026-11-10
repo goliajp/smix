@@ -1,5 +1,2 @@
-- setPermissions:
-    camera: allow
-    location: allow
-    notifications: allow
-    photos: deny
+- rotateCrown: 1                            # one full turn; negative turns back
+- rotateCrown: { rotations: -0.5, velocity: 2 }   # velocity: turns a second

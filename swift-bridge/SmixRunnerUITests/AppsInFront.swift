@@ -22,6 +22,9 @@ func appNotInFront(_ target: XCUIApplication, bundleId: String) -> AppNotInFront
 @MainActor
 private func appsInFront() -> [String] {
   let springboard = smixSystemUI()
+  // a query on an app that is not running fails the runner's own test,
+  // which ends the runner: on a watch it asked a headset's process
+  guard springboard.state != .notRunning else { return [] }
   let cards = springboard.descendants(matching: .any)
     .matching(NSPredicate(format: "identifier BEGINSWITH 'card:'"))
     .allElementsBoundByIndex
