@@ -22,6 +22,7 @@ macro_rules! println {
 
 mod act;
 mod budget;
+mod budget_cmd;
 mod cleanup_cmd;
 mod footprint;
 mod settle_flags;
@@ -1699,6 +1700,9 @@ enum SimAction {
         /// Which device to wipe, by UDID or registry alias.
         device: String,
     },
+    /// How much room this machine has for devices; `--need` checks it
+    /// against the devices about to be booted.
+    Budget(budget_cmd::BudgetArgs),
     /// Rebuild a simulator's PosterBoard store when PosterBoard cannot
     /// load it (it then crashes at every start). Booting through smix
     /// already does this for a simulator that is off; a running one is shut
@@ -2371,7 +2375,7 @@ fn adb_knows(serial: &str) -> bool {
 /// has to say whether it takes a device before this compiles.
 fn sim_action_device(action: &SimAction) -> Option<&str> {
     match action {
-        SimAction::List { .. } | SimAction::Migrate { .. } => None,
+        SimAction::List { .. } | SimAction::Migrate { .. } | SimAction::Budget(_) => None,
         SimAction::Unregister { .. } => None,
         SimAction::Register { udid, .. } => Some(udid),
         SimAction::Resolve { device, .. }
@@ -2459,6 +2463,7 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
         match action {
             // No device, or the registry rather than the device.
             SimAction::List { .. }
+            | SimAction::Budget(_)
             | SimAction::Register { .. }
             | SimAction::AllowDestructive { .. }
             | SimAction::Migrate { .. }
@@ -2531,6 +2536,7 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         // list instead, by `refusal_for`.
         SimAction::Posture { .. } => None,
         SimAction::List { .. }
+        | SimAction::Budget(_)
         | SimAction::Register { .. }
         | SimAction::Resolve { .. }
         | SimAction::Migrate { .. }
@@ -3241,33 +3247,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     // machine, withheld because of where somebody's shell
                     // happened to be.
                     boot_record::record_simulator_boot(&udid, claim);
-                    // Registry-driven locale enforcement. When the SimEntry
-                    // has a `locale` field, ensure the sim's
-                    // NSGlobalDomain AppleLanguages first entry matches; if
-                    // it doesn't, write the prefs + shutdown+boot once. This
-                    // covers the "sim defaulted to the wrong language" case
-                    // where an app was built for a locale different from the
-                    // sim's persisted default.
-                    if let Some(spec) = lookup_registered(&device)
-                        && let Some(desired) = spec.locale.as_ref()
-                    {
-                        let current = simctl.current_locale(&udid).await.ok().flatten();
-                        if current.as_deref() == Some(desired.as_str()) {
-                            println!("locale: {desired} ok");
-                        } else {
-                            eprintln!(
-                                "locale: enforcing {desired} (current {})",
-                                current.as_deref().unwrap_or("<unset>")
-                            );
-                            simctl.set_locale(&udid, desired).await?;
-                            // Defaults apply at process start — must reboot.
-                            simctl.shutdown(&udid).await?;
-                            simctl
-                                .boot_and_wait(&udid, std::time::Duration::from_secs(60))
-                                .await?;
-                            println!("locale: {desired} enforced + sim re-booted");
-                        }
-                    }
+                    boot_record::enforce_registered_locale(&simctl, &device, &udid).await?;
                 }
                 SimAction::Shutdown { device } => {
                     let udid = resolve_device(&device)?;
@@ -3279,6 +3259,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     let udid = resolve_device(&device)?;
                     simctl.erase(&udid).await?;
                     println!("erased: {udid}");
+                }
+                SimAction::Budget(args) => {
+                    budget_cmd::budget(args).await.map_err(CliError::Other)?;
                 }
                 SimAction::Repair { device } => {
                     let udid = resolve_device(&device)?;
@@ -5330,6 +5313,7 @@ fn is_destructive(action: &SimAction) -> bool {
         | SimAction::Exec { .. } => true,
 
         SimAction::List { .. }
+        | SimAction::Budget(_)
         | SimAction::Register { .. }
         | SimAction::Resolve { .. }
         | SimAction::Migrate { .. }

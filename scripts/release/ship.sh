@@ -307,6 +307,13 @@ export SMIX_BIN="$ROOT/target/release/smix"
 # gate shutting the emulator the android chain was about to use. The
 # check that judges the reclaim sets its own limit per command.
 export SMIX_IDLE_DEVICE_SECS=0
+# Room for the device a tier script boots beside the two the ship keeps up,
+# asked before anything runs: 23.5.0's tier had boots refused part way
+# through, with somebody else's phone and tablet holding the budget, and
+# passed only on a budget set by hand. The answer names what is running
+# and what is short.
+"$SMIX_BIN" sim budget --need phone \
+  || fail "no room for the device the tier boots — see above; free some, or set SMIX_DEVICE_BUDGET_GIB"
 
 
 # --- android instrumentation (device) ----------------------------------
