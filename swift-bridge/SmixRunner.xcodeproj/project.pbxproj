@@ -19,6 +19,7 @@
 		5871D72A8325B2F2161A96B9 /* Banners.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D2BB4CF0E98637789C98F1 /* Banners.swift */; };
 		58EEED923C9F292381626FC5 /* Gestures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C69C75F795D8AE23B9BE25 /* Gestures.swift */; };
 		5C28A1EFB4FFACB2067D1EFB /* SmixExceptionTrampoline.m in Sources */ = {isa = PBXBuildFile; fileRef = BCD3DBB82831D19910E77B87 /* SmixExceptionTrampoline.m */; };
+		5E015D3A3868CE7120BF534D /* Crown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CA88300F9885A0FEBAF397F /* Crown.swift */; };
 		6FD0DE64FFB94BD90A52ACB5 /* PlatformShims.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DAFC18F37943D45AED8EA76 /* PlatformShims.swift */; };
 		6FDCA06236F8D50E730C87AA /* Banners.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D2BB4CF0E98637789C98F1 /* Banners.swift */; };
 		7744A4808C0F9E0E2608C8A6 /* SmixQuiescenceSwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */; };
@@ -33,6 +34,7 @@
 		CF1355C5A13A19E08C2E4D73 /* Headset.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC78B183001B5FA692E54B3 /* Headset.swift */; };
 		D0B65170676A011C0A27F1C4 /* EventRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */; };
 		EA1AFF5C3E59629B35203D66 /* AppsInFront.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AEABF27D53DA49BE5EB192B /* AppsInFront.swift */; };
+		EE18A4A0F3A72F3DD5D79B5F /* Crown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CA88300F9885A0FEBAF397F /* Crown.swift */; };
 		FA5DBD8CE11D2E5321326EF9 /* SmixA11ySwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 77E941BAAFA086830E4BCA33 /* SmixA11ySwizzle.m */; };
 		FB2971E3FCA8356DD639970C /* SmixRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91F97A8EE7187D90CC587D0 /* SmixRunnerApp.swift */; };
 /* End PBXBuildFile section */
@@ -59,6 +61,7 @@
 		039F01941B71D550BF4D6C3B /* Info-watchOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-watchOS.plist"; sourceTree = "<group>"; };
 		1AEABF27D53DA49BE5EB192B /* AppsInFront.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppsInFront.swift; sourceTree = "<group>"; };
 		29E63C356CE3614778CA640B /* SmixA11ySwizzle.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmixA11ySwizzle.h; sourceTree = "<group>"; };
+		2CA88300F9885A0FEBAF397F /* Crown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crown.swift; sourceTree = "<group>"; };
 		43066DF5775A7FCC7E12F5A5 /* SmixRunnerUITests-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "SmixRunnerUITests-Bridging-Header.h"; sourceTree = "<group>"; };
 		60ADEFEBB5644D83B0956CD1 /* HideKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HideKeyboard.swift; sourceTree = "<group>"; };
 		6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmixRunnerUITests.swift; sourceTree = "<group>"; };
@@ -129,6 +132,7 @@
 			children = (
 				1AEABF27D53DA49BE5EB192B /* AppsInFront.swift */,
 				F1D2BB4CF0E98637789C98F1 /* Banners.swift */,
+				2CA88300F9885A0FEBAF397F /* Crown.swift */,
 				95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */,
 				72197983C53848D29C050471 /* EventSynthesizer.swift */,
 				96C69C75F795D8AE23B9BE25 /* Gestures.swift */,
@@ -293,6 +297,7 @@
 			files = (
 				B0AD205E17B715F57B7D4A6B /* AppsInFront.swift in Sources */,
 				5871D72A8325B2F2161A96B9 /* Banners.swift in Sources */,
+				EE18A4A0F3A72F3DD5D79B5F /* Crown.swift in Sources */,
 				11EA46FC2E5D6C89BFD20E6A /* EventRecorder.swift in Sources */,
 				7BA1E05F935FFD0C24FBFA53 /* EventSynthesizer.swift in Sources */,
 				58EEED923C9F292381626FC5 /* Gestures.swift in Sources */,
@@ -312,6 +317,7 @@
 			files = (
 				EA1AFF5C3E59629B35203D66 /* AppsInFront.swift in Sources */,
 				6FDCA06236F8D50E730C87AA /* Banners.swift in Sources */,
+				5E015D3A3868CE7120BF534D /* Crown.swift in Sources */,
 				D0B65170676A011C0A27F1C4 /* EventRecorder.swift in Sources */,
 				1CB5D5E731634D61D9EE489A /* EventSynthesizer.swift in Sources */,
 				826D4235E44CF76204CE5F73 /* Gestures.swift in Sources */,
