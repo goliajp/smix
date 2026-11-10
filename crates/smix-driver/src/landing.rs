@@ -10,6 +10,8 @@ use crate::{ActOutcome, ActVerdict, HitElement, tap_mismatch_is_fatal};
 /// A frame makes a round trip — the host normalises the centre against
 /// the app frame, the runner multiplies it back — so exact equality
 /// would fail on arithmetic rather than on aim.
+mod miss_cause;
+
 const FRAME_TOLERANCE_PT: f64 = 1.0;
 
 /// What a chain of hit elements leaves out.

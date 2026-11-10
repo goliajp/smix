@@ -493,7 +493,7 @@ impl IosDriver {
             transport_to_failure,
         )
         .await?;
-        landing_outcome(selector, aimed, &landed)
+        self.landed(selector, aimed, &landed).await
     }
 
     /// Where a touch aimed at `selector` goes, and the node it is aimed
@@ -694,7 +694,7 @@ impl IosDriver {
             transport_to_failure,
         )
         .await?;
-        landing_outcome(selector, aimed, &landed).map(|_| ())
+        self.landed(selector, aimed, &landed).await.map(|_| ())
     }
 
     /// Tap a selector via an explicit dispatch mode. Used to opt into
@@ -755,14 +755,15 @@ impl IosDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        let (nx, ny, aimed, reader) = self.resolve_aimed(selector, include).await?;
+        let aim = self.resolve_aimed(selector, include).await?;
         let landed = phases::time(
             "touch",
-            self.runner.double_tap_gesture_aimed(nx, ny, Some(reader)),
+            self.runner
+                .double_tap_gesture_aimed(aim.0, aim.1, Some(aim.3)),
         )
         .await
         .map_err(transport_to_failure)?;
-        landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())
+        self.landed(selector, aim, &landed).await.map(drop)
     }
 
     /// Long-press a selector for `duration`: one touch held that long on
@@ -778,18 +779,18 @@ impl IosDriver {
         duration: Duration,
         include: Option<IncludeScope>,
     ) -> Result<PressTiming, ExpectationFailure> {
-        let (nx, ny, aimed, reader) = self.resolve_aimed(selector, include).await?;
+        let aim = self.resolve_aimed(selector, include).await?;
         let hold_ms = u32::try_from(duration.as_millis()).unwrap_or(u32::MAX);
         let sent_ms = host_now_ms();
         let landed = phases::time(
             "touch",
             self.runner
-                .tap_at_norm_coord_aimed(nx, ny, 1, None, Some(hold_ms), Some(reader)),
+                .tap_at_norm_coord_aimed(aim.0, aim.1, 1, None, Some(hold_ms), Some(aim.3)),
         )
         .await
         .map_err(transport_to_failure)?;
         let received_ms = host_now_ms();
-        landing_outcome(selector, (nx, ny, aimed, reader), &landed)?;
+        self.landed(selector, aim, &landed).await?;
         Ok(match landed.press() {
             Some(p) => PressTiming {
                 sent_ms,
@@ -1277,8 +1278,6 @@ pub(crate) fn hit_element(n: &A11yNode) -> HitElement {
     }
 }
 
-/// `ELEMENT_NOT_FOUND` for `selector` on `tree`, with what was on screen
-/// and the near misses — the shape every "not found" takes.
 /// What a wait that never found its element says beyond the failure.
 ///
 /// Text that is on screen and in no accessibility tree is the app keeping

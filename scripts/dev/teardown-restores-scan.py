@@ -147,6 +147,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v24.0-c1-a-a-point-on-an-arriving-screen-e2e.sh",
     "v24.0-c1-b-text-on-a-profile-screen-e2e.sh",
     "v24.0-c1-c-an-absent-runner-e2e.sh",
+    "v25.0-c1-e-a-touch-under-a-toast-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.
