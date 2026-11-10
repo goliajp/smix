@@ -69,7 +69,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     // Selector / A11yNode wire encoding. The untagged shapes it emits are
     // the contract with the Rust core.
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
 
     // JVM unit test deps. MVP shape tests run on JVM (no emulator
     // needed) — Selector shape verifications and similar.

@@ -57,7 +57,7 @@ dependencies {
     testImplementation("org.json:json:20260814")
 
     // UiAutomator2 — primary sense+act backend (mirror swift XCUITest).
-    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.0")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.1")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
