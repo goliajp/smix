@@ -52,9 +52,7 @@ mod departures;
 mod device_for;
 mod device_hub;
 mod device_ownership;
-use device_ownership::{
-    BootClaim, EmulatorState, ShutdownVerdict, boot_claim, ownership_of, shutdown_verdict,
-};
+use device_ownership::{BootClaim, EmulatorState, boot_claim};
 mod down;
 /// Distributed `smix run --nodes`: roster parsing, cross-node flow
 /// sharding, readiness gate, ssh fan-out and merged reporting.
@@ -70,6 +68,7 @@ mod runner_down;
 mod runner_list;
 mod sim_list;
 mod sim_repair;
+mod sim_shutdown;
 use device_for::device_control_for;
 
 mod script;
@@ -3272,60 +3271,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 SimAction::Shutdown { device } => {
                     let udid = resolve_device(&device)?;
-                    // The comment below this block has said for a while that
-                    // the boot row records who may shut a device down. It
-                    // was never read: the shutdown went ahead and then
-                    // cleared the row. So the rule existed in prose and not
-                    // in behaviour, and a device somebody else booted was
-                    // stopped by whoever tidied up next.
-                    match shutdown_verdict(ownership_of(&udid), &udid) {
-                        ShutdownVerdict::Proceed => {}
-                        ShutdownVerdict::Refuse { message } => {
-                            return Err(CliError::Other(message));
-                        }
-                    }
-                    // Already off is the state that was asked for. Failing
-                    // here would also mean never clearing the boot row below,
-                    // so a device shut down twice would keep a record saying
-                    // smix still owes it a shutdown — forever.
-                    //
-                    // The mechanism differs by platform and the rule above
-                    // does not: `emu kill` and `simctl shutdown` stop a
-                    // device in different ways, and both are only reached
-                    // once the ledger has said this process may.
-                    if device_kind_of(&device) == smix_simctl::registry::DeviceKind::Emulator {
-                        let adb = smix_adb::AdbClient::new();
-                        if let Err(e) = adb.stop_emulator(&udid).await {
-                            // An emulator that is already gone is the state
-                            // asked for, same as the simctl arm below.
-                            if !format!("{e}").contains("device") {
-                                return Err(CliError::Other(format!("could not stop {udid}: {e}")));
-                            }
-                        }
-                    } else {
-                        match simctl.shutdown(&udid).await {
-                            Ok(()) => {}
-                            Err(smix_simctl::DeviceControlError::NonZeroExit {
-                                ref stderr,
-                                ..
-                            }) if stderr.contains("current state: Shutdown") => {}
-                            Err(e) => return Err(e.into()),
-                        }
-                    }
-                    // The boot row records who may shut this device down.
-                    // Once it is off, the answer is nobody — leaving the row
-                    // behind would have a later teardown shut down a device
-                    // this process never turned on.
-                    if let Ok(leases) = smix_capsule::runner::machine_leases()
-                        && let Err(e) = smix_lease::store::drop_resource_kind(
-                            &leases,
-                            &udid,
-                            &smix_lease::Resource::Booted { by_us: true },
-                        )
-                    {
-                        eprintln!("warning: boot row not cleared from the device ledger: {e}");
-                    }
-                    println!("shutdown: {udid}");
+                    let emulator =
+                        device_kind_of(&device) == smix_simctl::registry::DeviceKind::Emulator;
+                    sim_shutdown::shutdown(&simctl, &udid, emulator).await?;
                 }
                 SimAction::Erase { device } => {
                     let udid = resolve_device(&device)?;
