@@ -112,6 +112,32 @@ pub fn read(serial: &str) -> ScreenState {
     }
 }
 
+/// The refusal `runner up` gives when a runner already answering finds a
+/// screen that will not settle: only system UI on it. With the lock screen
+/// showing, that is the whole story, and the way to open it is named; with
+/// it not known to be up, the runner itself may be stuck.
+pub fn unsettled_refusal(
+    port: u16,
+    serial: &str,
+    why: &str,
+    keyguard_showing: Option<bool>,
+) -> String {
+    if keyguard_showing == Some(true) {
+        return format!(
+            "port {port} answers /health, but the lock screen is showing: the app is behind \
+             it, where the automation cannot read it. The runner is fine. Unlock the device \
+             and bring the runner up again:\n  smix sim boot {serial} --unlock-pin <pin>\n\
+             enters its PIN (or SMIX_UNLOCK_PIN) and dismisses a lock screen without one; it \
+             answers once the lock screen is gone.\n(what was read: {why})"
+        );
+    }
+    format!(
+        "port {port} answers /health, but {why}.\n\n\
+         If no lock screen is up, the runner itself is stuck; bring it back in place:\n  \
+         smix runner up {serial} --platform android --force"
+    )
+}
+
 /// The refusal `runner up` gives when the automation sees no application.
 pub fn no_app_refusal(port: u16, serial: &str, why: &str, screen: ScreenState) -> String {
     let head =
@@ -195,6 +221,36 @@ pub fn no_app_refusal(port: u16, serial: &str, why: &str, screen: ScreenState) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_runner_behind_the_lock_screen_is_told_how_to_open_it() {
+        let r = unsettled_refusal(
+            22095,
+            "emulator-5560",
+            "only system UI is on the screen",
+            Some(true),
+        );
+        assert!(r.contains("lock screen is showing"), "{r}");
+        assert!(
+            r.contains("smix sim boot emulator-5560 --unlock-pin <pin>"),
+            "{r}"
+        );
+        assert!(!r.contains("--force"), "{r}");
+    }
+
+    #[test]
+    fn a_screen_not_known_to_be_locked_keeps_the_stuck_runner_advice() {
+        for keyguard in [Some(false), None] {
+            let r = unsettled_refusal(
+                22095,
+                "emulator-5560",
+                "only system UI is on the screen",
+                keyguard,
+            );
+            assert!(r.contains("--platform android --force"), "{r}");
+            assert!(!r.contains("--unlock-pin"), "{r}");
+        }
+    }
 
     const WHY: &str = "no readable application window is attached — only nothing at all";
 
