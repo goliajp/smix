@@ -2,15 +2,76 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [25.0.0] — 2026-11-10
+
+### Breaking
+
+- **Rust API: a touch aimed at a point returns what the screen was doing.**
+  `Driver::tap_at_norm_coord`, `double_tap_at_norm_coord` and
+  `long_press_at_norm_coord`, `AppLike::tap_at_coord`,
+  `double_tap_at_coord` and `long_press_at_coord`, and the `App` methods of
+  the same names return `ScreenAtTouch` (`Still`, `Moving` or `Unseen`)
+  instead of `()`. An implementor of either trait returns one; a caller
+  that ignored the `()` can ignore this too.
+- **Rust API: `smix_lease::Resource::AndroidRunner` gains `bundle`.** A
+  struct pattern over it needs `..` or the field.
+- **Rust API: `smix_screen::collect_visible_summaries` lists an element
+  once.** A label inside a button that carries the button's name, and an
+  element reported twice in a row, are left out; counts taken from it are
+  smaller on such screens.
 
 ### Fixed
 
+- **A point touch waits for the screen to stop moving.** `tapOn: { point }`,
+  `smix tap point:…`, `smix_tap { point }`, and the coordinate double tap
+  and long press waited for nothing: sent while a pushed screen was still
+  coming in, the touch was dropped and answered `tapped`. It now waits,
+  as a selector tap does, for the app to have a frame and then for two
+  screenshots in a row to agree, for up to 3 s (`--settle-max-ms`;
+  `--settle-frames 1` turns it off). A screen that never stops is touched
+  at the limit and the answer says it was still moving — in the CLI's
+  output, the MCP result and the flow's warnings. A screen still arriving
+  that draws nothing new until it has arrived cannot be seen to be
+  arriving; wait for something on it by selector.
+- **A point touch straight after `launchApp` no longer ends the iOS
+  runner.** The app had no frame yet, the point scaled by it was not on
+  the screen, and XCTest's assertion took the runner down. The touch waits
+  for the frame, and the runner refuses such a touch instead of crashing.
+- **A text miss offers the row that reads its title and value as one.**
+  A row whose accessibility label is `"Time Zone, JST"` does not match
+  `text: Time Zone`; the failure now offers it first, with
+  `text: { regex: "^Time Zone\b" }`, which does. Near-name suggestions
+  come from the whole screen rather than the first ten elements, and the
+  failure lists every element on the screen that carries words — ten in
+  full, the rest on one line.
+- **MCP errors name what an MCP caller can pass.** `smix_use` without
+  `bundleId` says `bundleId`, not the CLI's `--bundle`; a tool called with
+  no device bound says to call `smix_use` first, not to set `SMIX_UDID`.
+- **A command that finds no runner names the whole `runner up`.** With
+  `--device`, the error ends `start it with: smix runner up <device>
+  --platform android --bundle <app>`, the app taken from the last runner
+  the device's ledger records.
+- **`smix sim shutdown` on a device already off says so.** It said the
+  device "is running" and that smix had not booted it; it now answers
+  `was already shut down; nothing to do` and exits 0.
 - **`--port` help states where an unset port comes from.** Every verb that
   dials a runner still said "defaults to SMIX_RUNNER_PORT env or 22087"
   after 24.0.0 changed the order; it now names it: `SMIX_RUNNER_PORT`, the
   runner smix brought up on `--device`, the registered `runnerPort`, then
   22087 on iOS or 28080 on Android.
+
+### Added
+
+- **`smix describe --compact` and `smix_describe { compact: true }`**: one
+  line per element — role, name, id — without bounds, around a tenth of
+  the size of the full description.
+- **The CLI takes a selector as a flag.** `tap`, `find`, `wait-for`,
+  `fill`, `scroll` and `long-press` read `--id x`, `--text y`, `--label`,
+  `--role` and `--ocr-text` as `id:x`, `text:y` and the rest; on `fill`,
+  `--text` stays the text to type. Both forms at once is refused.
+- **`smix sim budget [--need <kind>…]`**: what is running, what each holds
+  and how much of the device budget is free; with `--need`, whether the
+  devices about to be booted fit, and how many GiB are short when not.
 
 ## [24.0.0] — 2026-11-08
 
