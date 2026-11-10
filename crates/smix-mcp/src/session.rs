@@ -37,8 +37,25 @@ pub struct SessionState {
 /// Names the tool that fixes it. The old failure was a connection error
 /// from whichever tool happened to be called first, which describes a
 /// symptom of the missing binding rather than the binding.
-pub const UNBOUND_HINT: &str = "no device is bound to this session — call smix_use with a UDID first \
-     (smix_devices lists what is available)";
+pub const UNBOUND_HINT: &str = "no device is bound to this session — call smix_use first, and \
+     check that it succeeded: { \"udid\": …, \"bundleId\": \"com.example.app\" } (smix_devices \
+     lists the UDIDs)";
+
+/// What `smix_use` says when it is called without `bundleId`.
+///
+/// The runner it brings up refuses to start without an app to attach to,
+/// and its refusal is written for the CLI (`--bundle`), a flag an MCP
+/// caller cannot pass. Said here first, in this tool's own words.
+pub fn use_needs_a_bundle(bundle_id: Option<&str>, udid: &str) -> Result<(), String> {
+    match bundle_id {
+        Some(b) if !b.trim().is_empty() => Ok(()),
+        _ => Err(format!(
+            "smix_use needs bundleId: the app the runner attaches to, e.g. \
+             {{ \"udid\": \"{udid}\", \"bundleId\": \"com.example.app\" }}. Nothing was \
+             started."
+        )),
+    }
+}
 
 impl SessionState {
     /// A session with nothing bound.
@@ -106,6 +123,22 @@ pub fn session_state_report(bound: Option<&Bound>) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn smix_use_without_a_bundle_says_bundle_id_not_the_cli_flag() {
+        let why = use_needs_a_bundle(None, "A6E0").unwrap_err();
+        assert!(why.contains("bundleId"), "{why}");
+        assert!(!why.contains("--bundle"), "{why}");
+        assert!(use_needs_a_bundle(Some(" "), "A6E0").is_err());
+        assert!(use_needs_a_bundle(Some("com.example.app"), "A6E0").is_ok());
+    }
+
+    #[test]
+    fn an_unbound_session_says_to_call_smix_use_not_to_set_an_env_var() {
+        let why = SessionState::new().require().unwrap_err();
+        assert!(why.contains("smix_use"), "{why}");
+        assert!(!why.contains("SMIX_UDID"), "{why}");
+    }
     use super::*;
 
     #[test]

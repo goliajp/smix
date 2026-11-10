@@ -44,6 +44,17 @@ Then point your MCP client at `smix-mcp`:
 One server process binds one simulator. Two simulators means two entries with
 different `SMIX_UDID`s.
 
+`SMIX_UDID` is optional. Without it, a session starts from nothing:
+
+```
+smix_devices                                          → the simulators, with UDIDs
+smix_use        { "udid": "<udid>", "bundleId": "com.example.app" }
+```
+
+`smix_use` boots the simulator if it is off and brings the runner up for that
+app; `bundleId` is required. Until a `smix_use` has succeeded, every other tool
+answers that no device is bound and names `smix_use`.
+
 ## A session
 
 What driving actually looks like:
