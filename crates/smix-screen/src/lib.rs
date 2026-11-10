@@ -29,7 +29,9 @@ pub use bounds::{Movement, bounds_moved, rect_in_points};
 mod whole_screen;
 pub use whole_screen::beside_other_windows;
 mod facts;
+mod summaries;
 pub use facts::{ScreenFacts, screen_facts};
+pub use summaries::collect_visible_summaries_with;
 
 use serde::{Deserialize, Serialize};
 
@@ -143,75 +145,6 @@ pub fn is_keyboard(n: &A11yNode) -> bool {
 #[must_use]
 pub fn subtree_len(n: &A11yNode) -> usize {
     1 + n.children.iter().map(subtree_len).sum::<usize>()
-}
-
-/// [`collect_visible_summaries`], with the keyboard optional.
-///
-/// The keyboard is one node saying "keyboard" and then a key per
-/// letter, plus `Next keyboard`, `Dictate`, `shift`, `delete` and the
-/// rest — around sixty summaries that are the same sixty on every
-/// screen in every app. A description of a login form spent most of
-/// itself on them, and a description is read by an AI paying for every
-/// token of it.
-///
-/// So they are left out by default and the caller can ask. What is not
-/// left out is *that a keyboard is up*: the keyboard node itself is
-/// still summarised, because a keyboard covering the thing you wanted
-/// to tap is the explanation for a failure, and hiding it would turn a
-/// legible failure into a mystery. Only the keys go.
-#[must_use]
-pub fn collect_visible_summaries_with(
-    tree: &A11yNode,
-    limit: usize,
-    include_keyboard_keys: bool,
-) -> Vec<ElementSummary> {
-    let mut out: Vec<ElementSummary> = Vec::new();
-    fn walk(
-        n: &A11yNode,
-        root: &A11yNode,
-        limit: usize,
-        keys: bool,
-        out: &mut Vec<ElementSummary>,
-    ) {
-        if out.len() >= limit {
-            return;
-        }
-        if n.enabled && n.visible && is_visible_enough(n, root) {
-            let s = summarize_node(n);
-            if has_identity(&s) {
-                out.push(s);
-            }
-        }
-        if !keys && is_keyboard(n) {
-            return;
-        }
-        for c in &n.children {
-            if out.len() >= limit {
-                return;
-            }
-            walk(c, root, limit, keys, out);
-        }
-    }
-    // The root is read first as before; its children are read in window
-    // order. Only the root's children: that is where a reader that serves
-    // several windows puts them, and reordering deeper would change the
-    // order of the app's own elements, which is the order a reader of the
-    // screen expects.
-    if tree.enabled && tree.visible && is_visible_enough(tree, tree) {
-        let s = summarize_node(tree);
-        if has_identity(&s) && out.len() < limit {
-            out.push(s);
-        }
-    }
-    if include_keyboard_keys || !is_keyboard(tree) {
-        for c in in_window_order(&tree.children) {
-            if out.len() >= limit {
-                break;
-            }
-            walk(c, tree, limit, include_keyboard_keys, &mut out);
-        }
-    }
-    out
 }
 
 /// Where a window sorts when a reader has to pick what to show first:

@@ -73,6 +73,10 @@ smix_assert_visible { "id": "form-submitted-label" }
 their ids, which is what you need to write the next call — guessing an id and
 getting `ELEMENT_NOT_FOUND` is the slow path.
 
+`smix_describe { "compact": true }` gives one line per element — role, name,
+id — without bounds, around a tenth of the size. An element is listed once: a
+button and the label inside it that carries the same name are one entry.
+
 ## Naming an element
 
 Every element-facing tool takes the same shape. Exactly one of:

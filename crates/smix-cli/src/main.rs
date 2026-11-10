@@ -34,6 +34,7 @@ mod boot_cold;
 mod boot_record;
 mod boot_unlock;
 mod capsule;
+mod describe_cmd;
 mod drag_cmd;
 mod fill_secret;
 mod hover_cmd;
@@ -571,23 +572,7 @@ enum Cmd {
     },
     /// Print the runner's high-level ScreenDescription: the visible
     /// interactive elements aggregated from the current a11y tree.
-    Describe {
-        /// Emit machine-readable JSON instead of the human outline.
-        #[arg(long)]
-        json: bool,
-        /// Runner port; unset: SMIX_RUNNER_PORT, the runner smix brought up on --device, its registered runnerPort, 22087 (iOS) / 28080 (Android).
-        /// `--runner-port` is accepted too — `smix run` spells it that way.
-        #[arg(long, alias = "runner-port")]
-        port: Option<u16>,
-        /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. It finds the runner port that device is
-        /// registered on, and — where a verb behaves differently by
-        /// platform (fill, find, tap and the rest of the act surface) —
-        /// reads the driver from the device's registered kind, so an
-        /// Android device is driven through its own runner, not simctl.
-        #[arg(long)]
-        device: Option<String>,
-    },
+    Describe(describe_cmd::DescribeArgs),
     /// Print the runner's current SpringBoard system-popup list.
     SystemPopups {
         /// Emit machine-readable JSON instead of the human outline.
@@ -4182,9 +4167,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::Describe { json, port, device } => {
-            let p = runner_dial_port(port, device.as_deref());
-            act::cmd_describe(json, p)
+        Cmd::Describe(args) => {
+            let p = runner_dial_port(args.port, args.device.as_deref());
+            describe_cmd::cmd_describe(args.json, args.compact, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }

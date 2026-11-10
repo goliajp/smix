@@ -406,20 +406,6 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Get a structured description of the current screen — visible elements + bounds. Needs smix_use, then the session smix_launch_app opens."
-    )]
-    /// CLI: smix describe
-    async fn smix_describe(&self) -> Result<CallToolResult, McpError> {
-        let app = self.bound_app().await?;
-        let desc = app
-            .describe()
-            .await
-            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
-        let json = serde_json::to_string_pretty(&desc).unwrap_or_default();
-        Ok(CallToolResult::success(vec![ContentBlock::text(json)]))
-    }
-
-    #[tool(
         description = "Get the raw A11yNode tree of the current screen. Needs smix_use, then the session smix_launch_app opens."
     )]
     /// CLI: smix tree
