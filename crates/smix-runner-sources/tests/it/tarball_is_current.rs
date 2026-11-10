@@ -35,6 +35,7 @@ fn is_excluded(rel: &Path) -> bool {
             || s == "DerivedData"
             || s == "xcuserdata"
             || s == ".build"
+            || s == ".smix"
             || s == ".DS_Store"
             || s == "__MACOSX"
             || s.starts_with(".bak-")
