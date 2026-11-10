@@ -65,9 +65,11 @@ by a space and a case; fix the selector, not the app.
 - `NOT_VISIBLE` — matched but off-screen or occluded. Scroll to it first.
 - `AMBIGUOUS` — several matched. Add `role`, `nth`, or a spatial modifier
   (`below:`, `rightOf:`) to disambiguate.
-- `TAP_MISSED` — the tap landed outside the element it aimed at (the screen
-  moved between the tree fetch and the tap). Wait for the screen to settle
-  (`extendedWaitUntil`) before tapping.
+- `TAP_MISSED` — the touch went to something other than the element it
+  aimed at. The hint says which of three it was, from a second look at the
+  screen: the element moved (wait for the screen to settle with
+  `extendedWaitUntil`), it went, or it stayed and something drawn over it —
+  a toast, a banner — took the touch (dismiss or wait out what is in front).
 
 Full code list: [07-errors](07-errors.md).
 

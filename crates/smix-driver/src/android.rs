@@ -321,16 +321,10 @@ impl Driver for AndroidDriver {
                     )
                     .await
             },
-            |e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::tap: runner.tap_at_norm_coord: {e}"),
-                    ..Default::default()
-                })
-            },
+            |e| runner_failure("tap: runner.tap_at_norm_coord", e),
         )
         .await?;
-        crate::landing_outcome(selector, aimed, &landed)
+        self.landed(selector, aimed, &landed).await
     }
 
     /// Found once — read and held still, as a tap is — then touched
@@ -364,16 +358,10 @@ impl Driver for AndroidDriver {
                     )
                     .await
             },
-            |e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::tap_burst: runner.tap_at_norm_coord: {e}"),
-                    ..Default::default()
-                })
-            },
+            |e| runner_failure("tap_burst: runner.tap_at_norm_coord", e),
         )
         .await?;
-        crate::landing_outcome(selector, aimed, &landed).map(|_| ())
+        self.landed(selector, aimed, &landed).await.map(|_| ())
     }
 
     async fn tap_with_mode(
@@ -436,15 +424,15 @@ impl Driver for AndroidDriver {
         // Host-resolve + /double-tap-at-norm-coord (Kotlin
         // side dispatches 2 clicks 150ms apart), judged like a tap. The
         // trait has no outcome to return here, so a miss is the error.
-        let (nx, ny, aimed, reader) = resolve_aimed(self, selector, include).await?;
+        let aim = resolve_aimed(self, selector, include).await?;
         let landed = crate::phases::time(
             "touch",
             self.runner
-                .double_tap_at_norm_coord_aimed(nx, ny, Some(reader)),
+                .double_tap_at_norm_coord_aimed(aim.0, aim.1, Some(aim.3)),
         )
         .await
         .map_err(|e| runner_failure("double_tap", e))?;
-        crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())
+        self.landed(selector, aim, &landed).await.map(drop)
     }
 
     async fn long_press(
@@ -456,7 +444,7 @@ impl Driver for AndroidDriver {
         // Host-resolve + /long-press-at-norm-coord with
         // duration. Kotlin uses UiDevice.swipe(x,y,x,y,steps) where
         // steps = duration / 5ms to approximate a sustained press.
-        let (nx, ny, aimed, reader) = resolve_aimed(self, selector, include).await?;
+        let aim = resolve_aimed(self, selector, include).await?;
         let duration_ms = duration.as_millis() as u64;
         // `UiDevice.swipe` reports nothing about when the touch was
         // down, so the bounds are unavailable rather than guessed —
@@ -466,12 +454,12 @@ impl Driver for AndroidDriver {
         let landed = crate::phases::time(
             "touch",
             self.runner
-                .long_press_at_norm_coord_aimed(nx, ny, duration_ms, Some(reader)),
+                .long_press_at_norm_coord_aimed(aim.0, aim.1, duration_ms, Some(aim.3)),
         )
         .await
         .map_err(|e| runner_failure("long_press", e))?;
-        crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed)
-            .map(|_| crate::PressTiming::unplaceable())
+        let landing = self.landed(selector, aim, &landed).await;
+        landing.map(|_| crate::PressTiming::unplaceable())
     }
 
     /// Android honours `key-events` by skipping focus resolution.
