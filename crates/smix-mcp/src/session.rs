@@ -38,7 +38,7 @@ pub struct SessionState {
 /// from whichever tool happened to be called first, which describes a
 /// symptom of the missing binding rather than the binding.
 pub const UNBOUND_HINT: &str = "no device is bound to this session — call smix_use first, and \
-     check that it succeeded: { \"udid\": …, \"bundleId\": \"com.example.app\" } (smix_devices \
+     check that it succeeded: { \"udid\": …, \"bundleId\": \"<your-app-bundle-id>\" } (smix_devices \
      lists the UDIDs)";
 
 /// What `smix_use` says when it is called without `bundleId`.
@@ -51,7 +51,7 @@ pub fn use_needs_a_bundle(bundle_id: Option<&str>, udid: &str) -> Result<(), Str
         Some(b) if !b.trim().is_empty() => Ok(()),
         _ => Err(format!(
             "smix_use needs bundleId: the app the runner attaches to, e.g. \
-             {{ \"udid\": \"{udid}\", \"bundleId\": \"com.example.app\" }}. Nothing was \
+             {{ \"udid\": \"{udid}\", \"bundleId\": \"<your-app-bundle-id>\" }}. Nothing was \
              started."
         )),
     }

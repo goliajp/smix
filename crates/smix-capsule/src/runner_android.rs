@@ -607,11 +607,9 @@ pub fn up_with_options(
                         return Err(format!("port {port} answers /health, but {why}."));
                     }
                     Err(crate::android_bring_back::Unsettled::Screen(why)) if !force => {
-                        return Err(format!(
-                            "port {port} answers /health, but {why}.\n\n\
-                         If no lock screen is up, the runner itself is stuck; bring it \
-                         back in place:\n  \
-                         smix runner up {serial} --platform android --force"
+                        let locked = crate::android_screen_state::read(serial).keyguard_showing;
+                        return Err(crate::android_screen_state::unsettled_refusal(
+                            port, serial, &why, locked,
                         ));
                     }
                     Err(crate::android_bring_back::Unsettled::Screen(why)) => {

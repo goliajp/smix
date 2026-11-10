@@ -710,39 +710,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   ) {
     guard let windowScene = scene as? UIWindowScene else { return }
     let window = UIWindow(windowScene: windowScene)
-    // `-tall-cards` opens the tall-card list instead of the main screen:
-    // its own way in, so no row is added to the main list the corpus
-    // flows scroll.
-    let root: UIViewController
-    if CommandLine.arguments.contains("-tall-cards") {
-      root = UIHostingController(rootView: TallCardsView())
-    } else if CommandLine.arguments.contains("-uikit-rows") {
-      root = UIKitRowsController()
-    } else if CommandLine.arguments.contains("-uikit-signin") {
-      root = UIKitSignInController(tapsAway: false)
-    } else if CommandLine.arguments.contains("-uikit-signin-taps-away") {
-      root = UIKitSignInController(tapsAway: true)
-    } else if CommandLine.arguments.contains("-pinch") {
-      root = PinchController()
-    } else if CommandLine.arguments.contains("-zoom") {
-      root = ZoomController()
-    } else if CommandLine.arguments.contains("-blink") {
-      root = BlinkController()
-    } else if CommandLine.arguments.contains("-live") {
-      root = LiveController()
-    } else if CommandLine.arguments.contains("-push") {
-      root = PushController()
-    } else if CommandLine.arguments.contains("-profile") {
-      root = ProfileController()
-    } else if CommandLine.arguments.contains("-arrive") {
-      root = ArriveController()
-    } else if CommandLine.arguments.contains("-toast") {
-      root = ToastController()
-    } else if CommandLine.arguments.contains("-sheet-over-form") {
-      root = UIHostingController(rootView: SheetOverFormView())
-    } else {
-      root = UIHostingController(rootView: ContentView())
-    }
+    let root = screenAsked(by: CommandLine.arguments)
+      ?? UIHostingController(rootView: ContentView())
     window.rootViewController = root
     window.makeKeyAndVisible()
     self.window = window

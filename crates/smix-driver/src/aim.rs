@@ -89,6 +89,8 @@ fn describe_cover(c: &Cover<'_>) -> String {
     format!("{what} ({},{} {}×{})", r.x, r.y, r.w, r.h)
 }
 
+/// `ELEMENT_NOT_FOUND` for `selector` on `tree`, with what was on screen
+/// and the near misses — the shape every "not found" takes.
 pub(crate) fn element_not_found(tree: &A11yNode, selector: &Selector) -> ExpectationFailure {
     let screen = screen_facts(tree, 10);
     let suggestions = suggestions_for(tree, selector);

@@ -44,4 +44,9 @@
     <item name="desk_drag" type="id" />
     <item name="desk_window" type="id" />
     <item name="desk_keys" type="id" />
+    <item name="cover_menu" type="id" />
+    <item name="cover_close" type="id" />
+    <item name="cover_card" type="id" />
+    <item name="cover_count" type="id" />
+    <item name="cover_closes" type="id" />
 </resources>
