@@ -134,7 +134,7 @@ fn to_prompt_basic_shape() {
 }
 
 #[test]
-fn to_prompt_caps_visible_at_10() {
+fn to_prompt_lists_ten_in_full_and_the_rest_by_their_words() {
     let visibles: Vec<ElementSummary> = (0..15)
         .map(|i| summary(Some(Role::Cell), Some(&format!("Cell-{}", i)), None))
         .collect();
@@ -145,11 +145,16 @@ fn to_prompt_caps_visible_at_10() {
         ..Default::default()
     });
     let prompt = f.to_prompt();
-    // top 10 only.
+    // ten described in full, one line each
     assert!(prompt.contains("(top 10):"));
-    assert!(prompt.contains("Cell-0"));
-    assert!(prompt.contains("Cell-9"));
-    assert!(!prompt.contains("Cell-10"));
+    assert!(prompt.contains("- cell name=\"Cell-9\""), "{prompt}");
+    assert!(!prompt.contains("- cell name=\"Cell-10\""), "{prompt}");
+    // and every word on the screen after them, on one line
+    assert!(
+        prompt.contains("the rest of the screen's text: \"Cell-10\", \"Cell-11\""),
+        "{prompt}"
+    );
+    assert!(prompt.contains("\"Cell-14\""), "{prompt}");
 }
 
 #[test]

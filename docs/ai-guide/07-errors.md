@@ -46,7 +46,14 @@ says the same in one line:
 ```
   on screen: com.example.app (application, focused) · com.android.systemui (system) ×2
   visible elements (10 of 57, the focused app's first):
+  …
+  the rest of the screen's text: "Storage", "1.2 GB", "Log out", …
 ```
+
+Ten elements are described in full; every other one on the screen that
+carries words follows on one line, so text the selector missed is in the
+failure even when it is far down the screen. `suggestions` are drawn from
+the whole screen too, not from the ten.
 
 On iOS the tree is the app you named, so `windows` holds that one app; the
 status bar belongs to SpringBoard and is not in it. All three fields are

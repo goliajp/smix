@@ -116,6 +116,11 @@ itself.
   silently widen what they match — the failure that does not announce
   itself. The one exception is `|`, which has meant alternation here
   since before the explicit form existed.
+- A row that reads its title and its value as one element — a settings
+  row whose label is `"Time Zone, JST"` — does not match its title
+  alone: matching is on the whole text. Match the title with
+  `text: { regex: "^Time Zone\\b" }`; a miss on the title alone offers
+  exactly that as its first suggestion.
 
 ### 3. Label (accessibility label)
 
