@@ -746,7 +746,7 @@ pub fn up_with_options(
         .map_err(|e| format!("adb shell am instrument: {e}"))?;
     let pid = child.id();
     match crate::runner::machine_leases() {
-        Ok(leases) => record_android_lease(&leases, serial, port, pid),
+        Ok(leases) => record_android_lease(&leases, serial, port, pid, opts.app.clone()),
         Err(e) => eprintln!("warning: android runner not recorded: {e}"),
     }
 
@@ -878,7 +878,13 @@ const ENDED_BECAUSE: &[(&[&str], &str)] = &[
 /// The host-side process outlives `runner up`, and what it leaves on the
 /// device outlives the host-side process. A row is what lets a later
 /// command find both and end them in the right order.
-fn record_android_lease(leases: &smix_lease::store::LeaseDir, serial: &str, port: u16, pid: u32) {
+fn record_android_lease(
+    leases: &smix_lease::store::LeaseDir,
+    serial: &str,
+    port: u16,
+    pid: u32,
+    bundle: Option<String>,
+) {
     use smix_lease::store;
     let proc = store::identify(pid).unwrap_or(smix_lease::ProcIdentity {
         pid,
@@ -892,6 +898,7 @@ fn record_android_lease(leases: &smix_lease::store::LeaseDir, serial: &str, port
             port,
             serial: serial.to_string(),
             proc,
+            bundle,
         },
     ) {
         eprintln!("warning: android runner not recorded in the device ledger: {e}");
@@ -1037,6 +1044,7 @@ pub fn down_with(serial: &str, port: u16, take_over: bool) -> Result<(), String>
             port: 0,
             serial: String::new(),
             proc: smix_lease::store::identify_self(),
+            bundle: None,
         },
     ) {
         eprintln!("runner down: lease ledger not updated: {e}");
