@@ -4,7 +4,33 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- **The runner drives Apple Watch and Apple TV simulators.** It builds for
+  watchOS and tvOS, and `runner up` picks the build from the device. On a
+  watch: taps, swipes, scrolls and the new `rotateCrown`; on a television
+  every act goes through the remote — a tap moves the focus onto its target
+  and selects it, `pressKey` presses the remote's buttons, and the tree
+  marks the focused element. What either does not have — keys a watch has
+  no button for, text recognition on a watch, a crown on a television — is
+  refused by name rather than answered as done.
+- **`rotateCrown`** (flow) and **`smix rotate-crown`** turn the Digital
+  Crown of an Apple Watch or Apple Vision Pro: `rotateCrown: 1`, or
+  `{ rotations, velocity }`. Any other device refuses by name. Rust:
+  `Driver::rotate_crown` (defaulted to that refusal), `App::rotate_crown`,
+  `smix_driver::crown_turn_check`.
+
 ### Fixed
+
+- **A scroll stops on a target only once it is clear of the status bar.** A
+  row half under it was taken as reached; on a watch such a row took no tap
+  at all, so the tap after `scrollUntilVisible` did nothing. A target the
+  screen cannot bring further than that (a header under the status bar at
+  the top of its list) is still taken as far as it goes.
+- **A runner on a device other than a phone no longer ends itself asking
+  for the wrong system UI.** Looking for which app was in front, a watch
+  asked for a headset's system process, and XCTest ended the runner on a
+  query for an app that was not running.
 
 - **A touch at a point no longer waits out the limit on a screen with a
   video playing.** The wait for two screenshots in a row to agree counted

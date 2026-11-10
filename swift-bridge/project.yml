@@ -4,6 +4,8 @@ options:
   deploymentTarget:
     iOS: "17.0"
     visionOS: "2.0"
+    tvOS: "17.0"
+    watchOS: "10.0"
   developmentLanguage: en
 
 packages:
@@ -13,9 +15,10 @@ packages:
 targets:
   SmixRunner:
     type: application
-    supportedDestinations: [iOS, visionOS]
+    supportedDestinations: [iOS, visionOS, tvOS]
     sources:
       - path: SmixRunner
+        excludes: ["Info-watchOS.plist"]
     info:
       path: SmixRunner/Info.plist
       properties:
@@ -26,9 +29,10 @@ targets:
 
   SmixRunnerUITests:
     type: bundle.ui-testing
-    supportedDestinations: [iOS, visionOS]
+    supportedDestinations: [iOS, visionOS, tvOS]
     sources:
       - path: SmixRunnerUITests
+        excludes: ["Info-watchOS.plist"]
     info:
       path: SmixRunnerUITests/Info.plist
       properties:
@@ -45,6 +49,40 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.smix.SmixRunnerUITests
         TEST_TARGET_NAME: SmixRunner
+        SWIFT_OBJC_BRIDGING_HEADER: SmixRunnerUITests/SmixRunnerUITests-Bridging-Header.h
+
+  # watchOS cannot share the multiplatform targets above, so the watch
+  # runner is its own pair, built from the same sources.
+  SmixRunnerWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: SmixRunner
+        excludes: ["Info.plist"]
+    info:
+      path: SmixRunner/Info-watchOS.plist
+      properties:
+        WKApplication: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.smix.SmixRunner.watch
+
+  SmixRunnerWatchUITests:
+    type: bundle.ui-testing
+    platform: watchOS
+    sources:
+      - path: SmixRunnerUITests
+        excludes: ["Info.plist"]
+    info:
+      path: SmixRunnerUITests/Info-watchOS.plist
+    dependencies:
+      - target: SmixRunnerWatch
+      - package: SmixRunnerCore
+        product: SmixRunnerCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.smix.SmixRunnerUITests.watch
+        TEST_TARGET_NAME: SmixRunnerWatch
         SWIFT_OBJC_BRIDGING_HEADER: SmixRunnerUITests/SmixRunnerUITests-Bridging-Header.h
 
 schemes:
@@ -68,3 +106,13 @@ schemes:
       userAttachmentLifetime: keepNever
       targets:
         - SmixRunnerUITests
+  SmixRunnerWatch:
+    build:
+      targets:
+        SmixRunnerWatch: all
+        SmixRunnerWatchUITests: [test]
+    test:
+      systemAttachmentLifetime: keepNever
+      userAttachmentLifetime: keepNever
+      targets:
+        - SmixRunnerWatchUITests

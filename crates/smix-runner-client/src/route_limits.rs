@@ -229,6 +229,9 @@ pub const ROUTES: &[Route] = &[
     // iOS: a 0.2 s settle. Android: 0.8 s idle wait and 3 s for the
     // rotation to arrive.
     r("/set-orientation", ms(200), ms(3_800), true).looks(1),
+    // iOS only: XCTest's 5.3 s for any turn, and the turn itself. Android
+    // has no crown.
+    r("/rotate-crown", REQ, NONE, true),
     // Android: the in-app WebView bridge's connect (5 s) and read (6 s).
     r("/webview-eval", NONE, ms(11_000), false),
     r("/record/start", ms(0), ms(0), false),

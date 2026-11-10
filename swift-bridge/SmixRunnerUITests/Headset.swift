@@ -87,18 +87,30 @@ func smixHeadsetTap(
     if let id {
       let element = app.descendants(matching: .any).matching(identifier: id).firstMatch
       guard element.exists else { return false }
+      #if os(tvOS)
+      // no press on a television: focus it, then select as many times and
+      // as long as the touch would have been
+      guard SmixRemote.focusThenSelect(element, times: times, hold: hold) else { return false }
+      #else
       for _ in 0..<max(1, times) { if hold > 0 { element.press(forDuration: hold) } else { element.tap() } }
+      #endif
     } else {
+      #if os(tvOS)
+      // a television takes no touch at a point; only the focused element acts
+      return false
+      #else
       let point = app.coordinate(withNormalizedOffset: CGVector(dx: nx, dy: ny))
       for _ in 0..<max(1, times) { if hold > 0 { point.press(forDuration: hold) } else { point.tap() } }
+      #endif
     }
     return true
   } == true
 }
 
 /// The process that shows system alerts over the app. SpringBoard on a
-/// phone or tablet; a headset has none, and its system alerts are hosted
-/// by one of these, the first that is running with an alert up.
+/// phone or tablet, Carousel on a watch, PineBoard on a television; a
+/// headset has none, and its system alerts are hosted by one of these,
+/// the first that is running with an alert up.
 private let headsetSystemUI = [
   "com.apple.RealityChrome", "com.apple.RealityHUD", "com.apple.RealityNotifications",
   "com.apple.RealityLauncher",
@@ -107,6 +119,11 @@ private let headsetSystemUI = [
 func smixSystemUIBundle() -> String {
   #if os(iOS)
     return "com.apple.springboard"
+  #elseif os(watchOS)
+    // the watch's SpringBoard; measured running on watchOS 27.2
+    return "com.apple.Carousel"
+  #elseif os(tvOS)
+    return "com.apple.PineBoard"
   #else
     let running = headsetSystemUI.filter {
       XCUIApplication(bundleIdentifier: $0).state != .notRunning
@@ -169,6 +186,6 @@ func smixHeadsetSystemAlertAction(
   let buttons = w.buttons.allElementsBoundByAccessibilityElement
   guard buttonId.hasPrefix("b-"), let i = Int(buttonId.dropFirst(2)), buttons.indices.contains(i)
   else { return .notFound }
-  buttons[i].tap()
+  smixActivate(buttons[i])
   return .found
 }

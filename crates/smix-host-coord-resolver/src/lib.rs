@@ -71,7 +71,7 @@ use smix_screen::A11yNode;
 use smix_selector::Selector;
 use smix_selector_resolver::resolve_selector;
 use thiserror::Error;
-pub use uncovered::{Cover, Covering, Touchable, touch_point};
+pub use uncovered::{Cover, Covering, Touchable, status_bar_share, touch_point};
 
 /// Errors returned by [`resolve_to_norm_coord`].
 #[derive(Debug, Error, PartialEq)]

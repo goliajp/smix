@@ -22,6 +22,7 @@ pub mod reconcile;
 pub mod runner;
 pub mod runner_android;
 mod runner_log;
+pub mod runner_scheme;
 pub mod runner_state;
 mod runner_stop;
 pub mod runner_view;

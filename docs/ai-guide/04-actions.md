@@ -677,6 +677,21 @@ with `from`, `to` and `holdMs` / `durationMs` / `releaseMs`.
 - Taps, swipes, screenshots and OCR follow the lit screen in either posture, including an app laid out landscape on the inner screen.
 - From the shell: `smix sim posture <device> closed|half-open|open`.
 
+## Digital Crown (Apple Watch, Vision Pro)
+
+```yaml
+- rotateCrown: 1                            # one full turn; negative turns back
+- rotateCrown: { rotations: -0.5, velocity: 2 }   # velocity: turns a second
+```
+
+- An Apple Watch or Apple Vision Pro simulator: the runner turns the crown with
+  `XCUIDevice.rotateDigitalCrown`. A positive turn scrolls a list on towards its later rows; on a
+  watch's Settings list one full turn moved it about three rows.
+- XCTest takes about 5 s for a turn of any size, before the time the turn itself takes at the speed
+  given (three turns at half a turn a second: about 11 s).
+- Any other device refuses by name ("an iPhone or iPad has no Digital Crown …"); Android refuses
+  the same way.
+
 ## Vision Pro (visionOS simulators)
 
 The iOS runner also drives an Apple Vision Pro simulator: `smix runner up <udid> --platform ios`.
@@ -689,7 +704,35 @@ flows with `launchApp`, `tapOn`, `inputText`, `extendedWaitUntil` and `assertVis
 - A window keeps the shape it has: there is no interface orientation to turn it by.
 - System alerts (a permission prompt among them) are hosted by RealityNotifications. They are listed
   as `type: alert`; their buttons are `b-0`, `b-1`, … in order.
-- Swipes, scrolls and `back` have not been verified there. tvOS is not supported.
+- Swipes, scrolls and `back` have not been verified there.
+
+## Apple Watch (watchOS simulators)
+
+The iOS runner has a watchOS build: `smix runner up <udid> --bundle <watch app>` picks it from the
+device. `tree`, `describe`, `tap` (by selector or at a point), `swipe`, `scrollUntilVisible`,
+`long-press`, `rotateCrown` and flows with `assertVisible` work there.
+
+- The top of a watch screen is the status bar with the clock. A row partly under it takes no tap,
+  even on the part that shows, so a scroll stops only once its target is clear of it, and a tap on
+  something wholly under it is refused by name.
+- `pressKey home` presses the Digital Crown in; every other key is refused by name (a watch has no
+  keyboard). Scroll with `rotateCrown` or `swipe`.
+- `ocrText:` selectors are refused by name: watchOS has no text recognition.
+
+## Apple TV (tvOS simulators)
+
+The runner builds for tvOS too. A television takes no touch: every act goes through the remote.
+
+- A tap — by selector or at a point — moves the focus onto the element, one arrow press at a time
+  toward it, then presses select. A focus that stops moving or never arrives is a failed step, not a
+  tap somewhere else. A double tap presses select twice; a long press holds it.
+- `pressKey` takes the remote's buttons: `arrowUp` / `arrowDown` / `arrowLeft` / `arrowRight` move
+  the focus, `return` selects, `escape` or `back` is Menu, `space` is play/pause, `home` is home.
+  Any other key is refused by name. `back` presses Menu; `swipe` and `scrollUntilVisible` press
+  arrows.
+- The tree marks the element holding the focus (`hasFocus`).
+- An Apple TV simulator runs alone on its machine (`smix sim budget --need tv` says whether there is
+  room).
 
 ## System permissions
 

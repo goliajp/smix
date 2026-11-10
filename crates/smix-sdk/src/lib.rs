@@ -24,6 +24,7 @@
 /// Visual regression perceptual hash (dhash 64-bit). Crate-internal:
 /// `compute_dhash_masked` + `hamming_distance` back the public
 /// `App::assert_screenshot`, not part of the SDK surface.
+mod device_parts;
 mod drag;
 pub(crate) mod png_gray;
 mod point_touch;
@@ -2846,32 +2847,6 @@ impl App {
         self.driving()?
             .set_orientation(orientation.to_driver())
             .await
-    }
-
-    /// Fold or unfold a foldable iOS simulator (iPhone Duo), returning
-    /// once the panel the posture lights is the lit one. Flow step
-    /// `setPosture: closed | halfOpen | open`.
-    ///
-    /// iOS simulators only: an Android emulator or a phone is refused by
-    /// name rather than left unfolded.
-    ///
-    /// Since smix 20.1.0.
-    pub async fn set_posture(&self, posture: Posture) -> Result<(), ExpectationFailure> {
-        let udid = self.require_udid()?;
-        let Some(simctl) = self.device.as_ios_simctl() else {
-            return Err(ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!(
-                    "setPosture: folding is wired for iOS simulators, and this device is {:?}",
-                    self.device.platform()
-                ),
-                ..Default::default()
-            }));
-        };
-        simctl
-            .set_posture(udid, posture)
-            .await
-            .map_err(simctl_to_failure)
     }
 
     /// Batch permission setter. Maestro `setPermissions: { camera:

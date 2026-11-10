@@ -33,6 +33,11 @@ export SMIX_EMULATOR_NO_WINDOW="${SMIX_EMULATOR_NO_WINDOW:-1}"
 E2E_IOS="${SMIX_E2E_IOS:-sim-smix-02}"
 E2E_IOS_SECOND="${SMIX_E2E_IOS_SECOND:-C1774CF6-8E56-463E-AD53-9CFF5930B2DE}"
 E2E_IOS_THIRD="${SMIX_E2E_IOS_THIRD:-CA88A8A3-8371-4527-A1A8-437F2E7C9A53}"
+# An Apple Watch and an Apple TV simulator, by name (watchOS / tvOS 27). A
+# television runs alone on its machine: its script cannot judge while
+# anything else is booted, rather than squeeze in beside it.
+E2E_WATCH="${SMIX_E2E_WATCH:-sim-smix-watch}"
+E2E_TV="${SMIX_E2E_TV:-sim-smix-tv}"
 
 # ---- physical devices: never by default -------------------------------
 #

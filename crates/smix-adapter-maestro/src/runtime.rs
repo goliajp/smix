@@ -128,9 +128,10 @@ fn launch_fresh_app_path_from_env(bundle_id: &str) -> Option<String> {
     std::env::var(&key).ok().filter(|s| !s.is_empty())
 }
 
-// ----------------------------------------------------------------------
 // AppLike trait + blanket impl for smix_sdk::App
-// ----------------------------------------------------------------------
+
+mod refused;
+use refused::refused;
 
 /// Subset of [`smix_sdk::App`] needed by [`Adapter::run`]. The blanket
 /// impl below forwards 1:1 to the real `App`; mock impls in tests
@@ -200,11 +201,9 @@ pub trait AppLike: Send + Sync {
         &self,
         combo: &smix_input::KeyCombo,
     ) -> Result<(), ExpectationFailure> {
-        Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: format!("pressKey {combo}: this app sends no key combinations"),
-            ..Default::default()
-        }))
+        Err(refused(format!(
+            "pressKey {combo}: this app sends no key combinations"
+        )))
     }
     /// Scroll until selector is reached. Mirrors [`App::scroll`].
     async fn scroll(
@@ -259,11 +258,7 @@ pub trait AppLike: Send + Sync {
         apns_json_path: &str,
     ) -> Result<(), ExpectationFailure> {
         let _ = (bundle_id, apns_json_path);
-        Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: "sendPush is not available on this backend".into(),
-            ..Default::default()
-        }))
+        Err(refused("sendPush is not available on this backend"))
     }
     /// Enumerate any system-level (SpringBoard / share-sheet)
     /// alert currently on screen. Mirrors [`App::system_popups`]. Used by
@@ -299,20 +294,17 @@ pub trait AppLike: Send + Sync {
     /// Press, hold, move, rest, lift. Mirrors [`App::drag`]. An app that
     /// cannot hold a touch refuses by name.
     async fn drag(&self, _drag: &smix_input::Drag) -> Result<(), ExpectationFailure> {
-        Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: "drag: this app cannot hold a touch down while it moves".into(),
-            ..Default::default()
-        }))
+        Err(refused(
+            "drag: this app cannot hold a touch down while it moves",
+        ))
     }
     /// A mouse pointer over a point or off the app. Mirrors [`App::mouse`].
     /// An app with no pointer refuses by name.
     async fn mouse(&self, mouse: &smix_input::Mouse) -> Result<(), ExpectationFailure> {
-        Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: format!("mouse {}: this app has no mouse pointer", mouse.kind()),
-            ..Default::default()
-        }))
+        Err(refused(format!(
+            "mouse {}: this app has no mouse pointer",
+            mouse.kind()
+        )))
     }
     /// Resize the desktop window of `app_id`. Mirrors
     /// [`App::set_window_size`]. An app with no window refuses by name.
@@ -321,11 +313,9 @@ pub trait AppLike: Send + Sync {
         _app_id: Option<&str>,
         size: smix_input::WindowSize,
     ) -> Result<(), ExpectationFailure> {
-        Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: format!("setWindowSize {size}: this app has no window to resize"),
-            ..Default::default()
-        }))
+        Err(refused(format!(
+            "setWindowSize {size}: this app has no window to resize"
+        )))
     }
     /// Where the desktop window of `app_id` sits, in px. Mirrors
     /// [`App::window_bounds`]. An app with no window refuses by name.
@@ -333,11 +323,9 @@ pub trait AppLike: Send + Sync {
         &self,
         _app_id: Option<&str>,
     ) -> Result<smix_input::WindowBounds, ExpectationFailure> {
-        Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: "takeScreenshot window: this app has no window of its own".into(),
-            ..Default::default()
-        }))
+        Err(refused(
+            "takeScreenshot window: this app has no window of its own",
+        ))
     }
     /// Viewport scroll one swipe in the given direction. Mirrors
     /// [`App::scroll_screen`].
@@ -360,11 +348,9 @@ pub trait AppLike: Send + Sync {
     /// The `App` impl overrides with the full three-step
     /// orchestration.
     async fn clear_app_data(&self) -> Result<(), ExpectationFailure> {
-        Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: "AppLike::clear_app_data not implemented on this backend".to_string(),
-            ..Default::default()
-        }))
+        Err(refused(
+            "AppLike::clear_app_data not implemented on this backend",
+        ))
     }
     /// Same as [`clear_app_data`](Self::clear_app_data), but applies caller-
     /// supplied launchArguments + launchEnvironment on the runner-side
@@ -383,11 +369,7 @@ pub trait AppLike: Send + Sync {
     /// returns an `ExpectationFailure` so mocks that don't need this
     /// call keep compiling without changes.
     async fn tree(&self) -> Result<smix_sdk::A11yNode, ExpectationFailure> {
-        Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: "AppLike::tree not implemented on this backend".to_string(),
-            ..Default::default()
-        }))
+        Err(refused("AppLike::tree not implemented on this backend"))
     }
     /// Write a literal to device pasteboard.
     /// Mirrors [`App::set_clipboard`].
@@ -418,14 +400,11 @@ pub trait AppLike: Send + Sync {
         _nx: f64,
         _ny: f64,
     ) -> Result<ScreenAtTouch, ExpectationFailure> {
-        Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: "double_tap_at_coord: this App has no coordinate double-tap. \
+        Err(refused(
+            "double_tap_at_coord: this App has no coordinate double-tap. \
                       The verb resolved a place and there is nothing here to act on \
-                      it with."
-                .into(),
-            ..Default::default()
-        }))
+                      it with.",
+        ))
     }
     /// Long-press a place. Mirrors [`App::long_press_at_coord`].
     /// Defaulted for the same reason as [`AppLike::double_tap_at_coord`].
@@ -435,14 +414,11 @@ pub trait AppLike: Send + Sync {
         _ny: f64,
         _duration_ms: u64,
     ) -> Result<ScreenAtTouch, ExpectationFailure> {
-        Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: "long_press_at_coord: this App has no coordinate long press. \
+        Err(refused(
+            "long_press_at_coord: this App has no coordinate long press. \
                       The verb resolved a place and there is nothing here to act on \
-                      it with."
-                .into(),
-            ..Default::default()
-        }))
+                      it with.",
+        ))
     }
     /// Tap one element several times, spaced on the event timeline.
     async fn tap_burst(
@@ -499,14 +475,21 @@ pub trait AppLike: Send + Sync {
     ///
     /// Since smix 20.1.0.
     async fn set_posture(&self, posture: smix_sdk::Posture) -> Result<(), ExpectationFailure> {
-        Err(ExpectationFailure::new(smix_sdk::FailureInit {
-            code: Some(smix_sdk::FailureCode::DriverError),
-            message: format!(
-                "setPosture {}: this app driver cannot fold a device",
-                posture.name()
-            ),
-            ..Default::default()
-        }))
+        let posture = posture.name();
+        Err(refused(format!(
+            "setPosture {posture}: this app driver cannot fold a device"
+        )))
+    }
+    /// Turn the Digital Crown. Mirrors [`App::rotate_crown`]; refused by
+    /// default for the same reason as [`Self::set_posture`].
+    async fn rotate_crown(
+        &self,
+        rotations: f64,
+        _velocity: Option<f64>,
+    ) -> Result<(), ExpectationFailure> {
+        Err(refused(format!(
+            "rotateCrown {rotations}: this app driver cannot turn a crown"
+        )))
     }
     /// Start sim display recording. Mirrors [`App::start_recording`].
     async fn start_recording(&self, path: &str) -> Result<(), ExpectationFailure>;
@@ -816,6 +799,13 @@ impl AppLike for App {
     async fn set_posture(&self, posture: smix_sdk::Posture) -> Result<(), ExpectationFailure> {
         App::set_posture(self, posture).await
     }
+    async fn rotate_crown(
+        &self,
+        rotations: f64,
+        velocity: Option<f64>,
+    ) -> Result<(), ExpectationFailure> {
+        App::rotate_crown(self, rotations, velocity).await
+    }
     async fn start_recording(&self, path: &str) -> Result<(), ExpectationFailure> {
         App::start_recording(self, path).await
     }
@@ -830,9 +820,7 @@ impl AppLike for App {
     }
 }
 
-// ----------------------------------------------------------------------
 // Report types
-// ----------------------------------------------------------------------
 
 /// Outcome of a single [`Step`] dispatch.
 #[derive(Debug)]
@@ -1067,6 +1055,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::SetPermissions { .. } => "setPermissions",
         Step::SetOrientation { .. } => "setOrientation",
         Step::SetPosture { .. } => "setPosture",
+        Step::RotateCrown { .. } => "rotateCrown",
         Step::AddMedia { .. } => "addMedia",
         Step::StartRecording { .. } => "startRecording",
         Step::StopRecording => "stopRecording",
@@ -1122,9 +1111,7 @@ fn annotate_timeout_error(err: RunError, capture_hint: Option<String>) -> RunErr
     }
 }
 
-// ----------------------------------------------------------------------
 // Adapter — dispatch state
-// ----------------------------------------------------------------------
 
 /// Stateful step dispatcher. Holds a borrow of the [`AppLike`] surface
 /// plus the current base directory for resolving relative `runFlow`
@@ -3012,6 +2999,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.set_posture(*posture).await?;
                 Ok(RunStepReport::Ok)
             }
+            Step::RotateCrown {
+                rotations,
+                velocity,
+            } => {
+                self.app.rotate_crown(*rotations, *velocity).await?;
+                Ok(RunStepReport::Ok)
+            }
             Step::StartRecording { path } => {
                 self.app.start_recording(path).await?;
                 Ok(RunStepReport::Ok)
@@ -4799,9 +4793,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     }
 }
 
-// ----------------------------------------------------------------------
 // Helper parsers
-// ----------------------------------------------------------------------
 
 /// Map the maestro yaml `launchApp.permissions.<name>` string to a
 /// typed [`Permission`]. Never guesses: an unknown permission name
