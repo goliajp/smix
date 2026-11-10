@@ -311,9 +311,6 @@ pub async fn cmd_tap(
     let selector = parse_selector(&selector_str)
         .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
     let d = driver_for(platform, port);
-    // A place, not a thing: the resolver has nothing to match, and its own
-    // comment says so — reaching it means a caller forgot to dispatch. The
-    // touch goes straight to the coordinate, the same as `tapOn: { point }`.
     if let Some(needle) = ocr_needle(&selector) {
         return match ocr_frame(d.as_ref(), needle, &ocr_locales).await? {
             Some(f) => {
@@ -334,13 +331,7 @@ pub async fn cmd_tap(
         };
     }
     if let Selector::Point { nx, ny } = selector {
-        d.tap_at_norm_coord(nx, ny)
-            .await
-            .map_err(|e| ActError::Transport(e.to_prompt()))?;
-        println!(
-            "tapped: point=({nx:.3}, {ny:.3}) — not verified: this path sends a touch without resolving a target"
-        );
-        return Ok(());
+        return crate::drag_cmd::tap_point(d.as_ref(), nx, ny).await;
     }
     let outcome = d
         .tap(&selector, None)

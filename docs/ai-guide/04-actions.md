@@ -169,6 +169,14 @@ before it acts.
 
 - nx, ny in viewport normalized [0, 1].
 - Bypasses element resolution — direct touch dispatch at coord.
+- Waits first, as a selector tap does: for the app to have a frame (a
+  touch straight after `launchApp` waits for the first screen), then for
+  two screenshots in a row to agree, for up to 3 s (`--settle-max-ms`;
+  `--settle-frames 1` turns the wait off). A screen that never stops — a
+  spinner, a video — is touched when the limit comes, and the step's
+  warnings say it was still moving. A screen that is still arriving but
+  draws nothing new until it has arrived cannot be seen to be arriving:
+  wait for something on it by selector instead.
 - Brittle; only use when no element identifier is reliable.
 
 ### Tap with OCR fallback
