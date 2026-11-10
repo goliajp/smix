@@ -1415,6 +1415,11 @@ final class SmixRunnerUITests: XCTestCase {
             // catches the vanished-element NSException, mapping it to
             // `.notFound` — the recheck added no coverage the trampoline
             // does not already provide, and was the regression's trigger.
+            #if os(tvOS)
+            // a television has no touch: focus the element, then select
+            _ = seeThrough
+            smixActivate(element)
+            #else
             if seeThrough {
               // Occlusion-tolerant: tap the resolved element's AX center
               // coordinate (not hittability-gated). nil scope is
@@ -1426,6 +1431,7 @@ final class SmixRunnerUITests: XCTestCase {
             } else {
               element.tap()
             }
+            #endif
             tapCallMs = Date().timeIntervalSince(tAfterFrameRead) * 1000
           case .daemonProxySynthesize:
             // RN Pressable JS-thread onPress unreliable
@@ -1645,10 +1651,10 @@ final class SmixRunnerUITests: XCTestCase {
               element = app.descendants(matching: .any).matching(anyText).firstMatch
             }
             if element.exists {
-              if !element.hasFocus { element.tap() }
+              if !element.hasFocus { smixActivate(element) }
             } else if scope == "all-windows",
                       let m = firstSeeThroughMatch(app: app, selector: .text(selectorText)) {
-              if !m.hasFocus { m.tap() }
+              if !m.hasFocus { smixActivate(m) }
             }
             return true
           }
@@ -1708,10 +1714,10 @@ final class SmixRunnerUITests: XCTestCase {
                 "elementType == 49 OR elementType == 50 OR elementType == 52 OR elementType == 45")
               element = app.descendants(matching: .any).matching(anyText).firstMatch
             }
-            if element.exists && !element.hasFocus { element.tap() }
+            if element.exists && !element.hasFocus { smixActivate(element) }
             else if !element.exists, scope == "all-windows",
                     let m = firstSeeThroughMatch(app: app, selector: .text(selectorText)) {
-              if !m.hasFocus { m.tap() }
+              if !m.hasFocus { smixActivate(m) }
             }
             return true
           }
@@ -2120,7 +2126,7 @@ final class SmixRunnerUITests: XCTestCase {
               + "hittable=\(wasHittable)"
           )
           if hadButton {
-            firstButton.tap()
+            smixActivate(firstButton)
             let (landed, why, seen) = navigated(from: beforeTitle)
             trail.append("afterTap[\(seen)]")
             if landed {
@@ -2178,9 +2184,14 @@ final class SmixRunnerUITests: XCTestCase {
           // Strategy 2: iOS interactive pop gesture (swipe right from left
           // edge). RN screens with `gestureEnabled:true` (default for stack
           // navigator screens, including Modal-presented screens) accept it.
+          // On a television, back is the remote's Menu button.
+          #if os(tvOS)
+          XCUIRemote.shared.press(.menu)
+          #else
           let leftEdge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
           let rightTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
           leftEdge.press(forDuration: 0.1, thenDragTo: rightTarget)
+          #endif
           let (landed, why, seen) = navigated(from: beforeTitle)
           trail.append("afterGesture[\(seen)]")
           if landed {
@@ -2273,6 +2284,20 @@ final class SmixRunnerUITests: XCTestCase {
           // (navigate down = see below) → swipeUp (finger up = content
           // moves up). L/R follow the same navigation convention as U/D
           // and the Kotlin runner — NOT the finger-direction convention.
+          #if os(tvOS)
+          // a television scrolls by moving the focus: the remote's arrow
+          // toward what is to be seen
+          let press: XCUIRemote.Button
+          switch direction {
+          case "down":  press = .down
+          case "up":    press = .up
+          case "left":  press = .left
+          case "right": press = .right
+          default:      return false
+          }
+          XCUIRemote.shared.press(press)
+          return true
+          #else
           switch direction {
           case "down":  app.swipeUp();    return true   // see below ← finger up
           case "up":    app.swipeDown();  return true   // see above ← finger down
@@ -2280,6 +2305,7 @@ final class SmixRunnerUITests: XCTestCase {
           case "right": app.swipeLeft();  return true   // see right ← finger left
           default:      return false
           }
+          #endif
         }
         return outcome ?? false
       },
@@ -2499,7 +2525,9 @@ final class SmixRunnerUITests: XCTestCase {
           // across the swipe and reports stale isHittable=false even after
           // the element is visually scrolled into view). Max 8 swipe-rounds.
           var current = resolved
-          if !current.isHittable {
+          // a television brings an element into view by focusing it,
+          // which the activation does; there is nothing to swipe
+          if smixCanSwipe && !current.isHittable {
             var attempts = 0
             while !current.isHittable && attempts < 8 {
               let elFrame = current.frame
@@ -2508,13 +2536,13 @@ final class SmixRunnerUITests: XCTestCase {
                 guard sv.exists else { continue }
                 let svFrame = sv.frame
                 if elFrame.midX > svFrame.maxX {
-                  sv.swipeLeft()
+                  smixSwipe(sv, .left)
                 } else if elFrame.midX < svFrame.minX {
-                  sv.swipeRight()
+                  smixSwipe(sv, .right)
                 } else if elFrame.midY > svFrame.maxY {
-                  sv.swipeUp()
+                  smixSwipe(sv, .up)
                 } else if elFrame.midY < svFrame.minY {
-                  sv.swipeDown()
+                  smixSwipe(sv, .down)
                 } else {
                   continue
                 }
@@ -2617,6 +2645,12 @@ final class SmixRunnerUITests: XCTestCase {
           // Screenshot via XCUIScreen.main (already wrapped by smixGuarded
           // pattern in /tap-by-id; OCR path doesn't trigger XCTIssue in
           // normal flow but we still wrap defensively below).
+          #if os(watchOS)
+          // Vision has no text recognition on watchOS
+          FileHandle.standardError.write(
+            Data("smix-runner: find-text-by-ocr: watchOS has no text recognition\n".utf8))
+          return nil as (Double, Double, Double, Double)?
+          #else
           let xcImage = smixScreen(showing: app).screenshot()
           let uiImage = xcImage.image
           guard let cgImage = uiImage.cgImage else {
@@ -2653,6 +2687,7 @@ final class SmixRunnerUITests: XCTestCase {
           let w = Double(vbox.size.width)
           let h = Double(vbox.size.height)
           return (nx, nyUiKit, w, h)
+          #endif
         }.value
         return result
       },

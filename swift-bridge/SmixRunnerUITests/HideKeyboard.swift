@@ -130,7 +130,7 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
       let key = app.keyboards.buttons[keyName]
       if key.exists {
         tried.append("key:\(keyName)")
-        key.tap()
+        smixActivate(key)
         if keyboardGone() { return .dismissed(by: "key:\(keyName)") }
       }
     }
@@ -142,6 +142,11 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
     // the touches. Only where a scroll view holds the field — anywhere
     // else a drag has nothing to dismiss and could move something.
     if spent() { return stopped() }
+    #if os(tvOS)
+    // a television takes no touch at a point, so neither the drag nor the
+    // touch above the keyboard below can be made
+    tried.append("drag and touch skipped: tvOS has no touch at a point")
+    #else
     let focusedField = focusedElement()
     if focusedField.exists {
       let scrollers = (app.scrollViews.allElementsBoundByIndex
@@ -208,6 +213,7 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
     } catch {
       tried.append("tap-above-keyboard skipped: the screen could not be read (\(error))")
     }
+    #endif
     // No swipe on the keyboard itself: a drag that starts on the keys
     // is slide typing. Measured 2026-09-28, one put "gu" into an empty
     // field and left the keyboard up.

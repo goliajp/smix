@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "SmixRunnerCore",
-  platforms: [.iOS(.v17), .macOS(.v13), .visionOS(.v1)],
+  platforms: [.iOS(.v17), .macOS(.v13), .visionOS(.v1), .tvOS(.v17), .watchOS(.v10)],
   products: [
     .library(name: "SmixRunnerCore", targets: ["SmixRunnerCore"]),
     .library(name: "SmixIndigoHID", targets: ["SmixIndigoHID"]),
