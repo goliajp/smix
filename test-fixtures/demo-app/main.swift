@@ -732,6 +732,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       root = LiveController()
     } else if CommandLine.arguments.contains("-push") {
       root = PushController()
+    } else if CommandLine.arguments.contains("-profile") {
+      root = ProfileController()
     } else if CommandLine.arguments.contains("-arrive") {
       root = ArriveController()
     } else if CommandLine.arguments.contains("-toast") {
