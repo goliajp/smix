@@ -39,7 +39,7 @@
 #![doc(html_root_url = "https://docs.smix.dev/smix-runner-client")]
 
 mod acts;
-pub use acts::{TapTarget, target_gone_before_touch};
+pub use acts::{TapTarget, target_covered_before_touch, target_gone_before_touch};
 mod combo;
 mod device;
 mod drag;

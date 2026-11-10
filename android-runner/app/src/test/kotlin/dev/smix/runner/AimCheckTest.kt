@@ -23,14 +23,14 @@ class AimCheckTest {
         assertEquals("id=overlay_detections", AimCheck.gone(target, read(overlay)))
     }
 
-    // A sheet's scrim over the target: the touch would go to the scrim, and
-    // the target is still at the point under it. That is a miss for the host
-    // to name, not a target that left.
+    // A sheet's scrim over the target: the target has not left, so it is not
+    // "gone" — something drawn over it would take the touch, and that is named.
     @Test
-    fun aTargetCoveredAtThePointIsTouched() {
+    fun aTargetCoveredAtThePointIsNotGoneButCovered() {
         val scrim = HitChain.Entry("", "Close panel", HitChain.Box(0, 0, 1080, 2340))
         val covered = HitChain.Reading.Read(HitChain.Reader.SEMANTICS, listOf(scrim), listOf(scrim, pill))
         assertNull(AimCheck.gone(target, covered))
+        assertEquals("\"Close panel\"", AimCheck.covered(target, covered))
     }
 
     @Test
@@ -84,5 +84,53 @@ class AimCheckTest {
         val body = org.json.JSONObject(AimCheck.goneBody(AimCheck.gone(t, read(other))!!, t))
         assertEquals("target_gone_before_touch", body.getString("error"))
         assertEquals("\"Lobby Guest\"; it looked for \"カフェ☕ Wi-Fi\"", body.getString("saw"))
+    }
+
+    // A consumer's toast lay across the lower part of a menu button, its close
+    // button over the button's centre.
+    private val menu = AimCheck.Target("btn_open_menu", "Open menu", HitChain.Box(932, 142, 1058, 268))
+    private val menuEntry = HitChain.Entry("btn_open_menu", "Open menu", HitChain.Box(932, 142, 1058, 268))
+    private val close = HitChain.Entry("toast_close", "Close", HitChain.Box(902, 174, 1028, 300))
+    private val toast = HitChain.Entry("toast", "", HitChain.Box(52, 174, 1028, 300))
+
+    /// What a touch at (x, y) reaches on that screen: the toast where it is,
+    /// the button above it.
+    private fun toastScreen(x: Int, y: Int): HitChain.Reading = when {
+        close.bounds.contains(x, y) ->
+            HitChain.Reading.Read(HitChain.Reader.SEMANTICS, listOf(close, toast), listOf(close, toast, menuEntry))
+        toast.bounds.contains(x, y) ->
+            HitChain.Reading.Read(HitChain.Reader.SEMANTICS, listOf(toast), listOf(toast, menuEntry))
+        menuEntry.bounds.contains(x, y) -> read(menuEntry)
+        else -> read()
+    }
+
+    @Test
+    fun aTargetTheTouchReachesIsTouchedWhereItWasAimed() {
+        val placed = AimCheck.place(menu, 995, 160, 1080, 2340, ::toastScreen)
+        assertEquals(995 to 160, (placed as AimCheck.Placement.Touch).let { it.x to it.y })
+    }
+
+    @Test
+    fun aTargetPartlyCoveredIsTouchedOnThePartThatShows() {
+        val placed = AimCheck.place(menu, 995, 205, 1080, 2340, ::toastScreen)
+        val touch = placed as AimCheck.Placement.Touch
+        assert(!toast.bounds.contains(touch.x, touch.y)) { "touched at ${touch.x},${touch.y}, on the toast" }
+        assert(AimCheck.reaches(menu, touch.reading))
+    }
+
+    @Test
+    fun aTargetCoveredEverywhereIsNotTouchedAndTheCoverIsNamed() {
+        val sheet = HitChain.Entry("", "Close panel", HitChain.Box(0, 0, 1080, 2340))
+        val placed = AimCheck.place(menu, 995, 205, 1080, 2340) { _, _ ->
+            HitChain.Reading.Read(HitChain.Reader.SEMANTICS, listOf(sheet), listOf(sheet, menuEntry))
+        }
+        val body = (placed as AimCheck.Placement.Refuse).body
+        assert(body.contains("target_covered_before_touch") && body.contains("Close panel")) { body }
+    }
+
+    @Test
+    fun aTargetGoneIsStillRefusedAsGone() {
+        val placed = AimCheck.place(menu, 995, 205, 1080, 2340) { _, _ -> read(toast) }
+        assert((placed as AimCheck.Placement.Refuse).body.contains("target_gone_before_touch"))
     }
 }
