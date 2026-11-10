@@ -13,10 +13,13 @@
 //! row are the same ([`crate::still`]), for at most the same
 //! [`Settle`] limit the selector touches use.
 //!
-//! A screen that never stops — a spinner, a video — is touched when the
-//! limit comes, and the answer says it was still moving: refusing would
-//! fail every touch on such a screen. A touch that could not look (no
-//! screenshot from this runner) says it did not look.
+//! Away from the point, a part of the screen that keeps changing for over
+//! a second — a video, a looping animation — is left out of the
+//! comparison ([`playback`]), and the answer names where it was. A screen
+//! that still moves near the point is touched when the limit comes, and
+//! the answer says it was still moving: refusing would fail every touch on
+//! such a screen. A touch that could not look (no screenshot from this
+//! runner) says it did not look.
 
 use std::future::Future;
 use std::time::Duration;
@@ -26,7 +29,11 @@ use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_screen::A11yNode;
 
 use crate::settle::Settle;
-use crate::still::{QuiescenceParams, frames_are_still};
+use crate::still::{QuiescenceParams, decode_gray};
+
+mod playback;
+pub use playback::ScreenRegion;
+use playback::{Look, Watch};
 
 /// What the screen was doing when a point was touched.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,6 +41,13 @@ use crate::still::{QuiescenceParams, frames_are_still};
 pub enum ScreenAtTouch {
     /// Two screenshots in a row agreed, after waiting this long.
     Still { waited: Duration },
+    /// Two in a row agreed everywhere but inside `playing`, a part of the
+    /// screen away from the point that kept changing for over a second
+    /// and was left out as a video or animation playing.
+    StillApartFrom {
+        waited: Duration,
+        playing: ScreenRegion,
+    },
     /// It was still changing when the limit came, and was touched anyway.
     Moving { waited: Duration },
     /// Not looked at: no wait was asked for, or no screenshot could be
@@ -48,6 +62,16 @@ impl ScreenAtTouch {
     pub fn caveat(&self) -> Option<String> {
         match self {
             ScreenAtTouch::Still { .. } => None,
+            ScreenAtTouch::StillApartFrom { waited, playing } => Some(format!(
+                "part of the screen ({}–{}% across, {}–{}% down) kept changing for over a \
+                 second and was left out as a video or animation playing; the rest was still \
+                 after {} ms and the point was touched then",
+                playing.left,
+                playing.right,
+                playing.top,
+                playing.bottom,
+                waited.as_millis()
+            )),
             ScreenAtTouch::Moving { waited } => Some(format!(
                 "the screen was still moving after {} ms and was touched anyway; if nothing \
                  happened, the touch landed on a screen still arriving (wait for it first, or \
@@ -110,26 +134,41 @@ where
     if settle.readings <= 1 {
         return Ok(ScreenAtTouch::Unseen);
     }
-    let params = QuiescenceParams::default();
-    let Some(mut previous) = shoot().await else {
+    let Some(first) = shoot().await else {
         return Ok(ScreenAtTouch::Unseen);
     };
+    // a frame that cannot be read is not a look at the screen
+    let Ok(mut previous) = decode_gray(&first) else {
+        return Ok(ScreenAtTouch::Unseen);
+    };
+    let mut watch = Watch::new(QuiescenceParams::default(), nx, ny);
     // frames in a row that agree, counting `previous`
     let mut agreeing = 1;
+    let mut playing = None;
     loop {
         let look = budget.look();
-        let Some(next) = shoot().await else {
+        let Some(shot) = shoot().await else {
             return Ok(ScreenAtTouch::Unseen);
         };
-        match frames_are_still(&previous, &next, &params) {
-            Ok(true) => agreeing += 1,
-            Ok(false) => agreeing = 1,
-            // a frame that cannot be read is not a look at the screen
-            Err(_) => return Ok(ScreenAtTouch::Unseen),
+        let Ok(next) = decode_gray(&shot) else {
+            return Ok(ScreenAtTouch::Unseen);
+        };
+        match watch.compare(&previous, &next, Instant::now()) {
+            Look::Still => agreeing += 1,
+            Look::StillApartFrom(region) => {
+                agreeing += 1;
+                playing = Some(region);
+            }
+            Look::Moving => {
+                agreeing = 1;
+                playing = None;
+            }
         }
         if agreeing >= settle.readings {
-            return Ok(ScreenAtTouch::Still {
-                waited: began.elapsed(),
+            let waited = began.elapsed();
+            return Ok(match playing {
+                Some(playing) => ScreenAtTouch::StillApartFrom { waited, playing },
+                None => ScreenAtTouch::Still { waited },
             });
         }
         if budget.spent_by(look) {
@@ -210,6 +249,56 @@ mod tests {
         .unwrap();
         assert!(matches!(at, ScreenAtTouch::Still { .. }), "{at:?}");
         assert_eq!(shots.get(), 5, "it looked until the screen held still");
+    }
+
+    /// A 40×80 frame whose top half shows picture `n` of a video and whose
+    /// bottom half is flat.
+    fn playing(n: u8) -> Vec<u8> {
+        let mut data = vec![200u8; 40 * 80];
+        for (i, p) in data[..40 * 40].iter_mut().enumerate() {
+            *p = n.wrapping_mul(37).wrapping_add(i as u8);
+        }
+        let mut out = Vec::new();
+        {
+            let mut e = png::Encoder::new(&mut out, 40, 80);
+            e.set_color(png::ColorType::Grayscale);
+            e.set_depth(png::BitDepth::Eight);
+            e.write_header().unwrap().write_image_data(&data).unwrap();
+        }
+        out
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_video_away_from_the_point_does_not_hold_the_touch_to_the_limit() {
+        let n = Cell::new(0u8);
+        let at = before_point_touch(
+            0.5,
+            0.8,
+            || async { Ok(tree(400.0)) },
+            || {
+                n.set(n.get().wrapping_add(1));
+                let f = playing(n.get());
+                // a capture takes time; the video plays on meanwhile
+                async move {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    Some(f)
+                }
+            },
+            POLL,
+            Settle::default(),
+        )
+        .await
+        .unwrap();
+        let ScreenAtTouch::StillApartFrom { waited, playing } = at else {
+            panic!("{at:?}");
+        };
+        assert!(waited < Duration::from_secs(2), "{waited:?}");
+        assert_eq!((playing.top, playing.bottom), (0, 50), "{playing:?}");
+        assert!(
+            at.caveat().unwrap().contains("0–50% down"),
+            "{:?}",
+            at.caveat()
+        );
     }
 
     #[tokio::test(start_paused = true)]
