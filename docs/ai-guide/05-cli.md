@@ -1088,6 +1088,7 @@ smix tree --json | jq .                    # full a11y tree
 smix tree                                  # human-readable outline
 smix tree --keyboard                       # …including the keyboard's keys
 smix describe                              # visible interactive elements
+smix describe --compact                    # …one line each: role, name, id
 smix system-popups                         # list active popups
 smix system-popup-action <popup-id> <button-id>
 ```
