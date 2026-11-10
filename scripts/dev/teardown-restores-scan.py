@@ -144,6 +144,9 @@ SHUTS_DOWN_SCRIPTS = {
     "v23.0-c3-c-room-to-boot-e2e.sh",
     "v23.0-c3-d-left-behind-e2e.sh",
     "v23.6-c1-the-lock-screen-and-the-runner-port-e2e.sh",
+    "v24.0-c1-a-a-point-on-an-arriving-screen-e2e.sh",
+    "v24.0-c1-b-text-on-a-profile-screen-e2e.sh",
+    "v24.0-c1-c-an-absent-runner-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.

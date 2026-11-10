@@ -7378,6 +7378,10 @@ mod tests {
             ),
             ("keychain-reset", SimAction::KeychainReset { device: d() }),
             (
+                "budget",
+                SimAction::Budget(budget_cmd::BudgetArgs { need: Vec::new() }),
+            ),
+            (
                 "locale",
                 SimAction::Locale {
                     device: d(),

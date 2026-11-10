@@ -5,7 +5,7 @@ use crate::{
     summarize_node,
 };
 
-/// [`collect_visible_summaries`], with the keyboard optional.
+/// [`crate::collect_visible_summaries`], with the keyboard optional.
 ///
 /// The keyboard is one node saying "keyboard" and then a key per
 /// letter, plus `Next keyboard`, `Dictate`, `shift`, `delete` and the

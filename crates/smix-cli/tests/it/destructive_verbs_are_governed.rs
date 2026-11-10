@@ -46,6 +46,7 @@ const DESTRUCTIVE: &[&str] = &[
 /// how a new verb would arrive ungoverned.
 const NOT_DESTRUCTIVE: &[(&str, &str)] = &[
     ("List", "reads"),
+    ("Budget", "reads what is running"),
     ("Resolve", "reads"),
     (
         "Register",
