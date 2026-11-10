@@ -89,7 +89,7 @@ fn failed(e: smix_error::ExpectationFailure) -> McpError {
 #[tool_router(router = gesture_router, vis = "pub(crate)")]
 impl SmixMcpService {
     #[tool(
-        description = "Swipe once through the content. `direction` names what you want to see (down reveals what is below), not which way the finger moves. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Swipe once through the content. `direction` names what you want to see (down reveals what is below), not which way the finger moves. Needs smix_use, then the session smix_launch_app opens."
     )]
     /// CLI: smix swipe
     async fn smix_swipe(
@@ -139,7 +139,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Swipe until an element is wholly in view, then stop. Use this rather than repeated swipes — it knows when to stop. Takes id / text / label / role / ocrText or a fallback chain of them: after each swipe it reads the tree, then each ocrText in the chain's order. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Swipe until an element is wholly in view, then stop. Use this rather than repeated swipes — it knows when to stop. Takes id / text / label / role / ocrText or a fallback chain of them: after each swipe it reads the tree, then each ocrText in the chain's order. Needs smix_use, then the session smix_launch_app opens."
     )]
     /// CLI: smix scroll
     async fn smix_scroll(

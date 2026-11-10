@@ -123,7 +123,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Capture the current screen to a PNG file and return its path and size, not the image: a full phone frame is larger than a tool result may hold. Open the file to look at it. Give maxWidth (pixels) to also get a copy scaled to that width inline, e.g. 400 to read a layout; give path to choose where the file goes. Requires a bound simulator (smix_use, or the SMIX_UDID env var)."
+        description = "Capture the current screen to a PNG file and return its path and size, not the image: a full phone frame is larger than a tool result may hold. Open the file to look at it. Give maxWidth (pixels) to also get a copy scaled to that width inline, e.g. 400 to read a layout; give path to choose where the file goes. Needs a device bound with smix_use."
     )]
     /// CLI: smix sim screenshot
     async fn smix_screenshot(
