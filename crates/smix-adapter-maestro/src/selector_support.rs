@@ -3,16 +3,12 @@
 //! Three selector spellings describe something the accessibility tree
 //! cannot show: `ocrText:` is pixels, `localizedText:` is a locale map
 //! that has to be picked from first, and `anchorRelative:` resolves to a
-//! shifted coordinate rather than to a node. Each is read above the
-//! resolver by the verbs that read it at all — and matched by nothing by
-//! the verbs that do not.
+//! shifted coordinate rather than to a node. The verbs that read one do so
+//! above the resolver; the resolver matches none of them.
 //!
-//! As a comment it was followed by some call sites, unseen: a verb that
-//! does not read a form fails like one whose target is absent. So the cells are here, and both matches are exhaustive. A new `Step`
-//! does not compile until it says which selector slots it has; a new
-//! slot does not compile until it says what it does with each form.
-//! There is no third answer: a slot either reads the form or refuses it
-//! by name.
+//! Both matches are exhaustive: a new `Step` says which selector slots
+//! it has, and a new slot whether it reads each form or refuses it by
+//! name, before it compiles.
 
 use crate::AnnotationPos;
 use crate::Step;
@@ -139,7 +135,9 @@ pub fn slots(step: &Step) -> &'static [Slot] {
             &[Slot::FillTarget]
         }
         Step::CopyTextFrom { .. } => &[Slot::CopyTextSource],
-        Step::RememberBounds { .. } | Step::AssertBoundsUnchanged { .. } => &[Slot::BoundsTarget],
+        Step::RememberBounds { .. }
+        | Step::AssertBoundsUnchanged { .. }
+        | Step::AssertVideo { .. } => &[Slot::BoundsTarget],
         Step::AssertVisible { .. } => &[Slot::AssertVisibleTarget],
         Step::AssertNotVisible { .. } => &[Slot::AssertNotVisibleTarget],
         Step::NeverVisible { .. } => &[Slot::NeverVisibleTarget],
@@ -448,7 +446,9 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
             .map(|selector| (Slot::FillTarget, selector))
             .collect(),
         Step::CopyTextFrom { selector, .. } => vec![(Slot::CopyTextSource, selector)],
-        Step::RememberBounds { selector, .. } | Step::AssertBoundsUnchanged { selector, .. } => {
+        Step::RememberBounds { selector, .. }
+        | Step::AssertBoundsUnchanged { selector, .. }
+        | Step::AssertVideo { selector, .. } => {
             vec![(Slot::BoundsTarget, selector)]
         }
         Step::AssertVisible { selector, .. } => vec![(Slot::AssertVisibleTarget, selector)],

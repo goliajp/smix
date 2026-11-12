@@ -220,6 +220,21 @@ PINS = [
         r"DEFAULT_SCROLL_TIMEOUT: Duration = Duration::from_millis\((\d+)_000\)",
         r"timeout|scroll",
     ),
+    # How long the two picture assertions watch when `within` is not given.
+    (
+        "default",
+        "s",
+        "crates/smix-adapter-maestro/src/parser/video.rs",
+        r"PLAYING_WITHIN_MS: u64 = (\d+)_000",
+        r"assertVideoPlaying|within this long",
+    ),
+    (
+        "default",
+        "s",
+        "crates/smix-adapter-maestro/src/parser/video.rs",
+        r"FROZEN_WITHIN_MS: u64 = (\d+)_000",
+        r"assertVideoFrozen|for this long",
+    ),
     # The parity page said long-press was 700 ms and not configurable;
     # it is 500 and takes `{ duration: N }`.
     (

@@ -132,6 +132,7 @@ fn launch_fresh_app_path_from_env(bundle_id: &str) -> Option<String> {
 
 mod refused;
 mod typed_into_mask;
+mod video;
 use refused::refused;
 
 /// Subset of [`smix_sdk::App`] needed by [`Adapter::run`]. The blanket
@@ -1047,6 +1048,8 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::CopyTextFrom { .. } => "copyTextFrom",
         Step::RememberBounds { .. } => "rememberBounds",
         Step::AssertBoundsUnchanged { .. } => "assertBoundsUnchanged",
+        Step::AssertVideo { playing: true, .. } => "assertVideoPlaying",
+        Step::AssertVideo { .. } => "assertVideoFrozen",
         Step::NeverVisible { .. } => "neverVisible",
         Step::PasteText { .. } => "pasteText",
         Step::SetClipboard(_) => "setClipboard",
@@ -2718,6 +2721,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.remembered_bounds.insert(name.clone(), box_now);
                 Ok(RunStepReport::Ok)
             }
+            Step::AssertVideo {
+                selector,
+                playing,
+                within_ms,
+            } => self.assert_video(selector, *playing, *within_ms).await,
             Step::AssertBoundsUnchanged {
                 selector,
                 was,
@@ -3978,15 +3986,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         Cow::Borrowed(selector)
     }
 
-    /// extendedWaitUntil visible with OCR + Fallback dispatch.
-    /// Routing every selector through `App::wait_for` would use its
-    /// tree resolver, which silently skips `OcrText` inside a
-    /// `Fallback` chain (compile returns false, resolver treats it as
-    /// never-matching): a `fallback: [id, text, ocrText]` would spend
-    /// the whole 45 s timeout on pure `/tree` polls without ever
-    /// making a single OCR call.
+    /// extendedWaitUntil visible with OCR + Fallback dispatch: the tree
+    /// resolver behind `App::wait_for` matches no `OcrText`, so a chain
+    /// holding one would never make an OCR call.
     ///
-    /// Now:
     /// - `Fallback` chain — per poll iteration walk every sub-selector:
     ///   tree-resolvable ones (Id/Text/Label/Role/Anchor/AnchorRelative/
     ///   Focused/LocalizedText/Point) dispatch via `App::find`; OcrText
@@ -3996,12 +3999,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// - Standalone `OcrText` — poll `find_by_text_ocr` every 250 ms.
     /// - Anything else — delegate to `App::wait_for` unchanged.
     ///
-    /// A flat 250 ms rather than the tree waits' quick early looks: an
-    /// OCR look is a screenshot and a recognition pass.
-    /// On timeout emits `ExpectationFailure { code: Timeout }` with the
-    /// per-layer trace so AI-readable output can show WHICH layer
-    /// missed how (`L1 id=btn-…: NOT_FOUND; L2 text=Log in: NOT_FOUND;
-    /// L3 ocrText=Log in: NO_OCR_MATCH`).
+    /// A flat 250 ms: an OCR look is a screenshot and a recognition pass.
+    /// A timeout carries the per-layer trace — which layer missed how
+    /// (`L1 id=btn-…: NOT_FOUND; L3 ocrText=Log in: NO_OCR_MATCH`).
     async fn wait_for_visible_with_ocr(
         &mut self,
         selector: &Selector,

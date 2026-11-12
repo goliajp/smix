@@ -146,6 +146,18 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
             }
             Ok(single("assertBoundsUnchanged", Value::Mapping(inner)))
         }
+        Step::AssertVideo {
+            selector,
+            playing,
+            within_ms,
+        } => {
+            let mut inner = selector_mapping(selector)?;
+            inner.insert(
+                Value::String("within".into()),
+                Value::Number(Number::from(*within_ms)),
+            );
+            Ok(single(video_verb(*playing), Value::Mapping(inner)))
+        }
         Step::AssertNotVisible { selector } => {
             Ok(single("assertNotVisible", selector_to_maestro(selector)?))
         }
@@ -426,6 +438,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::CopyTextFrom { .. } => "copyTextFrom",
         Step::RememberBounds { .. } => "rememberBounds",
         Step::AssertBoundsUnchanged { .. } => "assertBoundsUnchanged",
+        Step::AssertVideo { playing, .. } => video_verb(*playing),
         Step::NeverVisible { .. } => "neverVisible",
         Step::DoubleTapOn { .. } => "doubleTapOn",
         Step::RepeatTap { .. } => "repeatTap",
@@ -452,5 +465,13 @@ fn step_verb(step: &Step) -> &'static str {
         Step::ExpectSignals { .. } => "expectSignals",
         Step::ExpectLogClean => "expectLogClean",
         Step::Fixture { .. } => "fixture",
+    }
+}
+
+fn video_verb(playing: bool) -> &'static str {
+    if playing {
+        "assertVideoPlaying"
+    } else {
+        "assertVideoFrozen"
     }
 }

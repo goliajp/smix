@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 mod device;
+mod video;
 
 // Parse the yaml `role:` value into a [`Role`] variant.
 //
@@ -405,7 +406,6 @@ fn parse_localized_table(
     Ok(table)
 }
 
-// -------------------- Pattern / Selector helpers -------------------------
 /// Read a `text:` value as a pattern.
 ///
 /// Two forms. A plain string goes through [`text_to_pattern`], which
@@ -800,8 +800,6 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
         }),
     }
 }
-
-// -------------------- per-command parsers --------------------------------
 
 /// maestro's default gap between repeated taps, in milliseconds.
 const TAP_ON_REPEAT_DELAY_MS: u32 = 100;
@@ -3353,8 +3351,6 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// -------------------- top-level entry ------------------------------------
-
 /// Normalize verb name to maestro-canonical form
 /// before dispatching. Consumer yaml may use either the maestro form
 /// (`tapOn`, `assertVisible`) or the smix-canonical form (`tap`,
@@ -3514,6 +3510,8 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "stopRecording" => Ok(Step::StopRecording),
         // Visual regression.
         "assertScreenshot" => parse_assert_screenshot(value),
+        "assertVideoPlaying" => video::parse_assert_video(value, true),
+        "assertVideoFrozen" => video::parse_assert_video(value, false),
         // The AI tier. Gated at parse time — see `ai_gate`.
         "assertCondition" | "assertWithAI" => {
             ai_gate("assertCondition")?;
@@ -3871,8 +3869,6 @@ fn parse_step_item(item: &Value) -> Result<Step, ParseError> {
     })?;
     dispatch_step(key, v)
 }
-
-// -------------------- recursive parse_flow_file --------------------------
 
 /// Parse a maestro YAML file and recursively expand unconditional
 /// `runFlow` references inline.
