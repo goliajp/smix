@@ -36,6 +36,13 @@ All notable changes to the `smix` workspace are documented here. The format foll
   while the app had the code. A set the field accepted, whose field then
   left the screen, now passes and says it could not be read back
   (`readBack: unread`), as typing has since 11.0.
+- **A password typed with plain `inputText` is masked like a secret.** Only
+  a value named with `secret:` was kept out of what a run writes, and a
+  keyboard that offered a typed password back in its suggestion strip put
+  it in the next failure's saved tree. When the field holding the focus
+  after `inputText` or `setText` is a password field (a secure field, or
+  one showing only bullets), the value is now masked as `***` everywhere
+  the run writes from then on.
 - **`smix tree` with the system's window in front says so.** With
   Android's permission dialog in front it opened with a note about the
   app's Compose dialogs and told an app that already carried the probe to
