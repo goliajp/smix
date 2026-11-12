@@ -85,6 +85,13 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
     was: "stop"
     within: 1                            # device-independent pixels (default 0)
 
+- assertVideoPlaying:                    # the picture in it changes…
+    id: "tile-3"
+    within: 10s                          # …within this long (default 10s; ms or s)
+- assertVideoFrozen:                     # the picture in it stays the same…
+    id: "tile-3"
+    within: 2s                           # …for this long (default 2s)
+
 - neverVisible:                          # at no moment while these steps run
     id: "loading-overlay"
     during:
@@ -105,6 +112,19 @@ has changed. A failure prints both boxes and how far each edge moved.
 The box compared is the one the element occupies, not the part that
 shows: scrolling a row half out of view changes what shows without
 moving anything.
+
+`assertVideoPlaying` / `assertVideoFrozen` are smix's own. Each takes
+screenshots one after another and compares only the element's box: playing
+passes at the first frame that differs from the one before, and how long
+that took is the step's `firstChange` phase in `--format json`'s timing (a
+video's time to first frame, when the step starts as the video is asked
+for); frozen passes when no frame did. A simulator's frames of a still
+screen are identical, so any change is the picture moving; one changed
+sample in a 24×24 grid over the box is allowed. Frames come as fast as the
+device takes screenshots — about two a second on an iOS simulator and an
+Android emulator — so `firstChange` is good to about half a second, and a
+picture that changes only once in a while can look frozen between two
+frames.
 
 `neverVisible` is smix's own too. `assertNotVisible` answers about one
 instant, and a loading state that flashed for 200 ms between two steps is

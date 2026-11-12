@@ -62,6 +62,13 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Added
 
+- **`assertVideoPlaying` / `assertVideoFrozen: { <selector>, within? }`.**
+  Whether the picture inside an element is moving: screenshots taken one
+  after another and compared inside the element's box. Playing passes at
+  the first frame that differs (default `within` 10 s) and records how long
+  that took as the step's `firstChange` phase; frozen passes when no frame
+  differs for `within` (default 2 s). Frames come about two a second on an
+  iOS simulator and an Android emulator.
 - Rust: `smix_lease::beat` (`beat`, `idle_secs`, `spoken`),
   `smix_lease::holds_something`, `smix_mcp::idle`, `SessionState::let_go`.
 

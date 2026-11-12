@@ -742,22 +742,10 @@ pub enum Step {
     /// supplied URL via `simctl openurl`, then optionally tails the
     /// external metro log for a completion pattern before returning.
     ///
-    /// Consumer app is responsible for handling the URL and emitting
-    /// the completion signal (e.g., `console.log('[dev]
-    /// reset-complete token=...')`). This keeps smix agnostic to
-    /// what "reset" means for the app; the app decides.
-    ///
-    /// yaml shapes both accepted:
-    /// ```yaml
-    /// - resetAppData: 'myapp://dev-mutate?action=reset'
-    ///
-    /// - resetAppData:
-    ///     via: url-scheme
-    ///     url: 'myapp://dev-mutate?action=reset'
-    ///     waitFor:
-    ///       logLinePattern: '\[myapp-dev\] reset-complete token='
-    ///       timeoutMs: 5000
-    /// ```
+    /// The app handles the URL and logs its own completion line; what
+    /// "reset" means is the app's. `resetAppData: <url>`, or a mapping
+    /// with `via: url-scheme`, `url` and `waitFor: { logLinePattern,
+    /// timeoutMs }`.
     ResetAppData {
         /// URL scheme string (`simctl openurl <UDID> <url>`).
         url: String,
@@ -1044,6 +1032,17 @@ pub enum Step {
         /// Turns a second, when given.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         velocity: Option<f64>,
+    },
+    /// `assertVideoPlaying` / `assertVideoFrozen: { <selector>, within? }` —
+    /// smix's own: whether the picture in the element changes within
+    /// `within_ms` (`playing`), or stays the same for all of it.
+    AssertVideo {
+        /// The element whose box is watched.
+        selector: Selector,
+        /// `assertVideoPlaying` when true.
+        playing: bool,
+        /// How long to watch.
+        within_ms: u64,
     },
     /// maestro `startRecording: <output-path>`. Spawns
     /// `xcrun simctl io recordVideo` as a long-running child via SDK::App.

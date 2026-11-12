@@ -84,14 +84,8 @@ pub const SELECTOR_KEYS: &[&str] = &[
 ];
 
 /// The keys that each name a *base* selector form — the thing being
-/// matched, as opposed to a modifier narrowing it.
-///
-/// Nothing enforces "one of these per map" yet, and two of them is a
-/// live defect rather than a rule: `{ id: X, text: Y }` parses to
-/// `Text { Y }` and the `id` is dropped, so it matches any element
-/// reading Y. Six blocks in the guides are written that way and read as
-/// a conjunction, which is what maestro's selectors are and what smix
-/// owes them.
+/// matched, as opposed to a modifier narrowing it. Two in one map are a
+/// conjunction, as in maestro.
 ///
 /// `role` is absent on purpose: `role: button` + `name: "OK"` is one form
 /// in two keys, `name` only a qualifier on it.
@@ -187,7 +181,6 @@ pub enum ArgShape {
 /// Static canonical verb table. Ordering: category-alphabetized
 /// for grep-ability; each row is `(maestro, smix, category, shape)`.
 pub static VERB_TABLE: &[VerbEntry] = &[
-    // ----- Tap family -----
     v("tapOn", "tap", VerbCategory::Tap, ArgShape::Selector),
     v(
         "doubleTapOn",
@@ -210,7 +203,6 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Tap,
         ArgShape::Mapping,
     ),
-    // ----- Input family -----
     v(
         "inputText",
         "fill",
@@ -236,7 +228,6 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Input,
         ArgShape::Selector,
     ),
-    // ----- Assert family -----
     v(
         "assertVisible",
         "expect",
@@ -264,6 +255,19 @@ pub static VERB_TABLE: &[VerbEntry] = &[
     v(
         "assertScreenshot",
         "assertScreenshot",
+        VerbCategory::Assert,
+        ArgShape::Mapping,
+    ),
+    // smix's own: maestro has no way to ask whether a picture is moving.
+    v(
+        "assertVideoPlaying",
+        "assertVideoPlaying",
+        VerbCategory::Assert,
+        ArgShape::Mapping,
+    ),
+    v(
+        "assertVideoFrozen",
+        "assertVideoFrozen",
         VerbCategory::Assert,
         ArgShape::Mapping,
     ),
@@ -305,7 +309,6 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Assert,
         ArgShape::Mapping,
     ),
-    // ----- Control flow -----
     v(
         "runFlow",
         "runFlow",
@@ -336,7 +339,6 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::ControlFlow,
         ArgShape::None,
     ),
-    // ----- Lifecycle -----
     v(
         "launchApp",
         "launchApp",
@@ -367,7 +369,6 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Lifecycle,
         ArgShape::None,
     ),
-    // ----- Media -----
     v(
         "takeScreenshot",
         "takeScreenshot",
@@ -392,7 +393,6 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Media,
         ArgShape::Mapping,
     ),
-    // ----- Gesture -----
     v("scroll", "scroll", VerbCategory::Gesture, ArgShape::None),
     v(
         "scrollUntilVisible",
@@ -440,7 +440,6 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Gesture,
         ArgShape::None,
     ),
-    // ----- Device -----
     v(
         "openLink",
         "openUrl",
@@ -499,7 +498,6 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Device,
         ArgShape::Mapping,
     ),
-    // ----- smix-native extensions (parity with parser dispatch_step) -----
     v(
         "webview_eval",
         "webviewEval",
@@ -532,14 +530,12 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::SmixNative,
         ArgShape::Mapping,
     ),
-    // ----- Utility -----
     v(
         "waitForAnimationToEnd",
         "waitForAnimationToEnd",
         VerbCategory::Utility,
         ArgShape::None,
     ),
-    // ----- Lifecycle / Assert additions: parser-accepted verbs that
     // were absent from the table. VERB_TABLE is the enforced single
     // source of truth (a parser-dispatch ⊆ VERB_TABLE test guards it);
     // these have Step:: variants + parser dispatch but no entry until now.

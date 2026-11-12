@@ -240,6 +240,7 @@ fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
         | Step::CopyTextFrom { .. }
         | Step::RememberBounds { .. }
         | Step::AssertBoundsUnchanged { .. }
+        | Step::AssertVideo { .. }
         | Step::AssertVisible { .. }
         | Step::Optional(_)
         | Step::AssertNotVisible { .. }

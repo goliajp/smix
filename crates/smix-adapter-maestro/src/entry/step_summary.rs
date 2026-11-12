@@ -203,6 +203,12 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         Step::CopyTextFrom { .. } => "copyTextFrom".into(),
         Step::RememberBounds { .. } => "rememberBounds".into(),
         Step::AssertBoundsUnchanged { .. } => "assertBoundsUnchanged".into(),
+        Step::AssertVideo {
+            playing: true,
+            within_ms,
+            ..
+        } => format!("assertVideoPlaying (within {within_ms}ms)"),
+        Step::AssertVideo { within_ms, .. } => format!("assertVideoFrozen (for {within_ms}ms)"),
         Step::NeverVisible { .. } => "neverVisible".into(),
         Step::DoubleTapOn { .. } => "doubleTapOn".into(),
         Step::LongPressOn { duration_ms, .. } => format!("longPressOn ({duration_ms}ms)"),
