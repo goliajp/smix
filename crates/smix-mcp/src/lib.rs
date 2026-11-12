@@ -7,6 +7,7 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod idle;
 mod selector_params;
 pub mod session;
 

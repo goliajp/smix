@@ -294,3 +294,43 @@ fn describe_selector_renders_ancestor_segment() {
         "describe_selector should render an ancestor=( segment; actual = {rendered}"
     );
 }
+
+fn shown(text: &str) -> A11yNode {
+    mk(NodePartial {
+        text: Some(text.into()),
+        ..Default::default()
+    })
+}
+
+#[test]
+fn a_typed_apostrophe_finds_a_typeset_one() {
+    // Android's permission dialog, as the accessibility tree reads it
+    let deny = shown("Don\u{2019}t allow");
+    assert!(match_text(&deny, &Pattern::text("Don't allow")));
+    assert!(match_text(&deny, &Pattern::text("don't ALLOW")));
+    assert!(match_text(&deny, &Pattern::regex("Don't.*")));
+}
+
+#[test]
+fn a_copied_curly_quote_still_finds_a_straight_one() {
+    assert!(match_text(
+        &shown("Don't allow"),
+        &Pattern::text("Don\u{2019}t allow")
+    ));
+    assert!(match_text(
+        &shown("say \"hi\""),
+        &Pattern::text("say \u{201C}hi\u{201D}")
+    ));
+}
+
+#[test]
+fn folding_quotes_does_not_make_different_words_equal() {
+    assert!(!match_text(
+        &shown("Dont allow"),
+        &Pattern::text("Don't allow")
+    ));
+    assert!(!match_text(
+        &shown("Don\u{2019}t allow"),
+        &Pattern::text("Don't")
+    ));
+}

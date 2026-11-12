@@ -23,6 +23,7 @@
 
 mod frames;
 mod gestures;
+mod idle_release;
 mod stdio;
 mod tap_report;
 
@@ -56,6 +57,8 @@ pub(crate) struct SmixMcpService {
     /// connection error that describes a symptom rather than the choice
     /// nobody made.
     session: Arc<smix_mcp::SessionState>,
+    /// When the bound device last saw a command; see `idle_release`.
+    activity: Arc<smix_mcp::idle::Activity>,
     /// Tool router populated by #[tool_router] macro; read by the
     /// macro-generated `serve` plumbing, not by hand-written code.
     #[allow(dead_code)]
@@ -151,6 +154,7 @@ impl SmixMcpService {
         Self {
             app: Arc::new(Mutex::new(app)),
             session: Arc::new(session),
+            activity: Arc::default(),
             tool_router: Self::tool_router() + Self::gesture_router() + Self::frame_router(),
         }
     }
@@ -159,12 +163,16 @@ impl SmixMcpService {
     ///
     /// Every sense and act tool goes through here so that "no device
     /// bound" is answered by naming `smix_use`, rather than by whatever
-    /// connection error the first call happens to produce.
+    /// connection error the first call happens to produce. Locks before
+    /// reading the binding: the idle watch lets a device go under this lock.
     async fn bound_app(&self) -> Result<tokio::sync::MutexGuard<'_, App>, McpError> {
-        self.session
+        let app = self.app.lock().await;
+        let bound = self
+            .session
             .require()
             .map_err(|hint| McpError::invalid_params(hint, None))?;
-        Ok(self.app.lock().await)
+        self.note_command(&app, &bound.udid);
+        Ok(app)
     }
 
     /// Same, mutably.
@@ -327,11 +335,6 @@ impl SmixMcpService {
         let mut next = App::connect_to_runner_lazy(port, Some(params.udid.as_str()));
         next = next.with_udid(params.udid.clone());
 
-        // A runner on a port is not yet something the driving tools can
-        // use: iOS driving happens inside a session, and without one every
-        // sense and act call fails asking for `App::open_session`. Binding
-        // a device and then leaving the caller a second, undiscoverable
-        // step is the shape this tool exists to remove.
         // Announce the binding, so a `smix run` or a destructive CLI
         // command aimed at the same device is refused rather than landing
         // in the middle of an agent's session. Best-effort in one
@@ -357,6 +360,8 @@ impl SmixMcpService {
             }
         }
 
+        // iOS driving happens inside a session; leaving the caller to open
+        // one is a second, undiscoverable step.
         if let Some(bundle) = params.bundle_id.as_deref() {
             next.open_session_in_place(bundle, true)
                 .await
@@ -368,6 +373,8 @@ impl SmixMcpService {
             udid: params.udid.clone(),
             port,
         });
+        self.activity.touch();
+        self.activity.reset_beat();
         Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "driving {} on port {port}",
             params.udid
@@ -385,20 +392,7 @@ impl SmixMcpService {
             )]));
         };
         let port = bound.port;
-        // No, and emphatically: an MCP release runs without anyone
-        // watching. Ending another session's runner from here would be
-        // the same accident as before, with nobody present to notice.
-        tokio::task::spawn_blocking(move || smix_capsule::runner::down(port))
-            .await
-            .map_err(|e| McpError::internal_error(format!("runner down panicked: {e}"), None))?
-            .map_err(|e| McpError::internal_error(format!("runner down: {e}"), None))?;
-        // Give the device back too. `runner down` ends the session; the
-        // lease is what told everybody else the device was taken, and
-        // leaving it behind would keep the next `smix run` waiting on a
-        // session that has already ended.
-        if let Err(e) = self.app.lock().await.release_device_lease() {
-            eprintln!("warning: device lease not released: {e}");
-        }
+        self.give_back(&mut *self.app.lock().await, port).await?;
         Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "released {} on port {port}",
             bound.udid
@@ -935,8 +929,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         app = app.with_udid(udid);
     }
 
+    let idle = smix_mcp::idle::limit_from(std::env::var(smix_mcp::idle::IDLE_ENV).ok().as_deref())?;
     let session = smix_mcp::SessionState::from_env(std::env::var("SMIX_UDID").ok(), port);
     let service = SmixMcpService::new(app, session);
+    if let Some(limit) = idle {
+        tokio::spawn(idle_release::watch(service.clone(), limit));
+    }
     let server = service.serve(stdio::protocol()?).await?;
     server.waiting().await?;
     Ok(())

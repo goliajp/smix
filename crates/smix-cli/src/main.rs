@@ -49,11 +49,13 @@ use runner_target::{project_key, runner_dial_port, runner_dial_target};
 mod sim_crashes;
 mod swipe_cmd;
 mod tree_cmd;
+mod tree_note;
 mod window_cmd;
 use platform::{RunPlatform, resolve_run_platform};
 mod departures;
 mod device_for;
 mod device_hub;
+mod device_in_use;
 mod device_ownership;
 use device_ownership::{BootClaim, EmulatorState, boot_claim};
 mod down;
@@ -2775,6 +2777,10 @@ async fn main() -> ExitCode {
     }
     match run(cli).await {
         Ok(code) => code,
+        Err(CliError::DeviceInUse(e)) => {
+            eprintln!("error: {e}");
+            ExitCode::from(device_in_use::EXIT_CODE)
+        }
         Err(e) => runner_target::fail(&e.to_string()),
     }
 }
@@ -4102,7 +4108,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             // device is known to be one, never for a platform not told.
             let ios = !runner_dial_target(port, device.as_deref(), platform)
                 .is_ok_and(|(_, plat)| plat == smix_driver::Platform::Android);
-            act::cmd_tree(json, p, keyboard, reader.to_act(), ios)
+            act::cmd_tree(json, p, keyboard, reader.to_act(), ios, device.as_deref())
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
@@ -5085,8 +5091,7 @@ where
         &leases,
         udid,
         &smix_capsule::reconcile::Reconciler,
-    )
-    .map_err(|e| CliError::Other(e.to_string()))?;
+    )?;
     for report in leased.settled() {
         println!("settled first: {}", report.line);
     }
@@ -5150,8 +5155,7 @@ fn hold_run_lease(udid: Option<&str>) -> Result<Option<RunLease>, CliError> {
         &leases,
         udid,
         &smix_capsule::reconcile::Reconciler,
-    )
-    .map_err(|e| CliError::Other(e.to_string()))?;
+    )?;
     for report in leased.settled() {
         println!("settled first: {}", report.line);
     }
@@ -5334,14 +5338,6 @@ fn runner_port() -> u16 {
         .unwrap_or(22087)
 }
 
-/// Extract the numeric exit code from a `std::process::ExitCode`.
-///
-/// `ExitCode` has no public conversion back to `u8` (Rust chose "opaque so
-/// platforms can widen later" for the stability guarantee), but the internal
-/// `impl Debug` prints `ExitCode(unix_exit_status(N))` on Unix. Parse it back.
-/// For the batch-invocation path we only need to compare codes; the parsed u8
-/// is fed straight into `ExitCode::from(u8)` for the process exit. Success
-/// (Debug "ExitCode(unix_exit_status(0))") maps to 0.
 /// smix workspace root = nearest ancestor with a `.smix/` dir (env
 /// SMIX_WORKSPACE overrides discovery).
 fn smix_workspace_root() -> Result<PathBuf, CliError> {
@@ -5358,8 +5354,6 @@ fn smix_workspace_root() -> Result<PathBuf, CliError> {
         ))
     })
 }
-
-// ---- subcommand impls --------------------------------------------------
 
 /// Build the simctl argv for an exec passthrough: `{udid}` placeholder
 /// substitution when present, otherwise UDID injected right after the verb
@@ -6505,12 +6499,12 @@ fn cmd_sim_migrate(from: Vec<PathBuf>, dry_run: bool) -> Result<(), CliError> {
     Ok(())
 }
 
-// ---- errors -----------------------------------------------------------
-
 #[derive(Debug)]
 enum CliError {
     Simctl(DeviceControlError),
     Registry(RegistryError),
+    /// Another live session holds the device; see `device_in_use`.
+    DeviceInUse(String),
     Other(String),
 }
 
@@ -6531,7 +6525,7 @@ impl std::fmt::Display for CliError {
         match self {
             CliError::Simctl(e) => write!(f, "{e}"),
             CliError::Registry(e) => write!(f, "{e}"),
-            CliError::Other(s) => write!(f, "{s}"),
+            CliError::DeviceInUse(s) | CliError::Other(s) => write!(f, "{s}"),
         }
     }
 }
@@ -6621,8 +6615,6 @@ fn reject_ios_only_up_flags(runner_project: bool, supervise: bool) -> Result<(),
         },
     ))
 }
-
-// ---- tests --------------------------------------------------------------
 
 #[cfg(test)]
 mod platform_from_device {

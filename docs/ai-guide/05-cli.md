@@ -47,6 +47,7 @@ Environment variables consumed by `smix run` (beyond the flag-bound ones above):
 | 4 | unknown direction (`RunError::UnknownDirection`); an unknown key name is a parse error (2) |
 | 5 | runFlow cycle / file IO (`RunError::RunFlowCycle` / `RunError::Io`) |
 | 6 | runner unreachable (runner not up / port wrong) |
+| 7 | another live session holds the device: the message names it and how long since it last wrote the device's ledger. A script running flow after flow can stop at the first 7 |
 
 ### Output formats
 
@@ -1116,6 +1117,13 @@ that device, and refuses before sending anything when it reaches another:
 with two simulators running, a port held by one is never read or tapped as
 the other. `smix run` has always checked; since 22.1.0 the one-shot verbs
 do too.
+
+When the window in front on Android is the system's — the runtime
+permission dialog, the notification shade — `smix tree` opens with a line
+saying so: whose window it is, the buttons it has, and the commands that
+press one (`smix tap "text:Don't allow"`, or `smix system-popups` and
+`smix system-popup-action`). The dialog's buttons are in the outline below,
+after the status bar.
 
 ### What `bounds` is measured in, and why the two platforms differ
 

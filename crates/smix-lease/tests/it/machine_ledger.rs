@@ -89,13 +89,21 @@ fn a_live_holder_that_stopped_beating_is_not_reclaimable() {
                 holder: holder.clone(),
                 acquired_at: "2026-08-09T07:18:59Z".into(),
                 heartbeat_at: "2026-08-11T08:00:55Z".into(),
-                resources: vec![Row::Known(Resource::Booted { by_us: true })],
+                resources: vec![
+                    Row::Known(Resource::Booted { by_us: true }),
+                    Row::Known(Resource::Runner {
+                        port: 22087,
+                        bundle: None,
+                        log: None,
+                        proc: holder.clone(),
+                    }),
+                ],
             },
             holder: HolderProbe {
                 pid_exists: true,
                 identity_matches: true,
             },
-            any_resource_alive: false,
+            any_resource_alive: true,
         }),
         now: "2026-08-11T09:23:55Z".into(),
         self_pid: 999_999,
@@ -111,4 +119,114 @@ fn a_live_holder_that_stopped_beating_is_not_reclaimable() {
              reconcile would have settled a live session"
         ),
     }
+}
+
+/// A live holder that gave the device back is not its user.
+///
+/// Releasing drops the process rows and keeps the boot row, which says
+/// who may shut the device down. A command exits after releasing, so its
+/// ledger reads as a dead holder and the next caller is granted the
+/// device; an MCP server does not exit, and was named as the device's
+/// user for as long as it ran — every `smix run` against it refused.
+#[test]
+fn a_live_holder_left_with_only_a_boot_row_is_not_in_the_way() {
+    use smix_lease::{
+        Admission, Facts, Held, HolderProbe, Lease, ProcIdentity, Resource, Row, assess,
+    };
+    let live = |resources: Vec<Resource>| Facts {
+        existing: Some(Held {
+            lease: Lease {
+                device_id: "FFC57DAE".into(),
+                holder: ProcIdentity {
+                    pid: 50057,
+                    started_at: "Wed Nov 11 11:26:00 2026".into(),
+                    cmd: "smix-mcp".into(),
+                },
+                acquired_at: "2026-11-11T11:26:59Z".into(),
+                heartbeat_at: "2026-11-11T11:27:00Z".into(),
+                resources: resources.into_iter().map(Row::Known).collect(),
+            },
+            holder: HolderProbe {
+                pid_exists: true,
+                identity_matches: true,
+            },
+            any_resource_alive: false,
+        }),
+        now: "2026-11-12T01:20:00Z".into(),
+        self_pid: 999_999,
+    };
+    for boot in [
+        Resource::Booted { by_us: true },
+        Resource::Booted { by_us: false },
+    ] {
+        assert_eq!(
+            assess(&live(vec![boot.clone()])),
+            Admission::Granted,
+            "{boot:?}"
+        );
+    }
+    // A claim is holding something: `lease claim` exists to say so.
+    let claimed = live(vec![
+        Resource::Booted { by_us: true },
+        Resource::Claimed {
+            at: "2026-11-11T11:27:00Z".into(),
+        },
+    ]);
+    assert!(
+        matches!(assess(&claimed), Admission::Denied(_)),
+        "{:?}",
+        assess(&claimed)
+    );
+}
+
+/// Whoever starts something on a device a live holder has given back
+/// holds it from then on.
+///
+/// `runner up` records its runner with `add_resource`, which kept the
+/// ledger's holder. Under a holder that holds nothing that was a server
+/// which had released the device, and the very next `smix run` read the
+/// new runner as that server's and was refused.
+#[test]
+fn starting_a_runner_under_an_empty_handed_live_holder_takes_the_holder_role() {
+    use smix_lease::store::{self, LeaseDir};
+    use smix_lease::{Lease, Resource, Row};
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    let dir = LeaseDir::at(tmp.path());
+    let parent = store::identify(std::os::unix::process::parent_id())
+        .expect("the test's parent process can be identified");
+    let given_back = |resources: Vec<Resource>| Lease {
+        device_id: "UDID-HANDOVER".into(),
+        holder: parent.clone(),
+        acquired_at: "2026-11-11T11:26:59Z".into(),
+        heartbeat_at: "2026-11-11T11:26:59Z".into(),
+        resources: resources.into_iter().map(Row::Known).collect(),
+    };
+    let runner = Resource::Runner {
+        port: 22087,
+        bundle: None,
+        log: None,
+        proc: store::identify_self(),
+    };
+
+    store::write(&dir, &given_back(vec![Resource::Booted { by_us: true }])).expect("write");
+    store::add_resource(&dir, "UDID-HANDOVER", runner.clone()).expect("record");
+    let now = store::read(&dir, "UDID-HANDOVER")
+        .expect("read")
+        .expect("a ledger");
+    assert_eq!(now.holder.pid, std::process::id(), "{:?}", now.holder);
+
+    // A holder that still has something running keeps the role.
+    let busy = vec![
+        Resource::Booted { by_us: true },
+        Resource::Recording {
+            path: "/tmp/r.mp4".into(),
+            proc: parent.clone(),
+        },
+    ];
+    store::write(&dir, &given_back(busy)).expect("write");
+    store::add_resource(&dir, "UDID-HANDOVER", runner).expect("record");
+    let now = store::read(&dir, "UDID-HANDOVER")
+        .expect("read")
+        .expect("a ledger");
+    assert_eq!(now.holder, parent);
 }

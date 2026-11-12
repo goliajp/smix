@@ -111,6 +111,10 @@ itself.
 - Matches displayed text (label, attributed string, button title, accessible label).
 - Regex syntax = NSRegularExpression on iOS, java.util.regex.Pattern on Android.
 - `flags` defaults to `"i"`; matching is case-insensitive either way.
+- Curly and straight quotes are the same character to a match: `text:
+  "Don't allow"` finds a button that reads `Don’t allow`, which is how both
+  Android's permission dialog and iOS's alerts typeset it, and a selector
+  copied from the screen still finds a straight one.
 - A bare string is **not** scanned for metacharacters. `Delete?` and
   `3.5` are ordinary labels, and treating them as patterns would
   silently widen what they match — the failure that does not announce

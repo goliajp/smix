@@ -151,6 +151,8 @@ SHUTS_DOWN_SCRIPTS = {
     "v25.0-c1-e-a-touch-under-a-toast-e2e.sh",
     "v25.0-c1-f-an-apple-watch-e2e.sh",
     "v25.0-c1-g-an-apple-tv-e2e.sh",
+    "v26.0-c1-a-an-idle-mcp-gives-the-device-back-e2e.sh",
+    "v26.0-c1-b-a-system-dialog-in-front-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.

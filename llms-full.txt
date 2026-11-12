@@ -1319,6 +1319,10 @@ itself.
 - Matches displayed text (label, attributed string, button title, accessible label).
 - Regex syntax = NSRegularExpression on iOS, java.util.regex.Pattern on Android.
 - `flags` defaults to `"i"`; matching is case-insensitive either way.
+- Curly and straight quotes are the same character to a match: `text:
+  "Don't allow"` finds a button that reads `Don’t allow`, which is how both
+  Android's permission dialog and iOS's alerts typeset it, and a selector
+  copied from the screen still finds a straight one.
 - A bare string is **not** scanned for metacharacters. `Delete?` and
   `3.5` are ordinary labels, and treating them as patterns would
   silently widen what they match — the failure that does not announce
@@ -2504,6 +2508,7 @@ Environment variables consumed by `smix run` (beyond the flag-bound ones above):
 | 4 | unknown direction (`RunError::UnknownDirection`); an unknown key name is a parse error (2) |
 | 5 | runFlow cycle / file IO (`RunError::RunFlowCycle` / `RunError::Io`) |
 | 6 | runner unreachable (runner not up / port wrong) |
+| 7 | another live session holds the device: the message names it and how long since it last wrote the device's ledger. A script running flow after flow can stop at the first 7 |
 
 ### Output formats
 
@@ -3573,6 +3578,13 @@ that device, and refuses before sending anything when it reaches another:
 with two simulators running, a port held by one is never read or tapped as
 the other. `smix run` has always checked; since 22.1.0 the one-shot verbs
 do too.
+
+When the window in front on Android is the system's — the runtime
+permission dialog, the notification shade — `smix tree` opens with a line
+saying so: whose window it is, the buttons it has, and the commands that
+press one (`smix tap "text:Don't allow"`, or `smix system-popups` and
+`smix system-popup-action`). The dialog's buttons are in the outline below,
+after the status bar.
 
 ### What `bounds` is measured in, and why the two platforms differ
 
@@ -5750,6 +5762,13 @@ smix_use        { "udid": "<udid>", "bundleId": "com.example.app" }
 `smix_use` boots the simulator if it is off and brings the runner up for that
 app; `bundleId` is required. Until a `smix_use` has succeeded, every other tool
 answers that no device is bound and names `smix_use`.
+
+While a session drives a device it holds the device's lease, and a `smix run`
+against that device is refused (exit 7) naming the server. A session that has
+had no command for 30 minutes gives the device back by itself — runner down,
+lease released, as `smix_release` does — and its next tool call says so and
+names `smix_use`. `SMIX_MCP_IDLE_RELEASE` sets the limit: `45m`, `2h`, `90s`,
+or `off` to keep the device for as long as the server runs.
 
 ## A session
 

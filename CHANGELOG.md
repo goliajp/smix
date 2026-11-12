@@ -2,6 +2,51 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.0.0] — 2026-11-12
+
+### Fixed
+
+- **An MCP session that goes quiet gives its device back.** A consumer's
+  MCP server bound a simulator and then had no command for fourteen hours;
+  their release round met its lease on every one of 31 flows and ran none.
+  A session with no command for 30 minutes now takes its runner down and
+  releases the lease, as `smix_release` does, and its next tool call says
+  so and names `smix_use`. `SMIX_MCP_IDLE_RELEASE` sets the limit (`45m`,
+  `2h`, `90s`, `off`).
+- **A device an MCP server gave back is free while the server runs.**
+  Releasing kept the boot row, and the ledger went on naming the server —
+  still alive — as the device's user: after `smix_release` every `smix run`
+  against it was refused until the server exited. A live holder with only a
+  boot row left no longer stands in the way, and a process that starts a
+  runner under such a holder becomes the holder.
+- **`smix run` refused because another session holds the device exits 7**,
+  and says how long since that session last wrote the device's ledger. A
+  script running flow after flow can stop at the first refusal instead of
+  failing every flow on the same holder. The MCP server writes the ledger
+  as it serves commands, so for an MCP holder that is how long it has been
+  quiet.
+- **A selector typed with a straight quote finds text set with a curly
+  one.** Android's permission dialog says `Don’t allow` and iOS's alerts
+  `Don’t Allow`; `tapOn: "Don't allow"` matched nothing. Curly and straight
+  quotes are now the same character to every text match.
+- **`smix tree` with the system's window in front says so.** With
+  Android's permission dialog in front it opened with a note about the
+  app's Compose dialogs and told an app that already carried the probe to
+  add it. It now names the dialog, lists its buttons and gives the commands
+  that press one.
+
+### Added
+
+- Rust: `smix_lease::beat` (`beat`, `idle_secs`, `spoken`),
+  `smix_lease::holds_something`, `smix_mcp::idle`, `SessionState::let_go`.
+
+### Changed (breaking)
+
+- `smix_sdk::leased::AdmissionError::InUse` has an `idle_secs` field.
+- `smix_lease::STALE_AFTER_SECS` is gone: nothing read it, and its comment
+  described a heartbeat no holder writes.
+- `smix_mcp::SessionState::require` returns `Result<Bound, String>`.
+
 ## [25.1.0] — 2026-11-10
 
 ### Added
