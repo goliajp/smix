@@ -134,6 +134,26 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
         if keyboardGone() { return .dismissed(by: "key:\(keyName)") }
       }
     }
+    // Then: an iPad keyboard's own key for going away, bottom right. It
+    // puts the keyboard down and nothing else; a touch outside the keyboard
+    // on an iPad can land outside a popover card and close the card.
+    if spent() { return stopped() }
+    let hideKey = app.keyboards.buttons
+      .matching(NSPredicate(format: "label == %@ OR identifier == %@", "Hide keyboard", "Hide keyboard"))
+      .firstMatch
+    if hideKey.exists {
+      tried.append("key:Hide keyboard")
+      smixActivate(hideKey)
+      // This key lowers the keyboard and leaves the field its focus — the
+      // field is still the one being typed into, from a hardware keyboard
+      // or the next tap. Off the screen is what it is asked to do.
+      var until = Date().addingTimeInterval(1.0)
+      if let deadline, deadline < until { until = deadline }
+      while onScreen() && Date() < until { Thread.sleep(forTimeInterval: 0.05) }
+      if !onScreen() {
+        return .dismissed(by: "key:Hide keyboard (the field keeps its focus)")
+      }
+    }
     // Then: drag the focused field's scroll view down into the
     // keyboard. A form whose scroll view dismisses the keyboard by drag
     // (SwiftUI `.scrollDismissesKeyboard(.interactively)`) ignores a
@@ -197,7 +217,10 @@ func smixHideKeyboard(app: XCUIApplication, deadline: Date?) -> HideKeyboardRout
       if let kbWindow, kbFrame.height > 0 {
         let kbTop = KeyboardExtent.top(
           keyboard: kbFrame, window: kbWindow.frame, frames: all(kbWindow).map(\.frame))
-        let actionable = nodes.filter { acts.contains($0.elementType) }.map(\.frame)
+        // a popover's dismiss region acts too: a touch on it closes the card
+        let actionable = nodes.filter {
+          acts.contains($0.elementType) || $0.identifier == "PopoverDismissRegion"
+        }.map(\.frame)
         if kbTop > appFrame.minY,
            let at = KeyboardOutsideTouch.point(
              keyboardTop: kbTop, app: appFrame, actionable: actionable) {

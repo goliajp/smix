@@ -636,6 +636,7 @@ impl Driver for AndroidDriver {
         self.runner
             .hide_keyboard()
             .await
+            .map(|_| ())
             .map_err(|e| runner_failure("hide_keyboard", e))
     }
 

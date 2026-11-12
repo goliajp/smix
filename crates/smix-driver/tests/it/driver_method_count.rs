@@ -31,6 +31,7 @@ const ROSTER: &[&str] = &[
     "find_text_by_ocr",
     "foreground",
     "hide_keyboard",
+    "hide_keyboard_saying",
     "long_press",
     "long_press_at_norm_coord",
     // Mouse events, not touches (v20.0-C3): a desktop window's hover and

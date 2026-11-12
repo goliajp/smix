@@ -132,6 +132,7 @@ fn launch_fresh_app_path_from_env(bundle_id: &str) -> Option<String> {
 
 mod bounds;
 mod environment;
+mod fallback_report;
 mod refused;
 mod typed_into_mask;
 mod video;
@@ -4410,16 +4411,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         // AI-readable suggestion; an all-miss raises ElementNotFound
         // carrying that chain trace as a hint.
         //
-        // When the fallback contains any `OcrText` sub, the whole
-        // chain is POLLED within an implicit wait window
-        // (`SMIX_TAP_OCR_POLL_MS`, default 3000 ms) instead of trying
-        // once and failing fast: on iOS 26.5 + RN 0.86 Fabric the tap
-        // moment often races the app's post-transition mount, so OCR
-        // misses because Vision snapshots a frame BEFORE the target
-        // text is visible, not because it isn't there. Polling closes
-        // the race the same way `extendedWaitUntil`'s
-        // `wait_for_visible_with_ocr` does. Fast path (no OCR
-        // anywhere): single pass, no poll.
+        // A chain with an `OcrText` layer goes round again within
+        // `SMIX_TAP_OCR_POLL_MS` (default 3000): OCR reads a frame and can
+        // read one taken before the text arrived. Without one, one pass.
         if let Selector::Fallback { fallback } = selector {
             fn contains_ocr(sel: &Selector) -> bool {
                 match sel {
@@ -4444,7 +4438,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             const POLL: Duration = Duration::from_millis(250);
             let budget = smix_driver::poll::Budget::new(poll_budget);
             let mut trace: Vec<String> = Vec::with_capacity(fallback.len());
+            let (began, mut passes) = (std::time::Instant::now(), 0u32);
             loop {
+                passes += 1;
                 let look = budget.look();
                 trace.clear();
                 for (i, sub) in fallback.iter().enumerate() {
@@ -4462,7 +4458,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                             trace.push(format!(
                                 "{layer} {} MISS: {}",
                                 smix_sdk::describe_selector(sub),
-                                reason
+                                fallback_report::layer_miss(&reason)
                             ));
                         }
                         Err(e) => return Err(e),
@@ -4482,9 +4478,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             if optional {
                 return Ok(RunStepReport::Skipped {
                     reason: format!(
-                        "optional tapOn fallback chain: all {} layers missed after {:?} poll; trace=[{}]",
+                        "optional tapOn fallback chain: all {} layers missed in {}; trace=[{}]",
                         fallback.len(),
-                        poll_budget,
+                        fallback_report::chain_took(began, passes),
                         trace.join("; ")
                     ),
                 });
@@ -4492,9 +4488,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::ElementNotFound),
                 message: format!(
-                    "tapOn fallback chain: all {} layers missed after {:?} poll",
+                    "tapOn fallback chain: all {} layers missed in {}",
                     fallback.len(),
-                    poll_budget
+                    fallback_report::chain_took(began, passes)
                 ),
                 selector: Some(selector.clone()),
                 hint: Some(format!(

@@ -24,8 +24,9 @@ struct Req {
 }
 
 impl HttpRunnerClient {
-    /// `POST /hide-keyboard`.
-    pub async fn hide_keyboard(&self) -> Result<(), RunnerTransportError> {
+    /// `POST /hide-keyboard`; how the runner put the keyboard away, when it
+    /// says (`dismissed by key:Hide keyboard`).
+    pub async fn hide_keyboard(&self) -> Result<Option<String>, RunnerTransportError> {
         let budget_ms = u64::try_from(HIDE_KEYBOARD_BUDGET.as_millis()).unwrap_or(u64::MAX);
         let body: OkEnvelope = self
             .json_post_within(
@@ -39,8 +40,9 @@ impl HttpRunnerClient {
                 )?,
             )
             .await?;
+        let saw = body.saw.clone();
         body.require_ok("/hide-keyboard")?;
-        Ok(())
+        Ok(saw)
     }
 }
 

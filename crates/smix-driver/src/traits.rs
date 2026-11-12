@@ -327,15 +327,9 @@ pub trait Driver: Send + Sync {
 
     /// Fill text into a focused / matched input.
     ///
-    /// `clear_first` empties the field before typing, which is what
-    /// "fill" means and what the guides have always described. It used
-    /// to append unconditionally: returning to a field and filling it
-    /// again produced the two values concatenated, invisible in a
-    /// secure field and visible only as a login that fails.
-    ///
-    /// False is still reachable because appending is what maestro's
-    /// `inputText` does, and a ported flow that types twice into one
-    /// field means the second call to continue the first.
+    /// `clear_first` empties the field before typing, as "fill" means;
+    /// false appends, as maestro's `inputText` does, so a ported flow that
+    /// types twice into one field continues the first.
     async fn fill(
         &self,
         selector: &Selector,
@@ -461,6 +455,11 @@ pub trait Driver: Send + Sync {
 
     /// Dismiss the keyboard.
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure>;
+
+    /// `hide_keyboard`, and how the keyboard was put away when the device says.
+    async fn hide_keyboard_saying(&self) -> Result<Option<String>, ExpectationFailure> {
+        self.hide_keyboard().await.map(|()| None)
+    }
 
     /// Trigger "back" gesture (iOS edge-swipe / Android KEYCODE_BACK).
     async fn back(&self) -> Result<(), ExpectationFailure>;

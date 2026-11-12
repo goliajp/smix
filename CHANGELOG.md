@@ -54,6 +54,27 @@ All notable changes to the `smix` workspace are documented here. The format foll
   was taken next, its centre off the screen); when none is, the step still
   fails `NOT_VISIBLE`. `smix tree` marks a covered element, and shows one
   whose centre is off the screen as not visible.
+- **iPad: `hideKeyboard` on a card uses the keyboard's own key.** With the
+  return key named for an action (Search), the next way down was a touch
+  above the keyboard where nothing acts — and on an iPad that touch landed
+  outside a popover card, on the region that closes it, and the card went
+  with the keyboard. The keyboard's Hide keyboard key is now tried before
+  any touch, and a popover's dismiss region counts as something that acts.
+  `smix hide-keyboard` says how the keyboard went (`keyboard hidden —
+  dismissed by key:Hide keyboard (the field keeps its focus)`). Rust:
+  `Driver::hide_keyboard_saying`; `HttpRunnerClient::hide_keyboard` returns
+  what the runner said.
+- **iOS: `dispatch: xcui` takes the match a touch reaches.** Two elements
+  under one identifier — a list's back button and a card's — were refused by
+  XCUITest as several matches, read as not found. The runner now looks at
+  every match and takes the first a touch reaches.
+- **A short value is masked as a word, not inside other words.** A `smix
+  fill` of `d` that failed masked every d on the screen in its report
+  ("To***ay"). Values under four characters are now masked only where no
+  letter or digit touches them.
+- **A fallback chain that found nothing says how long it looked**, and its
+  per-layer trace no longer reads "optional … skipped" for a step that was
+  not optional. It said "after 0ns poll" when every layer had waited.
 - **iOS: a row scrolled out of its list is not visible, and is not tapped
   through what is over it.** XCUITest gives an element in a scroll view,
   table or collection view its whole frame wherever the content puts it.

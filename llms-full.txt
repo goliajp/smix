@@ -2122,9 +2122,13 @@ default spelled out. From the command line it is `smix fill --set-text`.
 - hideKeyboard
 ```
 
-- iOS: the keyboard's Return or Done key, a drag of the field's scroll
-  view into the keyboard, then a touch on an empty spot above the
-  keyboard — until the keyboard is gone and no field holds focus. A
+- iOS: the keyboard's Return or Done key, an iPad keyboard's Hide keyboard
+  key (the keyboard goes and the field keeps its focus), a drag of the
+  field's scroll view into the keyboard, then a touch on an empty spot
+  above the keyboard — until the keyboard is gone and no field holds focus.
+  An iPad popover's dismiss region counts as something that acts, so the
+  touch never lands outside a card and closes it. `smix hide-keyboard`
+  says which of these put the keyboard away. A
   return key named for an action (Go, Search, Continue, Next) is never
   pressed: it is the field's submit. The touch lands above the bar drawn over the keys (suggestions,
   Passwords) and never on a button, field, link or other control, so it
