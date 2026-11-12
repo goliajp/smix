@@ -63,7 +63,8 @@ cat > "$OUT/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>1</string>
   <key>LSRequiresIPhoneOS</key><true/>
   <key>MinimumOSVersion</key><string>$TARGET_OS</string>
-  <key>UIDeviceFamily</key><array><integer>1</integer></array>
+  <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+  <key>UIRequiresFullScreen</key><true/>
   <key>UILaunchScreen</key><dict/>
   <key>UIApplicationSceneManifest</key>
   <dict>

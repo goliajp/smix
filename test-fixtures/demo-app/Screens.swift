@@ -20,6 +20,7 @@ func screenAsked(by arguments: [String]) -> UIViewController? {
     ("-arrive", { ArriveController() }),
     ("-toast", { ToastController() }),
     ("-sheet-over-form", { UIHostingController(rootView: SheetOverFormView()) }),
+    ("-sheet-same-ids", { SheetSameIdsController() }),
   ]
   return screens.first { arguments.contains($0.0) }.map { $0.1() }
 }

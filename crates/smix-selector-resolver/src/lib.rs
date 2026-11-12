@@ -45,6 +45,7 @@ use std::collections::HashMap;
 
 mod collect;
 mod off_screen;
+mod reachable;
 
 pub use off_screen::matched_off_screen;
 
@@ -337,7 +338,7 @@ fn resolve_inner<'tree>(
         .into_iter()
         .filter(|n| is_visible_enough(n, tree))
         .collect();
-    let visible = shown_first(tree, visible);
+    let visible = reachable::reachable_first(shown_first(tree, visible));
     let topmost = topmost_modal_filter(tree, visible);
     // Explicit structural intent (ancestor / spatial modifier)
     // overrides implicit interactive preference
@@ -411,7 +412,7 @@ fn resolve_inner_no_index<'tree>(
         .into_iter()
         .filter(|n| is_visible_enough(n, tree))
         .collect();
-    let visible = shown_first(tree, visible);
+    let visible = reachable::reachable_first(shown_first(tree, visible));
     let topmost = topmost_modal_filter(tree, visible);
     let Some(after_ancestor) = apply_ancestor_filter(tree, topmost, selector) else {
         return vec![];
@@ -512,9 +513,7 @@ fn topmost_modal_filter<'tree>(
     tree: &'tree A11yNode,
     candidates: Vec<&'tree A11yNode>,
 ) -> Vec<&'tree A11yNode> {
-    // Fast path: ≤1 candidate has nothing to disambiguate; trees with no
-    // Alert/Dialog node anywhere fall back to v1.x DFS pre-order with
-    // zero overhead (a single shallow tree walk via `any`).
+    // ≤1 candidate, or no Alert/Dialog anywhere: nothing to choose.
     if candidates.len() <= 1 || !tree_has_modal_role(tree) {
         return candidates;
     }

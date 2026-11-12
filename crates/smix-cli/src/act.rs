@@ -773,6 +773,14 @@ mod tests {
     // present in --json. text has to print in its own position — not folded
     // into id/label — and an empty text must not leave a `text=` ghost.
     #[test]
+    fn an_element_a_touch_does_not_reach_says_so() {
+        let mut row = node_with(Some("device-row"), None, None);
+        assert!(!outline_line(&row, 0).contains("covered"));
+        row.hittable = Some(false);
+        assert!(outline_line(&row, 0).contains("(covered — a touch does not reach it)"));
+    }
+
+    #[test]
     fn outline_line_shows_text_in_its_own_position() {
         let submit = node_with(Some("fixture_submit"), None, Some("SUBMIT"));
         let line = outline_line(&submit, 0);

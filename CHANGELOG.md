@@ -43,6 +43,14 @@ All notable changes to the `smix` workspace are documented here. The format foll
   after `inputText` or `setText` is a password field (a secure field, or
   one showing only bullets), the value is now masked as `***` everywhere
   the run writes from then on.
+- **iPad: a tap takes the match a touch reaches.** A form sheet on an iPad
+  is a card over the screen that presented it, and that screen's rows stay
+  in the tree. A consumer's device search had a row on the card and rows
+  behind it under one identifier; `tapOn` took the first match, behind the
+  card and the keyboard, and the result was never picked. Of several
+  matches, the ones the runner does not report as covered are now taken
+  first; when all are covered the step still fails `NOT_VISIBLE`. `smix
+  tree` marks a covered element.
 - **iOS: a row scrolled out of its list is not visible, and is not tapped
   through what is over it.** XCUITest gives an element in a scroll view,
   table or collection view its whole frame wherever the content puts it.

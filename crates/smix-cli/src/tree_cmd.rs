@@ -92,6 +92,9 @@ pub(crate) fn outline_line(node: &smix_screen::A11yNode, depth: usize) -> String
     let visible = if node.visible { "✓" } else { "·" };
     let note = if smix_screen::is_keyboard(node) && node.children.is_empty() {
         "  (keys collapsed — --keyboard to include them)"
+    } else if node.hittable == Some(false) {
+        // on the screen, under something drawn over it: a sheet, a card
+        "  (covered — a touch does not reach it)"
     } else {
         ""
     };
