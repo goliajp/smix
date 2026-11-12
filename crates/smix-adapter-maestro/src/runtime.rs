@@ -130,6 +130,8 @@ fn launch_fresh_app_path_from_env(bundle_id: &str) -> Option<String> {
 
 // AppLike trait + blanket impl for smix_sdk::App
 
+mod bounds;
+mod environment;
 mod refused;
 mod typed_into_mask;
 mod video;
@@ -1059,6 +1061,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::SetPermissions { .. } => "setPermissions",
         Step::SetOrientation { .. } => "setOrientation",
         Step::SetPosture { .. } => "setPosture",
+        Step::SetEnvironment { .. } => "setEnvironment",
         Step::RotateCrown { .. } => "rotateCrown",
         Step::AddMedia { .. } => "addMedia",
         Step::StartRecording { .. } => "startRecording",
@@ -1141,6 +1144,8 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// typed in one step can surface in another: a keyboard's suggestion
     /// strip showed the last piece of a typed password.
     secrets: Vec<String>,
+    /// What `setEnvironment` changed; see `environment`.
+    environment: environment::EnvState,
     /// Env store used by the expression engine for bare `${NAME}`
     /// lookup. Populated from CLI `--env KEY=VAL` (repeatable) + the
     /// inherited process env as fallback. Enables yaml with
@@ -1225,47 +1230,6 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         Ok(smix_sdk::rect_in_points(bounds, ppp))
     }
 
-    /// What `cropOn` crops to: the element's box and the root of the
-    /// same tree, both in the tree's units, so the scale to the
-    /// screenshot comes from two readings of one screen.
-    async fn crop_target(&self, selector: &Selector) -> Result<smix_sdk::CropTo, RunError> {
-        let (root, element) = self
-            .wait_for_bounds(selector, "cropOn: no element to crop to")
-            .await?;
-        Ok(smix_sdk::CropTo { element, root })
-    }
-
-    /// The tree root's bounds and the matched element's, waiting for it
-    /// the way the other element verbs do. Not found by the deadline →
-    /// `ElementNotFound` opening with `what`, carrying the screen it
-    /// last read.
-    async fn wait_for_bounds(
-        &self,
-        selector: &Selector,
-        what: &str,
-    ) -> Result<(smix_sdk::Rect, smix_sdk::Rect), RunError> {
-        let budget = smix_driver::poll::Budget::new(IMPLICIT_WAIT);
-        loop {
-            let look = budget.look();
-            let tree = self.app.tree().await?;
-            if let Some(node) = smix_selector_resolver::resolve_selector(&tree, selector) {
-                return Ok((tree.bounds, node.bounds));
-            }
-            if budget.spent_by(look) {
-                return Err(RunError::Sdk(ExpectationFailure::new(
-                    FailureInit {
-                        code: Some(FailureCode::ElementNotFound),
-                        message: format!("{what}: {}", smix_selector::describe_selector(selector)),
-                        selector: Some(selector.clone()),
-                        ..Default::default()
-                    }
-                    .with_screen(smix_sdk::screen_facts(&tree, 10)),
-                )));
-            }
-            tokio::time::sleep(budget.pause()).await;
-        }
-    }
-
     /// Construct a dispatcher bound to `app` and `base_dir`.
     pub fn new(app: &'a A, base_dir: PathBuf) -> Self {
         Self {
@@ -1276,6 +1240,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             output: std::collections::BTreeMap::new(),
             remembered_bounds: std::collections::BTreeMap::new(),
             secrets: Vec::new(),
+            environment: Default::default(),
             env: std::collections::BTreeMap::new(),
             debug_output: None,
             debug_records: Vec::new(),
@@ -1705,7 +1670,16 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         if self.launch_activity.is_none() {
             self.launch_activity = flow.launch_activity.clone();
         }
-        self.run_steps(&flow.steps).await
+        let ran = self.run_steps(&flow.steps).await;
+        // put back what `setEnvironment` changed, however the run ended
+        match (self.restore_environment().await.as_slice(), ran) {
+            ([], ran) => ran,
+            (failed, Ok(_)) => Err(refused::refused(failed.join("; ")).into()),
+            (failed, Err(e)) => {
+                eprintln!("warning: {}", failed.join("; "));
+                Err(e)
+            }
+        }
     }
 
     async fn run_steps(&mut self, steps: &[Step]) -> Result<RunReport, RunError> {
@@ -2285,10 +2259,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::InputText(s) => self.input_text(s, None, false).await,
             Step::InputTextInto { selector, text } => {
-                self.input_text(text, Some(selector), false).await
+                let into = self.desugar_localized_text(selector).into_owned();
+                self.input_text(text, Some(&into), false).await
             }
             Step::SetText { selector, text } => {
-                self.input_text(text, selector.as_ref(), true).await
+                let into = selector
+                    .as_ref()
+                    .map(|s| self.desugar_localized_text(s).into_owned());
+                self.input_text(text, into.as_ref(), true).await
             }
             Step::Back(opts) => {
                 let result = self.app.go_back().await.map(|()| RunStepReport::Ok);
@@ -2725,7 +2703,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 selector,
                 playing,
                 within_ms,
-            } => self.assert_video(selector, *playing, *within_ms).await,
+            } => {
+                let watched = self.desugar_localized_text(selector).into_owned();
+                self.assert_video(&watched, *playing, *within_ms).await
+            }
             Step::AssertBoundsUnchanged {
                 selector,
                 was,
@@ -2975,6 +2956,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.set_orientation(*orientation).await?;
                 Ok(RunStepReport::Ok)
             }
+            Step::SetEnvironment { settings } => self.set_environment(settings).await,
             Step::SetPosture { posture } => {
                 self.app.set_posture(*posture).await?;
                 Ok(RunStepReport::Ok)
@@ -3149,10 +3131,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         bundle_id: app_id.clone(),
                         clear_state: *clear_state,
                         clear_keychain: *clear_keychain,
-                        arguments: arguments.clone(),
+                        arguments: self.launch_arguments(arguments),
                         permissions: sdk_perms,
                         app_path,
                         launch_activity: self.launch_activity.clone(),
+                        environment: self.launch_environment(),
                     };
                     // `waitForInteractiveMs` on `launchApp` yaml is a
                     // warning-only marker. The

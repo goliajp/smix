@@ -67,6 +67,7 @@ fn action_kind(a: &CleanupAction) -> &'static str {
         CleanupAction::StopPortForward { .. } => "portForward",
         CleanupAction::RemoveReversePort { .. } => "reversePort",
         CleanupAction::ShutdownSim { .. } => "booted",
+        CleanupAction::RestoreEnvironment { .. } => "environment",
     }
 }
 
@@ -80,7 +81,11 @@ fn ok(o: &smix_capsule::reconcile::Outcome) -> Result<String, String> {
 
 pub(crate) async fn run(owner: Option<&str>, dry_run: bool, orphans: bool) -> ExitCode {
     if orphans {
-        return match reclaim_left_behind(dry_run).await {
+        let settings = crate::env_orphans::restore_left_changed(dry_run).await;
+        return match reclaim_left_behind(dry_run)
+            .await
+            .and_then(|n| Ok(n + settings?))
+        {
             Ok(0) => ExitCode::SUCCESS,
             Ok(_) => ExitCode::from(1),
             Err(e) => {

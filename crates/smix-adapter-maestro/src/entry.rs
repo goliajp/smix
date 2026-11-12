@@ -396,11 +396,8 @@ async fn run_flow_inner(args: FlowArgs, junit: &mut Option<String>) -> u8 {
     // — eliminating the activation storm at the root without any yaml-side
     // change.
     //
-    // A missing session on iOS is fatal (v2 break #1). It used to fall back
-    // to the legacy per-request path, which is the activation storm sessions
-    // exist to remove — keeping it behind a warning kept the thing the break
-    // removes. A runner that cannot open a session is out of date, and that
-    // is said loudly with the fix.
+    // A missing session on iOS is fatal: a runner that cannot open one is
+    // out of date, and that is said with the fix.
     //
     // Android is not on this path at all: its runner serves no `/session/*`
     // route, so sessionless is its only way to drive, not an implicit one.
@@ -492,6 +489,9 @@ async fn run_flow_inner(args: FlowArgs, junit: &mut Option<String>) -> u8 {
     // JSON + on-fail screenshot into debug_output/; entry.rs adds the
     // aggregate run-summary.json at exit (below).
     let mut adapter = Adapter::new(holder.app(), base_dir).with_env(env_store);
+    if let Some(device) = args.udid.as_deref() {
+        adapter = adapter.with_device_id(device);
+    }
     if let Some(dir) = args.debug_output.clone() {
         adapter = adapter.with_debug_output(dir);
     }

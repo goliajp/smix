@@ -25,7 +25,10 @@
 //! of a teardown be tested without a device.
 
 pub mod beat;
+mod classify;
+pub use classify::{holds_something, is_process_backed, is_service, may_shut_down, unnamed_kinds};
 mod carry;
+pub mod environment;
 mod guards;
 pub mod held;
 pub mod owners;
@@ -229,6 +232,13 @@ pub enum Resource {
         /// started it. `None` when smix found it already running.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         console_log: Option<String>,
+    },
+    /// Settings a run changed with `setEnvironment`, each with its value
+    /// before; see [`environment`].
+    #[serde(rename_all = "camelCase")]
+    Environment {
+        /// Oldest first.
+        changes: Vec<environment::EnvChange>,
     },
 }
 
@@ -514,6 +524,14 @@ pub enum CleanupAction {
         /// The port on the device, which is what identifies the route.
         device_port: u16,
     },
+    /// Put back the settings a run changed and did not restore.
+    #[serde(rename_all = "camelCase")]
+    RestoreEnvironment {
+        /// The device.
+        device_id: String,
+        /// What to put back, in the order they were changed.
+        changes: Vec<environment::EnvChange>,
+    },
     /// `simctl shutdown` — only ever emitted for a device this holder
     /// booted.
     #[serde(rename_all = "camelCase")]
@@ -721,101 +739,6 @@ pub fn assess(facts: &Facts) -> Admission {
     }
 }
 
-/// Is this workspace entitled to shut this device down?
-///
-/// Being in the registry means "smix knows how to address it", not "smix
-/// may turn it off". A teardown that shut down every registered device
-/// took away sessions nobody here started — someone running a dev server
-/// against a registered simulator lost it to a sweep of somebody else's
-/// work. The boot row is the record of entitlement, and `None` (no ledger
-/// at all) means no.
-/// The `kind` of every row this binary could not name, in ledger order.
-///
-/// A refusal that cannot say WHAT it failed to read is a refusal nobody
-/// can act on, so this is what the messages quote.
-#[must_use]
-pub fn unnamed_kinds(lease: &Lease) -> Vec<String> {
-    lease
-        .resources
-        .iter()
-        .filter_map(|r| r.unnamed_kind().map(str::to_string))
-        .collect()
-}
-
-#[must_use]
-pub fn may_shut_down(lease: Option<&Lease>) -> bool {
-    lease.is_some_and(|l| {
-        // Entitlement is necessary and no longer sufficient. A row this
-        // binary cannot read is something open on the device that
-        // nothing here can close, and switching the device off would
-        // strand it — so having booted it does not settle the question
-        // on its own.
-        unnamed_kinds(l).is_empty()
-            && l.known_resources()
-                .any(|r| matches!(r, Resource::Booted { by_us: true }))
-    })
-}
-
-/// Is this resource a service — a thing that exists to be used by the
-/// next command, rather than an activity that excludes it?
-///
-/// The runner and its plumbing are services: a client driving through
-/// them is their purpose. A recording is an activity: two sessions
-/// writing over one capture is a collision, not a hand-off. `Booted` is
-/// neither a process nor an activity and never blocks adoption.
-///
-/// Exhaustive on purpose. This was a `matches!` with a default of "not a
-/// service", and the `Emulator` row, added later, fell to it without
-/// a word: every emulator smix booted then refused the `runner up` → `run`
-/// pairing on it. A new kind of row has to be classified here to compile.
-pub fn is_service(r: &Resource) -> bool {
-    match r {
-        Resource::Runner { .. }
-        | Resource::AndroidRunner { .. }
-        | Resource::PortForward { .. }
-        | Resource::Supervisor { .. }
-        | Resource::Booted { .. }
-        | Resource::Claimed { .. }
-        | Resource::ReversePort { .. }
-        // Names which AVD this is and where its console went. Like
-        // `Booted`, a fact about the device, not something a second
-        // session could collide with.
-        | Resource::Emulator { .. } => true,
-        Resource::Recording { .. } => false,
-    }
-}
-
-/// Does this resource stand for a process that can die?
-///
-/// `Booted` does not: it is a device state, and nothing about it can be
-/// probed for liveness. That difference decides whether a ledger without
-/// a live holder is an abandoned session or merely a device left on.
-pub fn is_process_backed(r: &Resource) -> bool {
-    // Exhaustive for the same reason as `is_service`.
-    match r {
-        Resource::Runner { .. }
-        | Resource::Recording { .. }
-        | Resource::Supervisor { .. }
-        | Resource::AndroidRunner { .. }
-        | Resource::PortForward { .. } => true,
-        Resource::ReversePort { .. }
-        | Resource::Booted { .. }
-        | Resource::Claimed { .. }
-        | Resource::Emulator { .. } => false,
-    }
-}
-
-/// Whether `lease` holds anything on its holder's behalf: a process it
-/// started, a claim, or a row this binary cannot read. A boot row alone
-/// does not; it says who may shut the device down.
-#[must_use]
-pub fn holds_something(lease: &Lease) -> bool {
-    lease.resources.iter().any(|row| {
-        row.known()
-            .is_none_or(|r| is_process_backed(r) || matches!(r, Resource::Claimed { .. }))
-    })
-}
-
 /// The closes a dead holder's lease owes, in the order they must happen.
 ///
 /// Reverse of the order they were opened: the recording is stopped before
@@ -915,6 +838,10 @@ fn plan_rest(lease: &Lease) -> Vec<CleanupAction> {
                 Resource::Claimed { .. } => None,
                 // Names the device; nothing was opened, so nothing closes.
                 Resource::Emulator { .. } => None,
+                Resource::Environment { changes } => Some(CleanupAction::RestoreEnvironment {
+                    device_id: lease.device_id.clone(),
+                    changes: changes.clone(),
+                }),
                 Resource::Booted { by_us: true } => Some(CleanupAction::ShutdownSim {
                     udid: lease.device_id.clone(),
                 }),
@@ -1371,6 +1298,7 @@ mod tests {
                 // signal at all, since it lives in the adb server.
                 CleanupAction::ShutdownSim { .. }
                 | CleanupAction::CannotClose { .. }
+                | CleanupAction::RestoreEnvironment { .. }
                 | CleanupAction::RemoveReversePort { .. } => {}
             }
         }
@@ -1869,6 +1797,7 @@ mod forward_ordering_tests {
                 CleanupAction::ShutdownSim { .. } => "shutdown",
                 CleanupAction::CannotClose { .. } => "unnamed",
                 CleanupAction::RemoveReversePort { .. } => "reverse",
+                CleanupAction::RestoreEnvironment { .. } => "environment",
             })
             .collect();
         assert_eq!(kinds, vec!["supervisor", "runner", "forward"]);

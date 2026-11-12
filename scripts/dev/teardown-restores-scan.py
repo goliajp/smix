@@ -157,6 +157,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v26.0-c1-d-a-row-scrolled-under-the-bar-e2e.sh",
     "v26.0-c1-e-a-hint-on-the-decor-view-e2e.sh",
     "v26.0-c1-f-a-picture-playing-or-frozen-e2e.sh",
+    "v26.0-c1-g-settings-put-back-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.

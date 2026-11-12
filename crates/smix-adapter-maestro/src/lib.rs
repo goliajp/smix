@@ -413,11 +413,8 @@ pub enum Step {
     /// on, because a screen that never settles is usually a spinner the
     /// flow does not care about.
     ///
-    /// **NOT** an XCTest idle-wait — `SmixQuiescenceSwizzle.m` no-ops
-    /// XCTest's idle wait for performance (RN long-running animations
-    /// would otherwise stall every operation), and this verb never went
-    /// through it anyway. Stillness here is measured by comparing
-    /// screenshots.
+    /// Not XCTest's idle wait, which the runner turns off; stillness is
+    /// measured by comparing screenshots.
     WaitForAnimationToEnd {
         /// How long to wait for the screen to stop moving, in
         /// milliseconds — a ceiling, not a duration. The step returns as
@@ -716,11 +713,8 @@ pub enum Step {
     /// env). Pairs with an optional trailing `launchApp: {}` when the
     /// caller wants a fresh instance.
     ///
-    /// Replaces `launchApp: { clearState: true }` — the old shape now
-    /// emits a deprecation WARN and internally expands to
-    /// `ClearAppData + LaunchApp`. Consumers who migrate see the
-    /// deprecation notice go away and get the crash-dialog fix
-    /// automatically.
+    /// `launchApp: { clearState: true }` expands to this plus a launch, with
+    /// a deprecation warning.
     ///
     /// Accepts optional `launchArgs` / `launchEnv` to steer
     /// scaffolding shown at cold launch: the Expo dev-launcher server
@@ -1032,6 +1026,12 @@ pub enum Step {
         /// Turns a second, when given.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         velocity: Option<f64>,
+    },
+    /// `setEnvironment: { appearance?, textSize?, locale?, timeZone?,
+    /// network? }` — smix's own; put back when the run ends.
+    SetEnvironment {
+        /// `(setting, value)`, in the order they are applied.
+        settings: Vec<(String, String)>,
     },
     /// `assertVideoPlaying` / `assertVideoFrozen: { <selector>, within? }` —
     /// smix's own: whether the picture in the element changes within

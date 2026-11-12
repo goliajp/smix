@@ -26,6 +26,8 @@
 /// `App::assert_screenshot`, not part of the SDK surface.
 mod device_parts;
 mod drag;
+mod launch_env;
+pub use launch_env::LaunchAppOptions;
 pub(crate) mod png_gray;
 mod point_touch;
 pub mod screenshot_compare;
@@ -314,38 +316,6 @@ pub enum PermissionAction {
     Grant,
     Revoke,
     Reset,
-}
-
-/// Typed shape of maestro yaml `launchApp:` mapping. Adapter assembles this
-/// from yaml fields; SDK consumes it in [`App::launch_app_with_options`].
-/// Covers maestro `launchApp.permissions / arguments / stopApp`.
-#[derive(Clone, Debug, PartialEq)]
-pub struct LaunchAppOptions {
-    pub bundle_id: String,
-    pub clear_state: bool,
-    pub clear_keychain: bool,
-    /// Process-level argv passed via `simctl launch -- <args>`.
-    pub arguments: Vec<String>,
-    /// Permission directives applied in declaration order BEFORE launch.
-    ///
-    /// The cross-platform [`Permission`], not the iOS spelling. It was
-    /// the iOS one until 10.2, which made this whole path — yaml key to
-    /// backend — unable to carry a permission iOS has no word for:
-    /// `storage` is implemented in the Android backend and a flow could
-    /// not name it.
-    pub permissions: Vec<(Permission, PermissionAction)>,
-    /// App bundle path for clear_state / clear_keychain wipe — mirrors the
-    /// `launch_fresh::app_path` parameter; usually populated by the
-    /// adapter from `SMIX_APP_PATH_<NORMALIZED_BUNDLE>` env.
-    pub app_path: Option<String>,
-    /// Android launch activity override.
-    ///
-    /// `None` means "ask the device": the Android runner resolves the
-    /// package's launcher activity through the package manager. Set
-    /// only when an app has more than one entry point and the flow
-    /// wants a specific one. iOS ignores it — a bundle id already
-    /// names what to launch.
-    pub launch_activity: Option<String>,
 }
 
 /// Completion-signal wait strategy for the
@@ -1897,6 +1867,9 @@ impl App {
                 .map_err(simctl_to_failure)?;
             Vec::new()
         };
+        if !opts.environment.is_empty() {
+            self.relaunch_with_environment(udid, opts).await?;
+        }
         smix_driver::phases::mark("launch", launching);
         let appearing = std::time::Instant::now();
         // The app was launched here, not through the runner, and XCUITest

@@ -1,10 +1,8 @@
 //! Which verb reads which selector form, decided cell by cell.
 //!
-//! Three selector spellings describe something the accessibility tree
-//! cannot show: `ocrText:` is pixels, `localizedText:` is a locale map
-//! that has to be picked from first, and `anchorRelative:` resolves to a
-//! shifted coordinate rather than to a node. The verbs that read one do so
-//! above the resolver; the resolver matches none of them.
+//! `ocrText:` (pixels), `localizedText:` (a locale map to pick from) and
+//! `anchorRelative:` (a shifted coordinate) are not in the accessibility
+//! tree: the verbs that read one do so above the resolver.
 //!
 //! Both matches are exhaustive: a new `Step` says which selector slots
 //! it has, and a new slot whether it reads each form or refuses it by
@@ -190,6 +188,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         | Step::AddMedia { .. }
         | Step::SetOrientation { .. }
         | Step::SetPosture { .. }
+        | Step::SetEnvironment { .. }
         | Step::RotateCrown { .. }
         | Step::StartRecording { .. }
         | Step::StopRecording
@@ -520,6 +519,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
         | Step::AddMedia { .. }
         | Step::SetOrientation { .. }
         | Step::SetPosture { .. }
+        | Step::SetEnvironment { .. }
         | Step::RotateCrown { .. }
         | Step::StartRecording { .. }
         | Step::StopRecording

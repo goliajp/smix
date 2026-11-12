@@ -257,13 +257,6 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
     was: "stop"
     within: 1                            # device-independent pixels (default 0)
 
-- assertVideoPlaying:                    # the picture in it changes…
-    id: "tile-3"
-    within: 10s                          # …within this long (default 10s; ms or s)
-- assertVideoFrozen:                     # the picture in it stays the same…
-    id: "tile-3"
-    within: 2s                           # …for this long (default 2s)
-
 - neverVisible:                          # at no moment while these steps run
     id: "loading-overlay"
     during:
@@ -284,6 +277,15 @@ has changed. A failure prints both boxes and how far each edge moved.
 The box compared is the one the element occupies, not the part that
 shows: scrolling a row half out of view changes what shows without
 moving anything.
+
+```yaml
+- assertVideoPlaying:                    # the picture in it changes…
+    id: "player"
+    within: 10s                          # …within this long (default 10s; ms or s)
+- assertVideoFrozen:                     # the picture in it stays the same…
+    id: "player"
+    within: 2s                           # …for this long (default 2s)
+```
 
 `assertVideoPlaying` / `assertVideoFrozen` are smix's own. Each takes
 screenshots one after another and compares only the element's box: playing
@@ -827,6 +829,35 @@ modifiers' meta state; iOS refuses a combination by name.
     notifications: allow
     storage: allow                       # Android's WRITE_EXTERNAL_STORAGE; a no-op on iOS
 ```
+
+```yaml
+- setEnvironment:                        # put back when the run ends, however it ends
+    appearance: dark                     # light / dark
+    textSize: extraLarge                 # extraSmall … large (the default) … accessibilityExtraExtraExtraLarge
+    locale: ja-JP                        # a language tag
+    timeZone: Asia/Tokyo                 # a zone id
+    network: offline                     # online / offline / slow — Android emulators only
+```
+
+`setEnvironment` changes only the settings it names. Each is read first,
+set, and read back; a value that does not read back fails the step. When
+the run ends — passed, failed or timed out — every setting it changed is
+put back to what it read before, newest first, and a setting that cannot
+be put back fails the run. The values from before are also kept in the
+device's ledger as they are changed, so a run that was killed leaves them
+for `smix cleanup --owner` and `smix cleanup --orphans` to put back, and
+`smix status` shows the device as changed, by whom, and from what.
+
+What each platform can set differs. On an iOS simulator appearance and
+text size are the device's own (`simctl ui`, that simulator only); a
+language and a time zone are not — they are given to the app when it
+launches (`-AppleLanguages`, `-AppleLocale`, `TZ`), so they go before
+`launchApp`, and naming them after the app has launched is refused. A
+simulator has no network conditions of its own, and `network` is refused
+there. On an Android emulator the app's language is set for that app, and
+appearance, text size (as a font scale), time zone and network are the
+whole device's: `slow` is the emulator console's `edge` speed and delay,
+`offline` is airplane mode. Network conditions are not set on a phone.
 
 A simulated location outlives the flow that set it, and on a phone it
 outlives the cable — `clearLocation` is how smix puts it back. On an
@@ -3505,6 +3536,10 @@ command has touched it for `SMIX_IDLE_DEVICE_SECS` — 30 minutes by default,
 what tells a pause from a device its task forgot. `smix sim boot` reclaims
 these first, before it weighs whether there is room, and says each one it
 closed; a device somebody else booted by hand is never one of them.
+
+`--orphans` also puts back the settings a killed run left changed with
+`setEnvironment`, on any running device nobody holds — the device itself is
+left as it is.
 
 ### Perf regression (`smix bench`)
 
@@ -6753,6 +6788,7 @@ that is why.
 | `setPermissions` | ✅ | ✅ | `pm grant` / `pm revoke` per permission on Android; `simctl privacy` on iOS |
 | `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure. Android reads the display's rotation back before answering, so a rotation that does not arrive is a failure rather than a silent no-op. A foldable iOS simulator ignores the system call, so it is turned the way Device Hub turns it and read back; a facing its posture cannot reach is refused |
 | `setWindowSize` | ❌ | ✅ | smix's own verb. An app's desktop window (Chromebook, Android's desktop mode) resized to a width and height in dp, caption bar included, then read back; another size read back fails naming it. A fullscreen app, a size below the system's smallest window or larger than the display are refused by name, and so is iOS |
+| `setEnvironment` | ✅ | ✅ | smix's own. `appearance`, `textSize`, `locale`, `timeZone`, `network`, each read back after it is set and put back when the run ends; a killed run's values are kept in the device's ledger for `smix cleanup`. iOS: appearance and text size on the simulator, language and time zone on the app's next launch, `network` refused. Android: all five, `network` on emulators only |
 | `setPosture` | ✅ | ❌ | Foldable iOS simulators (iPhone Duo): `closed` / `halfOpen` / `open`, read back from which screen is lit. A one-screen device is refused, and Android refuses by name: nothing drives an emulator's hinge yet |
 | `rotateCrown` | ✅ | ❌ | Apple Watch and Apple Vision Pro simulators only: `rotateCrown: <turns>` or `{ rotations, velocity }`, through `XCUIDevice.rotateDigitalCrown`. A positive turn scrolls a list on; XCTest takes about 5 s for any turn. Every other device, and Android, refuses by name |
 

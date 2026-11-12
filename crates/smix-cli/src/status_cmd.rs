@@ -36,6 +36,8 @@ struct DeviceRow {
     holder: Option<Holder>,
     runner_ports: Vec<u16>,
     memory_bytes: Option<u64>,
+    /// Settings a run changed and has not put back, with their values before.
+    changed: Vec<smix_lease::environment::EnvChange>,
 }
 
 #[derive(Debug, Serialize)]
@@ -68,6 +70,7 @@ fn ledger_rows(rows: &mut BTreeMap<String, DeviceRow>) {
                 smix_lease::Resource::Booted { by_us: true } => row.booted_by_smix = true,
                 smix_lease::Resource::Runner { port, .. }
                 | smix_lease::Resource::AndroidRunner { port, .. } => row.runner_ports.push(*port),
+                smix_lease::Resource::Environment { changes } => row.changed = changes.clone(),
                 _ => {}
             }
         }
@@ -129,6 +132,21 @@ fn render(rows: &[DeviceRow]) -> String {
         out.push_str(&format!("{} ({name}): {state}, {owners}, {booted}", r.id));
         if let Some(since) = &r.since {
             out.push_str(&format!(", ledger since {since}"));
+        }
+        if !r.changed.is_empty() {
+            let by = r
+                .owners
+                .get("environment")
+                .map_or("no owner", String::as_str);
+            let was: Vec<String> = r
+                .changed
+                .iter()
+                .map(|c| format!("{} (was {:?})", c.setting, c.before))
+                .collect();
+            out.push_str(&format!(
+                ", environment changed by {by}: {}",
+                was.join(", ")
+            ));
         }
         if !r.runner_ports.is_empty() {
             let ports: Vec<String> = r.runner_ports.iter().map(u16::to_string).collect();
@@ -201,6 +219,7 @@ mod tests {
             }),
             runner_ports: vec![22191],
             memory_bytes: Some(9 << 30),
+            changed: Vec::new(),
         }];
         let out = render(&rows);
         assert!(
@@ -230,5 +249,27 @@ mod tests {
     fn an_owner_name_is_checked_at_the_edge() {
         assert!(adopt_owner(Some("two words")).is_err());
         assert!(adopt_owner(None).is_ok());
+    }
+
+    #[test]
+    fn a_changed_environment_says_by_whom_and_what_it_was() {
+        let mut owners = BTreeMap::new();
+        owners.insert("environment".to_string(), "round-7".to_string());
+        let rows = [DeviceRow {
+            id: "emulator-5554".into(),
+            running: true,
+            owners,
+            changed: vec![smix_lease::environment::EnvChange {
+                setting: "appearance".into(),
+                before: "no".into(),
+                app: None,
+            }],
+            ..DeviceRow::default()
+        }];
+        let out = render(&rows);
+        assert!(
+            out.contains("environment changed by round-7: appearance (was \"no\")"),
+            "{out}"
+        );
     }
 }

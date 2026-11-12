@@ -244,6 +244,9 @@ pub fn compare(
                         Row::Known(Resource::Booted { by_us }) => format!("booted by_us={by_us}"),
                         Row::Known(Resource::Claimed { at }) => format!("claimed at {at}"),
                         Row::Known(Resource::Emulator { avd, .. }) => format!("emulator {avd}"),
+                        Row::Known(Resource::Environment { changes }) => {
+                            format!("environment ({} changed)", changes.len())
+                        }
                     })
                     .collect()
             };
@@ -621,16 +624,9 @@ pub fn add_resource(dir: &LeaseDir, device_id: &str, resource: Resource) -> Resu
 /// Write down that this device was booted, without losing an earlier
 /// answer to the same question.
 ///
-/// `add_resource` replaces same-kind rows, and both boot rows are the
-/// same kind — so a second boot of a device that is already up overwrote
-/// `by_us: true` with `by_us: false`, and the ledger stopped saying smix
-/// had turned it on. Everything after that followed: the process rows go
-/// at teardown, a lone `by_us: false` row is not worth a file, the file
-/// goes, and `lease owner` answers 3 about a simulator that is still
-/// running. That is how the 4.2.0 ship stopped — `pick-dev-sim` refused
-/// a sim it could no longer tell apart from somebody else's.
-///
-/// `by_us` is about one transition: who took this device from off to on.
+/// `add_resource` replaces same-kind rows, so a second boot of a device
+/// already up would overwrite `by_us: true` with `false` and lose that
+/// smix turned it on. `by_us` is about one transition: who took this device from off to on.
 /// A later call finding it already up learns nothing about that
 /// transition, so it must not answer for it. True is therefore sticky,
 /// and only a shutdown — which drops the row outright — ends it.
@@ -755,6 +751,8 @@ fn worth_keeping(lease: &Lease) -> bool {
             // be put on one side of this line by whoever adds it.
             Resource::Booted { by_us: false } | Resource::Emulator { .. } => false,
             Resource::Booted { by_us: true }
+            // what it records is still to be put back
+            | Resource::Environment { .. }
             | Resource::Runner { .. }
             | Resource::Recording { .. }
             | Resource::Supervisor { .. }
@@ -902,6 +900,7 @@ pub fn collect_facts(dir: &LeaseDir, device_id: &str) -> Result<Facts, LeaseErro
             | Resource::Claimed { .. }
             // A name, not a process.
             | Resource::Emulator { .. }
+            | Resource::Environment { .. }
             // A route is a row in the adb server. There is no process
             // to probe, so it can never make a device look busy — the
             // same answer `PortForward` gets, for a nearer reason.

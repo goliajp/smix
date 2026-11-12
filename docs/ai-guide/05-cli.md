@@ -1020,6 +1020,10 @@ what tells a pause from a device its task forgot. `smix sim boot` reclaims
 these first, before it weighs whether there is room, and says each one it
 closed; a device somebody else booted by hand is never one of them.
 
+`--orphans` also puts back the settings a killed run left changed with
+`setEnvironment`, on any running device nobody holds — the device itself is
+left as it is.
+
 ### Perf regression (`smix bench`)
 
 ```bash

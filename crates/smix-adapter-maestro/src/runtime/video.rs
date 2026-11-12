@@ -79,7 +79,7 @@ pub(super) fn moved(a: &GrayView, b: &GrayView, share: Share) -> bool {
 }
 
 impl<A: AppLike + ?Sized> Adapter<'_, A> {
-    /// Watch `selector`'s box for `within`: `playing` passes at the first
+    /// Watch `selector`'s box (desugared by the caller) for `within`: `playing` passes at the first
     /// frame that differs from the one before, and marks how long that took
     /// as the step's `firstChange` phase; frozen passes when no frame did.
     pub(super) async fn assert_video(
@@ -88,7 +88,6 @@ impl<A: AppLike + ?Sized> Adapter<'_, A> {
         playing: bool,
         within_ms: u64,
     ) -> Result<RunStepReport, RunError> {
-        let selector = &self.desugar_localized_text(selector).into_owned();
         let within = Duration::from_millis(within_ms);
         let verb = if playing {
             "assertVideoPlaying"

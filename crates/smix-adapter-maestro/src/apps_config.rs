@@ -282,6 +282,7 @@ fn body_mut(step: &mut crate::Step) -> Option<&mut Vec<crate::Step>> {
         | Step::AddMedia { .. }
         | Step::SetOrientation { .. }
         | Step::SetPosture { .. }
+        | Step::SetEnvironment { .. }
         | Step::RotateCrown { .. }
         | Step::StartRecording { .. }
         | Step::StopRecording

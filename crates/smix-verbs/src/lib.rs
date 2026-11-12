@@ -5,18 +5,9 @@
 //! A new yaml verb lands here first, in [`VERB_TABLE`]: the parser accepts
 //! both its names and `smix migrate` handles the rename from this entry.
 //!
-//! # Design
-//!
-//! - **Pure data crate** — no runtime state, no async, no I/O.
-//! - **Static table** — `&'static [VerbEntry]` for zero-alloc lookup.
-//! - **Two names per entry** — `maestro_name` (the yaml surface maestro
-//!   test authors know) and `smix_name` (the smix-canonical form). If
-//!   they're identical (e.g. `runFlow`), the entry still appears with
-//!   both fields set to the same string.
-//! - **Category** — grouping for reviewer sanity checks + future
-//!   auto-generated cross-platform parity tables.
-//! - **Arg shape** — the verb's *primary* yaml shape, and only that.
-//!   Informational, reserved for a future codemod arg-transform lookup.
+//! A static table of entries, each with its maestro name and smix name
+//! (the same string when they agree), a category, and the verb's primary
+//! yaml shape.
 //!
 //! # What this table does and does not guarantee
 //!
@@ -483,6 +474,14 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         "setPosture",
         VerbCategory::Device,
         ArgShape::BareString,
+    ),
+    // smix's own: maestro sets no appearance, text size, language, time
+    // zone or network, and puts nothing back.
+    v(
+        "setEnvironment",
+        "setEnvironment",
+        VerbCategory::Device,
+        ArgShape::Mapping,
     ),
     // smix's own: maestro drives no watch or headset.
     v(

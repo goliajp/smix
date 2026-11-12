@@ -1,49 +1,6 @@
-- tapOn: "Submit"                        # text literal
-- tapOn:
-    id: "home-increment-btn"
-- tapOn:
-    text: "Item.*"                       # regex pattern (anchored)
-    nth: 2                               # 0-indexed within matches
-- tapOn:
-    text: "Continue"
-    optional: true                       # skip if not visible (no error)
-- tapOn:
-    point: "50%,80%"                     # fraction of the viewport, NOT pixels
-                                         # `"0.5,0.8"` is the same point; `%` is optional
-                                         # pixels are refused — a flow written in them
-                                         # runs on one screen size
-
-# Several taps on one element, spaced by a number you state.
-#
-# `repeat` around `tapOn` sends a request per tap, and each one costs a
-# synthesised event round trip (~400 ms on iOS 26.5) — so the interval
-# is whatever that cost, and a gesture gated on a short inter-tap window
-# cannot be driven. This sends them in one request, and the runner keeps
-# the interval. On iOS one touch takes about 280 ms to deliver, so an
-# interval shorter than that arrives as ~280 ms; Android keeps it.
-- repeatTap:
-    id: "hidden-trigger"
-    times: 10
-    intervalMs: 80                       # optional; runner default
-    holdMs: 50                           # optional; how long each touch stays down
-
-# maestro's own spelling of the same thing: the target is found once and
-# tapped `repeat` times, `delay` ms apart (100 when not given). `optional`,
-# `dispatch` and `point` do not go with `repeat` and are refused by name.
-# Either way the target is waited for to hold still, and the first touch
-# is judged like a `tapOn`: delivered to something else, it fails TAP_MISSED.
-- tapOn:
-    id: "hidden-trigger"
-    repeat: 10
-    delay: 200
-
-- doubleTapOn: "Reset"
-- longPressOn:
-    id: "list-row-3"
-    duration: 1500                       # ms
-    captureDuring: true                  # optional; write PNGs of the held state
-                                         # needs duration >= 800 (see below)
-- longPressOn:
-    point: "50%,45%"                     # a place with nothing nameable, e.g. a home screen
-    duration: 1000                       # (captureDuring needs an element, not a point)
-
+- assertVideoPlaying:                    # the picture in it changes…
+    id: "player"
+    within: 10s                          # …within this long (default 10s; ms or s)
+- assertVideoFrozen:                     # the picture in it stays the same…
+    id: "player"
+    within: 2s                           # …for this long (default 2s)

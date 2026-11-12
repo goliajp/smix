@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 mod device;
+mod environment;
 mod video;
 
 // Parse the yaml `role:` value into a [`Role`] variant.
@@ -479,12 +480,8 @@ const BASE_KEYS_BY_SPECIFICITY: &[&str] = &["id", "label", "text"];
 /// `modifiers.and`, so a map naming two things matches the one element
 /// that is both.
 ///
-/// Before this, the second key was read by nobody: both parse sites
-/// test `text` first and return on the first hit, so
-/// `{ id: X, text: Y }` became `Text { Y }` and the id vanished — the
-/// selector matched any element reading Y. Six blocks in the guides
-/// are written that way, `assertVisible: { id: "counter", text: "1" }`
-/// among them, and have been asserting "something on screen reads 1".
+/// Without it `{ id: X, text: Y }` parsed to `Text { Y }`, and the id was
+/// read by nobody.
 ///
 /// Only the keys this understands are folded. `role`, `point`,
 /// `anchored`, `fallback` and the rest keep their existing single-form
@@ -3506,6 +3503,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "setOrientation" => parse_set_orientation(value),
         "setPosture" => device::parse_set_posture(value),
         "rotateCrown" => device::parse_rotate_crown(value),
+        "setEnvironment" => environment::parse_set_environment(value),
         "startRecording" => parse_start_recording(value),
         "stopRecording" => Ok(Step::StopRecording),
         // Visual regression.
