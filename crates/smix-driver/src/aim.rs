@@ -118,9 +118,9 @@ fn not_found_hint(tree: &A11yNode, selector: &Selector) -> String {
     let b = &first.bounds;
     let s = &tree.bounds;
     format!(
-        "matched {} node(s) in the a11y tree, all off screen — the first at \
-         x={:.0} y={:.0} {:.0}x{:.0}, the screen {:.0}x{:.0}; scroll it into view \
-         first (`scrollUntilVisible`)",
+        "matched {} node(s) in the a11y tree, all off screen or scrolled out of \
+         their list — the first at x={:.0} y={:.0} {:.0}x{:.0}, the screen \
+         {:.0}x{:.0}; scroll it into view first (`scrollUntilVisible`)",
         off.len(),
         b.x,
         b.y,

@@ -43,6 +43,17 @@ All notable changes to the `smix` workspace are documented here. The format foll
   after `inputText` or `setText` is a password field (a secure field, or
   one showing only bullets), the value is now masked as `***` everywhere
   the run writes from then on.
+- **iOS: a row scrolled out of its list is not visible, and is not tapped
+  through what is over it.** XCUITest gives an element in a scroll view,
+  table or collection view its whole frame wherever the content puts it.
+  A row scrolled up past its list's top edge — under a navigation bar, or a
+  header above the list — read as fully visible, and a tap at its centre
+  went to the bar and was reported as tapped. Elements are now cut to what
+  their scrolling containers show: a row partly past the edge is aimed at
+  in the part that shows, and a row wholly past it is not visible — a tap
+  on it fails saying it is scrolled out of its list, to be scrolled to.
+  Rust: `smix_screen::clip_to_scrollers`; `is_visible_enough` is false for
+  a node whose `visible_bounds` is empty.
 - **`smix tree` with the system's window in front says so.** With
   Android's permission dialog in front it opened with a note about the
   app's Compose dialogs and told an app that already carried the probe to
