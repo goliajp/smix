@@ -1,6 +1,6 @@
 {
 "files": {
-"scripts/dev/build-fixture-app.sh": "bb2efc0d0bf12d1e748695ba1cd45e02e37d500497bdfa51ed2bca2d30347c1e",
+"scripts/dev/build-fixture-app.sh": "eb706d4b73cef1f59544eb6561bf4b03ecdc29771cce72a6bd8df11661b7f67f",
 "test-fixtures/demo-app/Arrive.swift": "4806e5acea14b7633c6ad52b30fb55a6be69f5f539211e3df32ddfd2305fb0a0",
 "test-fixtures/demo-app/Blink.swift": "6bf6acc36bb61ef657848c5c559c1f06a6166193261a0c7bfb0a3a1a7199872d",
 "test-fixtures/demo-app/Live.swift": "cf1f730dd8622f0d300c02c46cfc011e5bc5348228f91b5c52e7bca985ffbd19",
@@ -8,7 +8,8 @@
 "test-fixtures/demo-app/Playing.swift": "9db8761365ffda70044582d09da0d3be67a11f73c4db521205a953dd2b04d934",
 "test-fixtures/demo-app/Profile.swift": "11786a59c826ee34447bff2be6a05e17d28637119e93c997cc357956a8088353",
 "test-fixtures/demo-app/Push.swift": "61fec31769d9641750038474b5b52e8044b06854d4aa3e93ef793b5d758f7bf3",
-"test-fixtures/demo-app/Screens.swift": "ea08f37fa19d59966201bbcd4b8c1a249455bba36bf8deaa2dc5c12934c029a3",
+"test-fixtures/demo-app/Screens.swift": "6c65a80d69f25ca29ec2f9f7063ff65bef03de371d7fcf86872becff344d4ceb",
+"test-fixtures/demo-app/SheetSameIds.swift": "d3053f718425f4d4d9974bea6515f953297d3ca2df9a6fc9d2fdc4f907a16da6",
 "test-fixtures/demo-app/Toast.swift": "4bc516cf1102c5e0d2e9225018c091725439d6f39d6b58aa99ab4d3601f0e080",
 "test-fixtures/demo-app/UIKitRows.swift": "1973f96484f44ecd94e2df9587cfbbbe3e8b8655dc36478c0bf151c0e672983f",
 "test-fixtures/demo-app/UIKitSignIn.swift": "90a94c914efb9064f65c1bdf1a625c16892ade6c515bb5ecaadc309049fbaccb",
