@@ -318,8 +318,7 @@ pub async fn cmd_tap(
     println!("tapped {selector_str}");
     if !outcome.observed.is_empty() {
         let inside: Vec<String> = outcome
-            .observed
-            .iter()
+            .in_front()
             .map(|e| {
                 if !e.identifier.is_empty() {
                     e.identifier.clone()

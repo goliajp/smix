@@ -151,6 +151,7 @@ mod tests {
                 identifier: "btn_go_live".into(),
                 label: "GO LIVE".into(),
                 frame: (41.0, 942.0, 171.0, 126.0),
+                behind: false,
             }),
             TreeReader::Semantics,
         )

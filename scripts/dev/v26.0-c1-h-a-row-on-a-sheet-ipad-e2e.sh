@@ -12,7 +12,8 @@
 #      alone — the list runs past the screen, under the keyboard
 #   2. a flow's tapOn picks the row on the card: the card goes and the
 #      screen reads "picked Lobby Elevator"
-#   3. `smix tap id:device-row` does the same from the command line
+#   3. `smix tap id:device-row` does the same from the command line, and
+#      what it says it landed inside leaves out the rows behind the card
 #   4. `dispatch: xcui` presses the sheet's button over a same-id one behind
 #   5. `smix hide-keyboard` puts the keyboard down with the keyboard's own
 #      key, says so, and the sheet stays
@@ -94,7 +95,10 @@ until "$SMIX" find "text:picked Lobby Elevator" --device "$UDID" --port "$PORT" 
   [ "$i" -lt 10 ] || fail "smix tap did not pick the row on the sheet: $(head -2 "$WORK/tap.log")"
   sleep 0.5
 done
-log "ok    smix tap id:device-row picks the row on the sheet"
+aimed="$(grep -m1 'aimed inside:' "$WORK/tap.log" || true)"
+case "$aimed" in *device-row*) ;; *) fail "smix tap did not say what it landed inside: $(head -3 "$WORK/tap.log")" ;; esac
+case "$aimed" in *"Lobby Entrance"*) fail "what the tap landed inside lists rows behind the sheet: $aimed" ;; esac
+log "ok    smix tap id:device-row picks the row on the sheet and lists only the sheet's elements: ${aimed#*: }"
 
 # 4. xcui dispatch: a back button behind the card and a close button on it
 # share an identifier; the runner's own lookup takes the one a touch reaches

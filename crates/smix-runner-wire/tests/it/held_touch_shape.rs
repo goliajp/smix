@@ -65,3 +65,19 @@ fn a_body_without_bounds_reads_as_unplaceable() {
         "one edge of a window places nothing"
     );
 }
+
+/// The Swift body marks an entry under the front layer with `behind`
+/// and says nothing for the others; an older runner says nothing at all.
+#[test]
+fn an_entry_behind_the_front_layer_reads_back_as_behind() {
+    let body = r#"{"ok":true,"chain":[{"identifier":"a","label":"","frame":{"x":0.0,"y":0.0,"w":10.0,"h":20.0}},{"identifier":"b","label":"","frame":{"x":0.0,"y":0.0,"w":10.0,"h":20.0},"behind":true}]}"#;
+    let parsed: TapAtCoordResult = serde_json::from_str(body).expect("parse");
+    let behind: Vec<bool> = parsed.chain.iter().map(|e| e.behind).collect();
+    assert_eq!(behind, [false, true]);
+    let swift =
+        include_str!("../../../../swift-bridge/Sources/SmixRunnerCore/TapAtCoordRoute.swift");
+    assert!(
+        swift.contains(r#""behind":true"#),
+        "the Swift emitter writes `behind`"
+    );
+}

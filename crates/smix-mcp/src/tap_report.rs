@@ -21,8 +21,7 @@ pub(crate) fn tapped(
     let mut report = format!("tapped: {}", smix_selector::describe_selector(sel));
     if !outcome.observed.is_empty() {
         let at: Vec<String> = outcome
-            .observed
-            .iter()
+            .in_front()
             .map(|e| {
                 if !e.identifier.is_empty() {
                     e.identifier.clone()

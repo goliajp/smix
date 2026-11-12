@@ -188,7 +188,8 @@ public enum TapAtCoordRoute {
       let label = jsonEscape(e.label)
       return #"{"identifier":"\#(id)","label":"\#(label)","frame":"#
         + #"{"x":\#(e.frame.origin.x),"y":\#(e.frame.origin.y),"#
-        + #""w":\#(e.frame.size.width),"h":\#(e.frame.size.height)}}"#
+        + #""w":\#(e.frame.size.width),"h":\#(e.frame.size.height)}"#
+        + (e.behind ? #","behind":true}"# : "}")
     }
     var json = #"{"ok":\#(ok),"chain":[\#(entries.joined(separator: ","))]"#
     if let t = press {

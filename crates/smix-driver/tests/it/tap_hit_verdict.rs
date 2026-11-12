@@ -18,6 +18,7 @@ fn el(id: &str, label: &str, frame: (f64, f64, f64, f64)) -> HitElement {
         identifier: id.to_string(),
         label: label.to_string(),
         frame,
+        behind: false,
     }
 }
 
@@ -222,4 +223,43 @@ fn a_named_target_missing_from_a_chain_that_lists_everything_is_a_miss() {
         ),
         ActVerdict::Missed(_)
     ));
+}
+
+/// A picker presented over a sheet over a page leaves both in the tree.
+/// The elements of the screens under it still decide nothing about the
+/// verdict's containment, but they are not what a reader is told the
+/// point is inside.
+#[test]
+fn layers_behind_are_left_out_of_what_a_reader_is_told() {
+    let behind = |id: &str| HitElement {
+        behind: true,
+        ..el(id, "", (0.0, 0.0, 402.0, 874.0))
+    };
+    let chain = vec![
+        el("grid-cell", "", (0.0, 100.0, 100.0, 100.0)),
+        el("com.example.app", "", (0.0, 0.0, 402.0, 874.0)),
+        behind("sheet-filters"),
+        behind("page-search"),
+    ];
+    let aimed = el("cancel", "", (300.0, 20.0, 80.0, 40.0));
+    let ActVerdict::Missed(why) = tap_landed_within(&aimed, &chain, ChainCoverage::NamedOnly)
+    else {
+        panic!("a miss");
+    };
+    assert!(
+        why.contains("grid-cell") && !why.contains("sheet-filters") && !why.contains("page-search"),
+        "{why}"
+    );
+    // still judged on the whole chain
+    assert_eq!(
+        tap_landed_within(&behind("sheet-filters"), &chain, ChainCoverage::NamedOnly),
+        ActVerdict::Confirmed
+    );
+    let outcome = smix_driver::ActOutcome {
+        target: None,
+        observed: chain,
+        verdict: ActVerdict::Confirmed,
+    };
+    let told: Vec<&str> = outcome.in_front().map(|e| e.identifier.as_str()).collect();
+    assert_eq!(told, ["grid-cell", "com.example.app"]);
 }
