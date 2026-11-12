@@ -103,7 +103,8 @@ iteration rather than guessing a fixed delay.
 ## Confirming a tap did something
 
 A green `tapOn` means "the point aimed at was inside the element named" — its
-success output says so in those terms (`aimed inside: …`). It does **not** mean
+success output says so in those terms (`aimed inside: …`, the elements at the
+point in the screen drawn in front, innermost first). It does **not** mean
 the app reacted, and it does not mean the app is where an unchanged screen came
 from: this line is judged in the snapshot's coordinate space, and a mismatch
 between that space and the one the touch is delivered in produces exactly this

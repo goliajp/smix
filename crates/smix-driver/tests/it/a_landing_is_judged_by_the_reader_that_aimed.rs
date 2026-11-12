@@ -25,6 +25,7 @@ fn compose_input() -> HitElement {
         identifier: "compose_input".into(),
         label: String::new(),
         frame: (44.0, 225.0, 770.0, 154.0),
+        behind: false,
     }
 }
 
@@ -33,6 +34,7 @@ fn entry(id: &str, x: f64, y: f64, w: f64, h: f64) -> HitChainEntry {
         identifier: id.into(),
         label: String::new(),
         frame: Rect { x, y, w, h },
+        behind: false,
     }
 }
 

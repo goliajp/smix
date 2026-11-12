@@ -103,4 +103,38 @@ final class HitChainTests: XCTestCase {
     let chain = HitChain.at(point: CGPoint(x: 10, y: 10), in: tree)
     XCTAssertEqual(chain.map(\.identifier), ["root"])
   }
+
+  /// A picker presented over a sheet over a page: the three are sibling
+  /// layers of one window, and only the picker's rows are in front.
+  func testEarlierLayersAreMarkedBehind() {
+    let screen = CGRect(x: 0, y: 0, width: 400, height: 800)
+    let tree = node(
+      "app", "", screen,
+      [
+        node("", "", screen, [node("screen-search", "", screen)]),
+        node("", "", screen, [node("filter-camera", "", CGRect(x: 0, y: 0, width: 400, height: 60))]),
+        node("", "", screen, [
+          node("grid", "", CGRect(x: 0, y: 0, width: 400, height: 700), [node("cell", "", CGRect(x: 0, y: 0, width: 100, height: 100))])
+        ]),
+        node("", "", screen),
+        node("badge", "", CGRect(x: 0, y: 760, width: 60, height: 40)),
+      ])
+    let chain = HitChain.at(point: CGPoint(x: 10, y: 10), in: tree)
+    XCTAssertEqual(
+      chain.map(\.identifier), ["cell", "grid", "app", "filter-camera", "screen-search"])
+    XCTAssertEqual(chain.map(\.behind), [false, false, false, true, true])
+  }
+
+  /// The layers behind are the ones a cap drops first.
+  func testTheCapKeepsTheFrontLayer() {
+    let screen = CGRect(x: 0, y: 0, width: 400, height: 800)
+    let tree = node(
+      "", "", screen,
+      [
+        node("", "", screen, (0..<4).map { node("under-\($0)", "", CGRect(x: 0, y: 0, width: 20, height: 20)) }),
+        node("front", "", screen),
+      ])
+    let chain = HitChain.at(point: CGPoint(x: 10, y: 10), in: tree, limit: 2)
+    XCTAssertEqual(chain.map(\.identifier), ["front", "under-0"])
+  }
 }

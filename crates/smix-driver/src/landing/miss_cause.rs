@@ -67,6 +67,7 @@ fn over(landed: &TapAtCoordResult) -> Option<String> {
                 identifier: e.identifier.clone(),
                 label: e.label.clone(),
                 frame: (e.frame.x, e.frame.y, e.frame.w, e.frame.h),
+                behind: e.behind,
             })
         })
 }
@@ -181,6 +182,7 @@ mod tests {
             identifier: "btn_open_menu".into(),
             label: "Open menu".into(),
             frame: (x, y, 126.0, 126.0),
+            behind: false,
         }
     }
 

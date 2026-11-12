@@ -1252,12 +1252,8 @@ pub(crate) fn tap_mismatch_is_fatal() -> bool {
         .unwrap_or(false)
 }
 
-/// One element, as either side describes it.
-///
-/// Three fields and not a whole `A11yNode`: the question is "is this
-/// the thing I aimed at", and every extra field is another way two
-/// truthful descriptions can differ for reasons that are not the
-/// answer.
+/// One element, as either side describes it — not a whole `A11yNode`:
+/// every extra field is another way two truthful descriptions differ.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HitElement {
     /// Accessibility identifier, empty when the element has none.
@@ -1266,6 +1262,8 @@ pub struct HitElement {
     pub label: String,
     /// `(x, y, w, h)` in the app's coordinate space.
     pub frame: (f64, f64, f64, f64),
+    /// In a layer drawn under the one the point is in front of.
+    pub behind: bool,
 }
 
 /// The element a touch is aimed at, as the verdict compares it.
@@ -1274,6 +1272,7 @@ pub(crate) fn hit_element(n: &A11yNode) -> HitElement {
         identifier: n.identifier.clone().unwrap_or_default(),
         label: n.label.clone().unwrap_or_default(),
         frame: (n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h),
+        behind: false,
     }
 }
 

@@ -44,6 +44,11 @@ pub struct HitChainEntry {
     pub label: String,
     /// The element's frame in the app's coordinate space.
     pub frame: smix_screen::Rect,
+    /// In a layer drawn under another that also holds something named at
+    /// the point: a screen still in the tree under the one presented over
+    /// it. Absent from runners that do not tell.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub behind: bool,
 }
 
 /// `POST /tap-at-norm-coord` response.

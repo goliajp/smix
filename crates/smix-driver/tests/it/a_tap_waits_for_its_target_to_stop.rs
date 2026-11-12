@@ -25,6 +25,7 @@ fn aim(y: f64) -> Aim {
             identifier: "compose_input".into(),
             label: String::new(),
             frame: (44.0, y, 992.0, 140.0),
+            behind: false,
         }),
     )
 }

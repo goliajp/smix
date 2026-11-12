@@ -32,6 +32,15 @@
 // selectors by identifier and label, and an unnamed 402x874 `other` is
 // indistinguishable from a dozen others like it. Filtering to named
 // elements is what makes the chain a description rather than a dump.
+//
+// # Why some are marked behind
+//
+// A screen presented over another (a photo picker over a sheet over a
+// search page) leaves the screens under it in the tree, and their rows
+// contain the point too. Siblings are drawn in order, so of the
+// siblings that hold anything named at the point the last one is in
+// front; everything in the earlier ones is marked `behind`. The host
+// lists the front ones to a reader and still judges on the whole chain.
 
 import CoreGraphics
 import Foundation
@@ -41,16 +50,20 @@ public struct HitChainEntry: Sendable, Equatable {
   public let identifier: String
   public let label: String
   public let frame: CGRect
+  /// Under a later sibling that also holds something named at the point.
+  public var behind: Bool
 
-  public init(identifier: String, label: String, frame: CGRect) {
+  public init(identifier: String, label: String, frame: CGRect, behind: Bool = false) {
     self.identifier = identifier
     self.label = label
     self.frame = frame
+    self.behind = behind
   }
 }
 
 public enum HitChain {
-  /// Every named element whose frame contains `point`, innermost first.
+  /// Every named element whose frame contains `point`: the front ones
+  /// first, innermost first within each kind.
   ///
   /// "Innermost" is by area, not by depth. Depth does not order these:
   /// the same point sits in several branches of the snapshot at once,
@@ -64,9 +77,12 @@ public enum HitChain {
     in root: TreeRoute.A11ySnapshotData,
     limit: Int = 16
   ) -> [HitChainEntry] {
-    var found: [HitChainEntry] = []
-    walk(CellPlacement.placed(root), point: point, into: &found)
-    found.sort { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+    var found = walk(CellPlacement.placed(root), point: point)
+    found.sort {
+      $0.behind != $1.behind
+        ? !$0.behind
+        : $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height
+    }
     // A cap, because the chain rides on every tap response. Sixteen is
     // far above the three-to-four a real screen produces, so hitting it
     // means the shape changed rather than that a screen got deep.
@@ -75,9 +91,9 @@ public enum HitChain {
 
   private static func walk(
     _ node: TreeRoute.A11ySnapshotData,
-    point: CGPoint,
-    into found: inout [HitChainEntry]
-  ) {
+    point: CGPoint
+  ) -> [HitChainEntry] {
+    var found: [HitChainEntry] = []
     let f = node.frame
     if f.width > 0, f.height > 0, f.contains(point),
       !node.identifier.isEmpty || !node.label.isEmpty
@@ -85,8 +101,15 @@ public enum HitChain {
       found.append(
         HitChainEntry(identifier: node.identifier, label: node.label, frame: f))
     }
-    for child in node.children {
-      walk(child, point: point, into: &found)
+    let branches = node.children.map { walk($0, point: point) }
+    let front = branches.lastIndex(where: { !$0.isEmpty })
+    for (i, branch) in branches.enumerated() {
+      found += i == front ? branch : branch.map { e in
+        var e = e
+        e.behind = true
+        return e
+      }
     }
+    return found
   }
 }

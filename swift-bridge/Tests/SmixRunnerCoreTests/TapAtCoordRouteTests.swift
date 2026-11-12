@@ -46,6 +46,20 @@ final class TapAtCoordRouteTests: XCTestCase {
     XCTAssertEqual(body, #"{"ok":true,"chain":[]}"#)
   }
 
+  func test_success_saysWhichEntriesAreBehind() async throws {
+    let f = CGRect(x: 0, y: 0, width: 10, height: 20)
+    let chain = [
+      HitChainEntry(identifier: "a", label: "", frame: f),
+      HitChainEntry(identifier: "b", label: "", frame: f, behind: true),
+    ]
+    let body = try await String(
+      decoding: TapAtCoordRoute.success(ok: true, chain: chain, press: nil).bodyData, as: UTF8.self)
+    XCTAssertEqual(
+      body,
+      #"{"ok":true,"chain":[{"identifier":"a","label":"","frame":{"x":0.0,"y":0.0,"w":10.0,"h":20.0}},"#
+        + #"{"identifier":"b","label":"","frame":{"x":0.0,"y":0.0,"w":10.0,"h":20.0},"behind":true}]}"#)
+  }
+
   func test_decode_takesTimesAndHold() throws {
     let req = try TapAtCoordRoute.decode(
       Data(#"{"nx":0.5,"ny":0.25,"times":2,"holdMs":800}"#.utf8))

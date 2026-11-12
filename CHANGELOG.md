@@ -91,6 +91,16 @@ All notable changes to the `smix` workspace are documented here. The format foll
   app's Compose dialogs and told an app that already carried the probe to
   add it. It now names the dialog, lists its buttons and gives the commands
   that press one.
+- **iOS: what a tap says it landed inside is the screen in front.** With a
+  photo picker presented over a sheet over a page, the line read
+  `"Camera" < PXGGridLayout-Info < card-result < "Photos" < … <
+  screen-search`, mixing in the rows of both screens under the picker as if
+  they held the cell. The runner now marks each element under a later
+  layer that also holds something at the point, and `aimed inside:` (CLI),
+  "the tapped point is inside" (MCP) and a miss's "inside … instead" list
+  only the front layer. Whether a tap landed is still judged on every
+  element at the point. Rust: `HitChainEntry::behind`,
+  `HitElement::behind`, `ActOutcome::in_front`.
 
 ### Added
 

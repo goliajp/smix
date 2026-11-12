@@ -102,6 +102,7 @@ pub fn landing_outcome(
             identifier: e.identifier.clone(),
             label: e.label.clone(),
             frame: (e.frame.x, e.frame.y, e.frame.w, e.frame.h),
+            behind: e.behind,
         })
         .collect();
     let Some(aimed) = aimed else {
@@ -211,6 +212,15 @@ pub fn landing_outcome(
     })
 }
 
+impl ActOutcome {
+    /// The elements at the point in the layer drawn in front: a screen
+    /// presented over another leaves the one under it in the tree, and
+    /// listing both reads as one chain of ancestors that does not exist.
+    pub fn in_front(&self) -> impl Iterator<Item = &HitElement> {
+        self.observed.iter().filter(|e| !e.behind)
+    }
+}
+
 /// Did the touch land inside the element it aimed at?
 ///
 /// `chain` is every named element containing the tapped point, as the
@@ -287,6 +297,7 @@ pub fn tap_landed_within(
         describe_hit(aimed),
         chain
             .iter()
+            .filter(|c| !c.behind)
             .map(describe_hit)
             .collect::<Vec<_>>()
             .join(", ")

@@ -24,6 +24,7 @@ fn button1() -> HitElement {
         identifier: "button1".into(),
         label: String::new(),
         frame: (773.0, 1192.0, 203.0, 149.0),
+        behind: false,
     }
 }
 
@@ -32,6 +33,7 @@ fn entry(id: &str, x: f64, y: f64, w: f64, h: f64) -> HitChainEntry {
         identifier: id.into(),
         label: String::new(),
         frame: Rect { x, y, w, h },
+        behind: false,
     }
 }
 
