@@ -4458,7 +4458,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                             trace.push(format!(
                                 "{layer} {} MISS: {}",
                                 smix_sdk::describe_selector(sub),
-                                reason
+                                fallback_report::layer_miss(&reason)
                             ));
                         }
                         Err(e) => return Err(e),

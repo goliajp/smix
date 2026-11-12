@@ -953,13 +953,12 @@ impl IosDriver {
         Ok(())
     }
 
-    /// `POST /hide-keyboard` passthru.
-    pub async fn hide_keyboard(&self) -> Result<(), ExpectationFailure> {
+    /// `POST /hide-keyboard`; how the runner put the keyboard away.
+    pub async fn hide_keyboard(&self) -> Result<Option<String>, ExpectationFailure> {
         self.runner
             .hide_keyboard()
             .await
-            .map_err(transport_to_failure)?;
-        Ok(())
+            .map_err(transport_to_failure)
     }
 
     /// Whether a target the tree marks as covered can be touched anyway.

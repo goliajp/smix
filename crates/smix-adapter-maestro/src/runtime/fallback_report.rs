@@ -15,6 +15,14 @@ pub(super) fn chain_took(began: std::time::Instant, passes: u32) -> String {
     )
 }
 
+/// A layer's own answer, without the words it says as the optional tap the
+/// chain runs it as: the chain may not be optional, and a trace reading
+/// "optional … skipped" sent a reader looking for a skipped step.
+pub(super) fn layer_miss(reason: &str) -> &str {
+    let r = reason.strip_prefix("optional ").unwrap_or(reason);
+    r.strip_suffix("; skipped").unwrap_or(r)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -25,5 +33,17 @@ mod tests {
             "{s}"
         );
         assert!(super::chain_took(std::time::Instant::now(), 3).contains("3 passes"));
+    }
+
+    #[test]
+    fn a_layer_miss_loses_the_optional_wording() {
+        assert_eq!(
+            super::layer_miss("optional tapOn: element not found (id=btn-x); skipped"),
+            "tapOn: element not found (id=btn-x)"
+        );
+        assert_eq!(
+            super::layer_miss("tapOn anchored: anchor not found"),
+            "tapOn anchored: anchor not found"
+        );
     }
 }

@@ -346,6 +346,10 @@ impl Driver for IosDriver {
     }
 
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure> {
+        IosDriver::hide_keyboard(self).await.map(|_| ())
+    }
+
+    async fn hide_keyboard_saying(&self) -> Result<Option<String>, ExpectationFailure> {
         IosDriver::hide_keyboard(self).await
     }
 

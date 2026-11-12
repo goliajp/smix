@@ -20,6 +20,14 @@ final class SheetSameIdsController: UIViewController, UITableViewDataSource, UIT
     search.setTitle("Search", for: .normal)
     search.accessibilityIdentifier = "open-search"
     search.addAction(UIAction { [weak self] _ in self?.openSearch() }, for: .touchUpInside)
+    // the same identifier as the sheet's close button, as a consumer's list
+    // and its card each have a `btn-back`
+    let back = UIButton(type: .system)
+    back.setTitle("Back", for: .normal)
+    back.accessibilityIdentifier = "sheet-back"
+    back.addAction(UIAction { [weak self] _ in self?.picked.text = "pressed the back behind" }, for: .touchUpInside)
+    back.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(back)
     table.dataSource = self
     table.delegate = self
     table.rowHeight = 53
@@ -34,6 +42,8 @@ final class SheetSameIdsController: UIViewController, UITableViewDataSource, UIT
       picked.centerXAnchor.constraint(equalTo: view.centerXAnchor),
       search.topAnchor.constraint(equalTo: picked.bottomAnchor, constant: 8),
       search.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      back.centerYAnchor.constraint(equalTo: search.centerYAnchor),
+      back.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
       table.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 8),
       table.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -71,7 +81,7 @@ final class SheetSameIdsController: UIViewController, UITableViewDataSource, UIT
 
   private func openSearch() {
     let sheet = SearchSheet { [weak self] name in
-      self?.picked.text = "picked \(name)"
+      self?.picked.text = name.map { "picked \($0)" } ?? "closed the sheet"
       self?.dismiss(animated: true)
     }
     sheet.modalPresentationStyle = .formSheet
@@ -80,10 +90,10 @@ final class SheetSameIdsController: UIViewController, UITableViewDataSource, UIT
 }
 
 private final class SearchSheet: UIViewController {
-  private let onPick: (String) -> Void
+  private let onPick: (String?) -> Void
   private let field = UITextField()
 
-  init(onPick: @escaping (String) -> Void) {
+  init(onPick: @escaping (String?) -> Void) {
     self.onPick = onPick
     super.init(nibName: nil, bundle: nil)
   }
@@ -104,7 +114,11 @@ private final class SearchSheet: UIViewController {
     row.accessibilityIdentifier = "device-row"
     row.accessibilityLabel = "Lobby Elevator, Main Lobby"
     row.addAction(UIAction { [weak self] _ in self?.onPick("Lobby Elevator") }, for: .touchUpInside)
-    for v in [field, found, row] as [UIView] {
+    let close = UIButton(type: .system)
+    close.setTitle("Close", for: .normal)
+    close.accessibilityIdentifier = "sheet-back"
+    close.addAction(UIAction { [weak self] _ in self?.onPick(nil) }, for: .touchUpInside)
+    for v in [field, found, row, close] as [UIView] {
       v.translatesAutoresizingMaskIntoConstraints = false
       view.addSubview(v)
     }
@@ -117,6 +131,8 @@ private final class SearchSheet: UIViewController {
       found.leadingAnchor.constraint(equalTo: field.leadingAnchor),
       row.topAnchor.constraint(equalTo: found.bottomAnchor, constant: 12),
       row.leadingAnchor.constraint(equalTo: field.leadingAnchor),
+      close.topAnchor.constraint(equalTo: row.bottomAnchor, constant: 12),
+      close.leadingAnchor.constraint(equalTo: field.leadingAnchor),
     ])
   }
 

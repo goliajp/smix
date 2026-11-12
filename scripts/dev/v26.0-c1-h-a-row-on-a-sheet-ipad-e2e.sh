@@ -13,6 +13,9 @@
 #   2. a flow's tapOn picks the row on the card: the card goes and the
 #      screen reads "picked Lobby Elevator"
 #   3. `smix tap id:device-row` does the same from the command line
+#   4. `dispatch: xcui` presses the sheet's button over a same-id one behind
+#   5. `smix hide-keyboard` puts the keyboard down with the keyboard's own
+#      key, says so, and the sheet stays
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -92,4 +95,19 @@ until "$SMIX" find "text:picked Lobby Elevator" --device "$UDID" --port "$PORT" 
   sleep 0.5
 done
 log "ok    smix tap id:device-row picks the row on the sheet"
+
+# 4. xcui dispatch: a back button behind the card and a close button on it
+# share an identifier; the runner's own lookup takes the one a touch reaches
+flow xcui '- tapOn: { id: "sheet-back", dispatch: xcui }
+- assertVisible: "closed the sheet"' || fail "dispatch: xcui did not press the button on the sheet: $(grep -m1 -E 'error|FAIL' "$WORK/xcui.log")"
+log "ok    dispatch: xcui presses the button on the sheet, not the one behind it"
+
+# 5. hideKeyboard on a sheet: the iPad keyboard's own key, not a touch
+# outside the keyboard that lands outside the card and closes it
+flow hide '- tapOn: { id: "input-device-search" }' || fail "focusing the field: $(tail -3 "$WORK/hide.log")"
+"$SMIX" hide-keyboard --device "$UDID" --port "$PORT" >"$WORK/hk.txt" 2>&1 || fail "hide-keyboard: $(head -2 "$WORK/hk.txt")"
+grep -q "dismissed by key:Hide keyboard" "$WORK/hk.txt" || fail "hide-keyboard does not say it used the keyboard's key: $(head -1 "$WORK/hk.txt")"
+"$SMIX" find id:input-device-search --device "$UDID" --port "$PORT" 2>&1 | grep -q "exists=true" \
+  || fail "the sheet went with the keyboard"
+log "ok    hideKeyboard on the sheet uses the keyboard's own key, says so, and leaves the sheet"
 log "PASS"

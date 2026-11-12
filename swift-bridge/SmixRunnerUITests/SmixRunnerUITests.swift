@@ -2533,19 +2533,7 @@ final class SmixRunnerUITests: XCTestCase {
           // Resolve by a11y identifier. Try button-typed first (fast path),
           // then fall back to descendants-any when the id sits on a non-Button
           // (Text, View container, etc).
-          let resolved: XCUIElement
-          let buttonEl = app.buttons[identifier]
-          if buttonEl.exists || buttonEl.waitForExistence(timeout: 2) {
-            resolved = buttonEl
-          } else {
-            let anyEl = app.descendants(matching: .any)
-              .matching(NSPredicate(format: "identifier == %@", identifier))
-              .firstMatch
-            guard anyEl.exists || anyEl.waitForExistence(timeout: 3) else {
-              return false
-            }
-            resolved = anyEl
-          }
+          guard let resolved = smixReachableById(app, identifier) else { return false }
           // Off-screen scroll-into-view via swipe on ancestor ScrollView.
           // XCUIElement.tap() / coordinate.tap don't auto-scroll SwiftUI
           // ScrollView contents — surface as "Activation point invalid, no

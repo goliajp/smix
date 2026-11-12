@@ -37,9 +37,19 @@ impl ExpectationFailure {
     }
 }
 
+/// Shorter than this, a value is masked only where it stands as a word of its
+/// own, and not inside other words:
+/// a fill of `d` turned every d on the screen into `***`, and a value that
+/// short is not one a reader of the output could take anything from.
+const DISTINCT: usize = 4;
+
 /// `text` with every whole `secret`, and every quoted piece of it, masked.
 pub fn mask(text: &str, secret: &str) -> String {
-    let whole = text.replace(secret, MASK);
+    let whole = if secret.chars().count() < DISTINCT {
+        as_word(text, secret)
+    } else {
+        text.replace(secret, MASK)
+    };
     let mut out = String::with_capacity(whole.len());
     let mut rest = whole.as_str();
     while let Some(open) = rest.find('"') {
@@ -66,9 +76,33 @@ pub fn mask(text: &str, secret: &str) -> String {
 fn mask_field(text: &str, secret: &str) -> String {
     if is_piece(text, secret) {
         MASK.to_string()
+    } else if secret.chars().count() < DISTINCT {
+        as_word(text, secret)
     } else {
         text.replace(secret, MASK)
     }
+}
+
+/// `text` with `secret` masked where no letter or digit touches it.
+fn as_word(text: &str, secret: &str) -> String {
+    let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(secret) {
+        let (before, after) = (
+            rest[..at].chars().next_back(),
+            rest[at + secret.len()..].chars().next(),
+        );
+        out.push_str(&rest[..at]);
+        out.push_str(if word(before) || word(after) {
+            secret
+        } else {
+            MASK
+        });
+        rest = &rest[at + secret.len()..];
+    }
+    out.push_str(rest);
+    out
 }
 
 fn is_piece(s: &str, secret: &str) -> bool {
@@ -81,6 +115,18 @@ fn is_piece(s: &str, secret: &str) -> bool {
 mod tests {
     use super::*;
     use crate::{FailureCode, FailureInit};
+
+    #[test]
+    fn a_value_too_short_to_tell_apart_is_masked_only_where_it_stands_whole() {
+        // a consumer's `smix fill --text d`: "To***ay", "What was ***etecte***"
+        let said = r#"typed "d" into f; the screen reads "Today" and "What was detected""#;
+        assert_eq!(
+            mask(said, "d"),
+            r#"typed "***" into f; the screen reads "Today" and "What was detected""#
+        );
+        assert_eq!(mask_field("Today", "d"), "Today");
+        assert_eq!(mask_field("d", "d"), MASK);
+    }
 
     #[test]
     fn the_secret_and_quoted_pieces_of_it_are_masked() {

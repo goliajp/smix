@@ -567,14 +567,6 @@ pub async fn cmd_swipe(
     Ok(())
 }
 
-/// `smix describe [--json]` — print the runner's ScreenDescription: the
-/// nameable visible elements, the bundle id the description was taken
-/// from, and the capture timestamp. `--json` emits the wire JSON;
-/// default emits a pretty-printed Debug summary.
-///
-/// It used to promise a title and a status bar. Neither exists anywhere
-/// in the tree, and two of the three metadata fields were empty on top
-/// of that — the help described a richer thing than the code produced.
 /// `smix system-popups [--json]` — print the runner's current SpringBoard
 /// system-popup list (camera permission alerts, "Open in `<App>`?", etc.).
 /// `--json` emits the wire JSON; default emits a pretty-printed Debug
@@ -626,10 +618,14 @@ pub async fn cmd_system_popup_action(
 /// `smix hide-keyboard` — dismiss the soft keyboard if visible.
 pub async fn cmd_hide_keyboard(port: u16, platform: Platform) -> Result<(), ActError> {
     let d = driver_for(platform, port);
-    d.hide_keyboard()
+    let how = d
+        .hide_keyboard_saying()
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
-    println!("keyboard hidden");
+    match how {
+        Some(how) => println!("keyboard hidden — {how}"),
+        None => println!("keyboard hidden"),
+    }
     Ok(())
 }
 
