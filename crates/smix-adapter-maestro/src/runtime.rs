@@ -131,6 +131,7 @@ fn launch_fresh_app_path_from_env(bundle_id: &str) -> Option<String> {
 // AppLike trait + blanket impl for smix_sdk::App
 
 mod refused;
+mod typed_into_mask;
 use refused::refused;
 
 /// Subset of [`smix_sdk::App`] needed by [`Adapter::run`]. The blanket
@@ -2279,41 +2280,12 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 done.map_err(|e| e.without_secret(&value))?;
                 Ok(RunStepReport::Ok)
             }
-            Step::InputText(s) => {
-                let expanded = self.expand_template(s)?;
-                self.app.fill(&smix_sdk::focused(), &expanded).await?;
-                Ok(RunStepReport::Ok)
-            }
+            Step::InputText(s) => self.input_text(s, None, false).await,
             Step::InputTextInto { selector, text } => {
-                let expanded = self.expand_template(text)?;
-                let desugared = self.desugar_localized_text(selector);
-                // A place rather than an element: tap it to take focus,
-                // then type where the focus went. That is what a fill
-                // is once the target is a coordinate.
-                if let Some((nx, ny)) = self.point_for_unreadable(&desugared, IMPLICIT_WAIT).await?
-                {
-                    self.app.tap_at_coord(nx, ny).await?;
-                    self.app.fill(&smix_sdk::focused(), &expanded).await?;
-                } else {
-                    self.app.fill(&desugared, &expanded).await?;
-                }
-                Ok(RunStepReport::Ok)
+                self.input_text(text, Some(selector), false).await
             }
             Step::SetText { selector, text } => {
-                let expanded = self.expand_template(text)?;
-                let Some(selector) = selector else {
-                    self.app.set_text(&smix_sdk::focused(), &expanded).await?;
-                    return Ok(RunStepReport::Ok);
-                };
-                let desugared = self.desugar_localized_text(selector);
-                if let Some((nx, ny)) = self.point_for_unreadable(&desugared, IMPLICIT_WAIT).await?
-                {
-                    self.app.tap_at_coord(nx, ny).await?;
-                    self.app.set_text(&smix_sdk::focused(), &expanded).await?;
-                } else {
-                    self.app.set_text(&desugared, &expanded).await?;
-                }
-                Ok(RunStepReport::Ok)
+                self.input_text(text, selector.as_ref(), true).await
             }
             Step::Back(opts) => {
                 let result = self.app.go_back().await.map(|()| RunStepReport::Ok);

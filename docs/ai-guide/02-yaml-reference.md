@@ -282,7 +282,12 @@ keyboard's suggestion strip). `method: setText` and a target work as with
 A password field is never written out with what it holds, marked or not:
 iOS secure fields and Android password fields report bullets, and a
 Compose field shown through `PasswordVisualTransformation` is recognised
-and written out as one bullet per character.
+and written out as one bullet per character. And what plain `inputText`
+types into such a field is kept as a secret from then on: when the field
+holding the focus after the step is a password field, the value is masked
+as `***` everywhere the run writes, as if it had been named with `secret:`
+— a keyboard that offers the typed word back in its suggestion strip would
+otherwise put it in the next failure's saved tree.
 
 ### Scrolling
 
