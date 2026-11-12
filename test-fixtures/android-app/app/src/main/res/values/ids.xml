@@ -53,4 +53,5 @@
     <item name="cover_hidden_count" type="id" />
     <item name="cover_sheet" type="id" />
     <item name="cover_sheet_taps" type="id" />
+    <item name="fixture_decor_hint" type="id" />
 </resources>

@@ -155,6 +155,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v26.0-c1-b-a-system-dialog-in-front-e2e.sh",
     "v26.0-c1-c-a-password-typed-plainly-e2e.sh",
     "v26.0-c1-d-a-row-scrolled-under-the-bar-e2e.sh",
+    "v26.0-c1-e-a-hint-on-the-decor-view-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.
