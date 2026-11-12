@@ -18,9 +18,6 @@
 //! - `b.w <= 0 || b.h <= 0` → invisible (zero-bounds early reject)
 //! - `root.w <= 0 || root.h <= 0` → conservative pass (unknown root)
 //! - Otherwise → any non-empty rectangle intersection with `tree.bounds`
-//!
-//! Matches swift `TreeRoute.isVisible` (any frame ∩ appFrame intersection)
-//! and maestro `ViewHierarchy.kt:40-50` `isVisible(node)`.
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-screen")]
 
@@ -28,6 +25,8 @@ mod bounds;
 pub use bounds::{Movement, bounds_moved, rect_in_points};
 mod whole_screen;
 pub use whole_screen::beside_other_windows;
+mod scroll_clip;
+pub use scroll_clip::clip_to_scrollers;
 mod facts;
 mod summaries;
 pub use facts::{ScreenFacts, screen_facts};
@@ -602,11 +601,10 @@ impl WindowInfo {
     }
 }
 
-// -------------------- visibility primitives ------------------------------
-
 /// Visibility check.
 ///
-/// Returns `false` for nodes with zero-or-negative bounds (early reject).
+/// Returns `false` for nodes with zero-or-negative bounds, or whose reader
+/// cut them to what shows and found nothing (early reject).
 /// Returns `true` when tree.bounds is unknown (`w<=0||h<=0`) — conservative
 /// pass: a node with sensible bounds shouldn't be filtered just because we
 /// don't have a viewport to clip against. Otherwise checks for any
@@ -617,7 +615,8 @@ impl WindowInfo {
 #[must_use]
 pub fn is_visible_enough(node: &A11yNode, tree: &A11yNode) -> bool {
     let b = node.bounds;
-    if b.w <= 0.0 || b.h <= 0.0 {
+    let cut_away = node.visible_bounds.is_some_and(|v| v.w <= 0.0 || v.h <= 0.0);
+    if b.w <= 0.0 || b.h <= 0.0 || cut_away {
         return false;
     }
     let root = tree.bounds;

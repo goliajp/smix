@@ -180,6 +180,7 @@ impl HttpRunnerClient {
     ) -> Result<PerceivedTree, RunnerTransportError> {
         let mut root: A11yNode = self.json_get("/tree", include).await?;
         derive_roles_recursive(&mut root);
+        smix_screen::clip_to_scrollers(&mut root);
         self.mark_a_one_app_root(&mut root);
         Ok(PerceivedTree {
             source: TreeSource::Accessibility,

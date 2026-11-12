@@ -81,3 +81,20 @@ fn a_chain_answers_for_its_first_layer_held_off_screen() {
     };
     assert_eq!(matched_off_screen(&list(), &chain).len(), 1);
 }
+
+#[test]
+fn a_row_scrolled_out_of_its_list_is_named_off_screen() {
+    // on screen by its frame, behind the bar above the list, and cut
+    // away by the list it is in
+    let mut tree = list();
+    let mut scroller = node("list", 152.0);
+    scroller.raw_type = "scrollView".into();
+    scroller.bounds.h = 722.0;
+    scroller.children = vec![node("row_1", 48.0), node("row_2", 152.0)];
+    tree.children.push(scroller);
+    smix_screen::clip_to_scrollers(&mut tree);
+    assert!(resolve_selector(&tree, &by_id("row_1")).is_none());
+    let off = matched_off_screen(&tree, &by_id("row_1"));
+    assert_eq!(off.len(), 1);
+    assert!(matched_off_screen(&tree, &by_id("row_2")).is_empty());
+}
