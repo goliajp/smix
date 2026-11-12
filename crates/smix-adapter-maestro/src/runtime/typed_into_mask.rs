@@ -42,7 +42,7 @@ impl<A: AppLike + ?Sized> Adapter<'_, A> {
         set: bool,
     ) -> Result<RunStepReport, RunError> {
         let expanded = self.expand_template(text)?;
-        let target = into.map(|sel| self.desugar_localized_text(sel).into_owned());
+        let target = into.cloned();
         let place = match &target {
             Some(t) => self.point_for_unreadable(t, IMPLICIT_WAIT).await?,
             None => None,

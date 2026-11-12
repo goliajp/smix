@@ -834,7 +834,21 @@ fn remove_artifacts(flow: &smix_adapter_maestro::Flow) {
 const KNOWN_BROKEN: &[(&str, usize, &str)] = &[
     (
         "02-yaml-reference",
-        19,
+        4,
+        "assertVideoPlaying and assertVideoFrozen compare screenshots of one \
+         element; a mock's 1x1 pixel never changes, so one of the pair fails \
+         whichever way the mock answered.",
+    ),
+    (
+        "02-yaml-reference",
+        17,
+        "setEnvironment reads, sets and puts back a real device's settings \
+         and keeps the values in this machine's ledger; a mock has neither, \
+         and a test must not write the machine's ledger.",
+    ),
+    (
+        "02-yaml-reference",
+        21,
         "repeat.while.visible loops until the element leaves the screen; \
          a mock that always says visible never exits, and one that said \
          otherwise would be inventing a screen.",

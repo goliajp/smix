@@ -50,6 +50,8 @@ CRATES = os.path.join(ROOT, "crates")
 MACHINE_LEDGER_CALLERS = {
     "crates/smix-capsule/src/runner.rs": "the one helper the CLI and the capsule both call",
     "crates/smix-mcp/src/main.rs": "the server takes a lease per session; it has no capsule",
+    "crates/smix-adapter-maestro/src/runtime/environment.rs": "a flow's setEnvironment keeps the "
+    "values from before in the device's ledger; the flow runtime has no capsule",
 }
 
 # Who may name a tree's old book.

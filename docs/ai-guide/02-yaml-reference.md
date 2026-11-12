@@ -85,13 +85,6 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
     was: "stop"
     within: 1                            # device-independent pixels (default 0)
 
-- assertVideoPlaying:                    # the picture in it changes…
-    id: "tile-3"
-    within: 10s                          # …within this long (default 10s; ms or s)
-- assertVideoFrozen:                     # the picture in it stays the same…
-    id: "tile-3"
-    within: 2s                           # …for this long (default 2s)
-
 - neverVisible:                          # at no moment while these steps run
     id: "loading-overlay"
     during:
@@ -112,6 +105,15 @@ has changed. A failure prints both boxes and how far each edge moved.
 The box compared is the one the element occupies, not the part that
 shows: scrolling a row half out of view changes what shows without
 moving anything.
+
+```yaml
+- assertVideoPlaying:                    # the picture in it changes…
+    id: "player"
+    within: 10s                          # …within this long (default 10s; ms or s)
+- assertVideoFrozen:                     # the picture in it stays the same…
+    id: "player"
+    within: 2s                           # …for this long (default 2s)
+```
 
 `assertVideoPlaying` / `assertVideoFrozen` are smix's own. Each takes
 screenshots one after another and compares only the element's box: playing
@@ -655,6 +657,35 @@ modifiers' meta state; iOS refuses a combination by name.
     notifications: allow
     storage: allow                       # Android's WRITE_EXTERNAL_STORAGE; a no-op on iOS
 ```
+
+```yaml
+- setEnvironment:                        # put back when the run ends, however it ends
+    appearance: dark                     # light / dark
+    textSize: extraLarge                 # extraSmall … large (the default) … accessibilityExtraExtraExtraLarge
+    locale: ja-JP                        # a language tag
+    timeZone: Asia/Tokyo                 # a zone id
+    network: offline                     # online / offline / slow — Android emulators only
+```
+
+`setEnvironment` changes only the settings it names. Each is read first,
+set, and read back; a value that does not read back fails the step. When
+the run ends — passed, failed or timed out — every setting it changed is
+put back to what it read before, newest first, and a setting that cannot
+be put back fails the run. The values from before are also kept in the
+device's ledger as they are changed, so a run that was killed leaves them
+for `smix cleanup --owner` and `smix cleanup --orphans` to put back, and
+`smix status` shows the device as changed, by whom, and from what.
+
+What each platform can set differs. On an iOS simulator appearance and
+text size are the device's own (`simctl ui`, that simulator only); a
+language and a time zone are not — they are given to the app when it
+launches (`-AppleLanguages`, `-AppleLocale`, `TZ`), so they go before
+`launchApp`, and naming them after the app has launched is refused. A
+simulator has no network conditions of its own, and `network` is refused
+there. On an Android emulator the app's language is set for that app, and
+appearance, text size (as a font scale), time zone and network are the
+whole device's: `slow` is the emulator console's `edge` speed and delay,
+`offline` is airplane mode. Network conditions are not set on a phone.
 
 A simulated location outlives the flow that set it, and on a phone it
 outlives the cable — `clearLocation` is how smix puts it back. On an

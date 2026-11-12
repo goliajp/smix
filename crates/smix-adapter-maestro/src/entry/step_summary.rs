@@ -256,6 +256,10 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         Step::AddMedia { paths } => format!("addMedia ({} paths)", paths.len()),
         Step::SetOrientation { orientation } => format!("setOrientation {orientation:?}"),
         Step::SetPosture { posture } => format!("setPosture {}", posture.name()),
+        Step::SetEnvironment { settings } => {
+            let s: Vec<String> = settings.iter().map(|(k, v)| format!("{k}={v}")).collect();
+            format!("setEnvironment {}", s.join(" "))
+        }
         Step::RotateCrown { rotations, .. } => format!("rotateCrown {rotations}"),
         Step::StartRecording { path } => format!("startRecording {path}"),
         Step::StopRecording => "stopRecording".into(),

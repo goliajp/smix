@@ -30,13 +30,6 @@
     was: "stop"
     within: 1                            # device-independent pixels (default 0)
 
-- assertVideoPlaying:                    # the picture in it changes…
-    id: "tile-3"
-    within: 10s                          # …within this long (default 10s; ms or s)
-- assertVideoFrozen:                     # the picture in it stays the same…
-    id: "tile-3"
-    within: 2s                           # …for this long (default 2s)
-
 - neverVisible:                          # at no moment while these steps run
     id: "loading-overlay"
     during:

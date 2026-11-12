@@ -57,6 +57,7 @@ mod device_for;
 mod device_hub;
 mod device_in_use;
 mod device_ownership;
+mod env_orphans;
 use device_ownership::{BootClaim, EmulatorState, boot_claim};
 mod down;
 /// Distributed `smix run --nodes`: roster parsing, cross-node flow
@@ -6548,18 +6549,6 @@ fn run_port(flag: Option<u16>, registered: impl FnOnce() -> Option<u16>) -> u16 
     flag.or_else(registered).unwrap_or(act::DEFAULT_RUNNER_PORT)
 }
 
-/// The port a single-shot verb dials.
-///
-/// The same ladder [`run_port`] walks, with the env rung read here
-/// rather than bound by clap: these verbs spell the flag `--port`, and
-/// giving that one an `env =` would silently widen what
-/// `SMIX_RUNNER_PORT` means for anyone passing `--port` explicitly
-/// alongside it.
-///
-/// They had no `--device` at all until the guide gate asked, so the
-/// registry rung was unreachable from them: in a workspace with a sim
-/// registered on 22088, `smix run` dialled 22088 and `smix tap`
-/// dialled 22087, and nothing said so.
 /// The device a `run` should drive, given what the caller named and
 /// what the project defaults to. Explicit `--device` always wins; with
 /// none, the project's recorded pointer stands in; with neither, `None`

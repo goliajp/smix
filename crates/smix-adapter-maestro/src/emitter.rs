@@ -456,6 +456,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::SetOrientation { .. } => "setOrientation",
         Step::SetPosture { .. } => "setPosture",
         Step::RotateCrown { .. } => "rotateCrown",
+        Step::SetEnvironment { .. } => "setEnvironment",
         Step::StartRecording { .. } => "startRecording",
         Step::StopRecording => "stopRecording",
         Step::AssertScreenshot { .. } => "assertScreenshot",

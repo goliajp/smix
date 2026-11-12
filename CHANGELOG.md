@@ -62,6 +62,17 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Added
 
+- **`setEnvironment: { appearance, textSize, locale, timeZone, network }`.**
+  A flow names the settings it needs; each is read, set and read back, and
+  when the run ends — however it ends — each is put back. The values from
+  before are kept in the device's ledger as they change, so `smix cleanup
+  --owner` and `--orphans` put back what a killed run left, and `smix
+  status` shows a device as changed, by whom and from what. iOS simulators
+  set appearance and text size on the device and give a language and a time
+  zone to the app's launches; Android sets all five, network conditions on
+  emulators only (`offline`, `slow`). Rust: `smix_lease::environment`,
+  `Resource::Environment`, `CleanupAction::RestoreEnvironment`,
+  `LaunchAppOptions::environment`, `Adapter::with_device_id`.
 - **`assertVideoPlaying` / `assertVideoFrozen: { <selector>, within? }`.**
   Whether the picture inside an element is moving: screenshots taken one
   after another and compared inside the element's box. Playing passes at
@@ -78,6 +89,8 @@ All notable changes to the `smix` workspace are documented here. The format foll
 - `smix_lease::STALE_AFTER_SECS` is gone: nothing read it, and its comment
   described a heartbeat no holder writes.
 - `smix_mcp::SessionState::require` returns `Result<Bound, String>`.
+- `smix_lease::CleanupAction` has `RestoreEnvironment`, and
+  `smix_sdk::LaunchAppOptions` has `environment`.
 
 ## [25.1.0] — 2026-11-10
 

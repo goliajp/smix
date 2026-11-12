@@ -1,10 +1,26 @@
-- drag:
-    from: { id: "weather_widget" }       # where the finger goes down: an element's centre…
-    to: "50%,12%"                        # …or a point; either form at either end
-    hold: 500                            # ms still before moving, 0..10000; default 500
-    duration: 800                        # ms moving, 50..10000; default 800
-    release: 300                         # ms still before lifting, 0..5000; default 300
+- pinch:
+    over: { id: "player" }               # the fingers meet at this element's centre
+    from: 1                              # zoom factor at the start
+    to: 3                                # ...and at the end: 1 → 3 zooms in threefold
+    duration: 500                        # ms, 50..10000; default 500
 
-- drag:
-    from: { point: "62%,62%" }           # a point may also be written as `point:`
-    to: { ocrText: "Remove" }            # ocrText and anchorRelative ends are read as points
+- pinch:
+    at: "50%,50%"                        # a point on the screen, when nothing there has a name
+    fromSpan: 0.6                        # finger distances as shares of the screen's shorter side
+    toSpan: 0.2                          # 0.6 → 0.2 zooms out
+
+# Zoom and then drag without lifting: both fingers move together by
+# `pan` (shares of the screen's width and height) after the pinch.
+- pinch:
+    over: { id: "player" }
+    from: 1
+    to: 3
+    pan: "0%,-20%"                       # a fifth of the screen up
+    panDuration: 300                     # ms; default 300
+
+# A recognizer that counts from the touch, or begins on any movement:
+- pinch:
+    over: { id: "player" }
+    from: 1
+    to: 3
+    runUp: slide                         # spread (default) | slide | none

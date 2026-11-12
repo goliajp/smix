@@ -373,6 +373,25 @@ pub fn execute(actions: &[CleanupAction]) -> Vec<Outcome> {
                 serial,
                 device_port,
             } => remove_reverse_port(serial, *device_port),
+            CleanupAction::RestoreEnvironment { device_id, changes } => {
+                match smix_lease::environment::restore(device_id, changes, &smix_adb::std_command)
+                    .as_slice()
+                {
+                    [] => match crate::runner::machine_leases().and_then(|leases| {
+                        smix_lease::environment::forget(&leases, device_id)
+                            .map_err(|e| e.to_string())
+                    }) {
+                        Ok(()) => Outcome::Closed(format!(
+                            "{device_id}: {} setting(s) put back",
+                            changes.len()
+                        )),
+                        Err(e) => Outcome::Failed(format!(
+                            "{device_id}: settings put back, but the ledger still lists them: {e}"
+                        )),
+                    },
+                    failed => Outcome::Failed(failed.join("; ")),
+                }
+            }
             CleanupAction::ShutdownSim { udid } => shutdown_sim(udid),
         })
         .collect()

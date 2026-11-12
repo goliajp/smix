@@ -1,6 +1,6 @@
-- sendPush:
-    title: "Order shipped"
-    body: "Your parcel is on its way"
-    data: { route: "detail" }            # the app's own keys, beside `aps`
-- tapOn: "Order shipped"                 # the banner, found by its title
-- sendPush: { payload: "push/order.apns" }   # an APNs payload file, relative to the flow
+- setEnvironment:                        # put back when the run ends, however it ends
+    appearance: dark                     # light / dark
+    textSize: extraLarge                 # extraSmall … large (the default) … accessibilityExtraExtraExtraLarge
+    locale: ja-JP                        # a language tag
+    timeZone: Asia/Tokyo                 # a zone id
+    network: offline                     # online / offline / slow — Android emulators only
