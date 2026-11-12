@@ -877,13 +877,14 @@ fn known_broken(page: &str, block: usize) -> Option<&'static str> {
 /// The list is a claim about how much of the corpus this gate really
 /// judges, so it has to stay small enough to be worth having.
 ///
-/// Three today, all of them examples whose ending depends on a screen.
-/// The ceiling is one above, so a fourth is a deliberate act rather
+/// Five today: three whose ending depends on a screen, and two that need
+/// a device itself — a picture that moves, settings to change and put
+/// back. The ceiling is the count, so a sixth is a deliberate act rather
 /// than a quiet one.
 #[test]
 fn the_unjudged_list_stays_short() {
     assert!(
-        KNOWN_BROKEN.len() <= 4,
+        KNOWN_BROKEN.len() <= 5,
         "{} examples the gate does not judge — at some point the list \
          is the finding",
         KNOWN_BROKEN.len()
