@@ -615,7 +615,9 @@ impl WindowInfo {
 #[must_use]
 pub fn is_visible_enough(node: &A11yNode, tree: &A11yNode) -> bool {
     let b = node.bounds;
-    let cut_away = node.visible_bounds.is_some_and(|v| v.w <= 0.0 || v.h <= 0.0);
+    let cut_away = node
+        .visible_bounds
+        .is_some_and(|v| v.w <= 0.0 || v.h <= 0.0);
     if b.w <= 0.0 || b.h <= 0.0 || cut_away {
         return false;
     }

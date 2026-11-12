@@ -27,7 +27,11 @@ fn clip(node: &mut A11yNode, within: Option<Rect>) {
         match intersect(shown, window) {
             Some(part) => node.visible_bounds = Some(part),
             None => {
-                node.visible_bounds = Some(Rect { w: 0.0, h: 0.0, ..shown });
+                node.visible_bounds = Some(Rect {
+                    w: 0.0,
+                    h: 0.0,
+                    ..shown
+                });
                 node.visible = false;
             }
         }
@@ -46,7 +50,12 @@ fn clip(node: &mut A11yNode, within: Option<Rect>) {
 fn intersect(a: Rect, b: Rect) -> Option<Rect> {
     let (x1, y1) = (a.x.max(b.x), a.y.max(b.y));
     let (x2, y2) = ((a.x + a.w).min(b.x + b.w), (a.y + a.h).min(b.y + b.h));
-    (x2 > x1 && y2 > y1).then(|| Rect { x: x1, y: y1, w: x2 - x1, h: y2 - y1 })
+    (x2 > x1 && y2 > y1).then_some(Rect {
+        x: x1,
+        y: y1,
+        w: x2 - x1,
+        h: y2 - y1,
+    })
 }
 
 #[cfg(test)]
@@ -75,7 +84,10 @@ mod tests {
             "application",
             0.0,
             874.0,
-            vec![node("navigationBar", 62.0, 54.0, vec![]), node("scrollView", 152.3, 721.7, rows)],
+            vec![
+                node("navigationBar", 62.0, 54.0, vec![]),
+                node("scrollView", 152.3, 721.7, rows),
+            ],
         )
     }
 
@@ -95,7 +107,10 @@ mod tests {
         let row = &s.children[1].children[2];
         assert!(row.visible);
         let shown = row.visible_bounds.expect("cut");
-        assert!((shown.y - 152.3).abs() < 1e-9 && (shown.h - 95.0).abs() < 1e-6, "{shown:?}");
+        assert!(
+            (shown.y - 152.3).abs() < 1e-9 && (shown.h - 95.0).abs() < 1e-6,
+            "{shown:?}"
+        );
         assert_eq!(row.bounds.h, 100.0, "the frame is left as it was");
     }
 
@@ -108,7 +123,12 @@ mod tests {
 
     #[test]
     fn a_scroller_inside_a_scroller_shows_only_what_both_show() {
-        let inner = node("collectionView", 100.0, 400.0, vec![node("cell", 80.0, 60.0, vec![])]);
+        let inner = node(
+            "collectionView",
+            100.0,
+            400.0,
+            vec![node("cell", 80.0, 60.0, vec![])],
+        );
         let mut s = node("scrollView", 120.0, 300.0, vec![inner]);
         clip_to_scrollers(&mut s);
         let cell = &s.children[0].children[0];
