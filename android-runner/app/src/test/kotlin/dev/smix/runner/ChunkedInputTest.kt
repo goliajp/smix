@@ -15,6 +15,7 @@
 package dev.smix.runner
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -288,5 +289,15 @@ class ChunkedLoopTest {
     fun nothing_is_added_while_the_fields_own_app_holds_the_focus() {
         assertEquals("", ChunkedInput.focusNow("dev.smix.fixture", "dev.smix.fixture"))
         assertEquals("", ChunkedInput.focusNow("dev.smix.fixture", null))
+    }
+
+    @Test
+    fun aSetWhoseFieldLeftSaysItWasASet() {
+        // the host checks a set was answered as one: a runner that predates
+        // `method` types instead, and this answer is a set's
+        val body = org.json.JSONObject(ChunkedInput.leftWithEverythingBody("8765", "", "", false, 1, "setText"))
+        assertEquals("setText", body.getString("method"))
+        assertEquals("unread", body.getString("readBack"))
+        assertFalse(org.json.JSONObject(ChunkedInput.leftWithEverythingBody("8765", "", "", false, 1)).has("method"))
     }
 }

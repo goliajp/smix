@@ -1653,17 +1653,8 @@ class SmixHttpServer(
         val started = android.os.SystemClock.elapsedRealtime()
         val text = req.text
         val focusPx = focusRectPx(req.focusIn)
-        // `adb shell input text` types into whichever field is focused,
-        // and says nothing about whether one was. Its exit code means
-        // "the key events were dispatched", not "the characters landed"
-        // — so this used to answer OK unconditionally, and a consumer
-        // reported the first named fill on a screen typing nothing while
-        // reporting success. Reproduced on emulator-5554 with the
-        // fixture: `smix fill` said "17 chars", the field held none.
-        //
-        // The clear handler next door has always done this properly:
-        // find the focused editable node, act on it, report what
-        // happened. This is that, for the other half of the same job.
+        // `input text` types into whichever field is focused and says
+        // nothing about whether one was, so the focused node is found first.
         //
         // Waiting for the focus rather than sampling once: the caller
         // taps to focus immediately before, and an IME that has not
@@ -1720,7 +1711,11 @@ class SmixHttpServer(
                     TextEntry.maskedRefusal(whichField, asked = req.setText),
                 )
             val took = TextEntry.set(focused, value)
-            val held = awaitChunk(focused, before, text, masked, TEXT_LAND_MS).text.also { focused.recycle() }
+            val read = awaitChunk(focused, before, text, masked, TEXT_LAND_MS).also { focused.recycle() }
+            if (TextEntry.leftAfterSet(took, read.present)) {
+                return newFixedLengthResponse(Response.Status.OK, "application/json", ChunkedInput.leftWithEverythingBody(text, before, read.text, masked, 1, "setText"))
+            }
+            val held = read.text
             if (!took || !RunnerWire.textLanded(before, held, text, masked)) {
                 return errorJson(
                     Response.Status.INTERNAL_ERROR,

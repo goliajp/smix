@@ -29,6 +29,13 @@ All notable changes to the `smix` workspace are documented here. The format foll
   one.** Android's permission dialog says `Don’t allow` and iOS's alerts
   `Don’t Allow`; `tapOn: "Don't allow"` matched nothing. Curly and straight
   quotes are now the same character to every text match.
+- **Android: a set into a field that submits itself is done, not "did not
+  land".** `inputText: { method: setText }` into a six-digit code field that
+  submits on the sixth digit and takes the page away read the gone field back
+  as empty and failed `text_did_not_land`, "held \"\" and holds \"\"",
+  while the app had the code. A set the field accepted, whose field then
+  left the screen, now passes and says it could not be read back
+  (`readBack: unread`), as typing has since 11.0.
 - **`smix tree` with the system's window in front says so.** With
   Android's permission dialog in front it opened with a note about the
   app's Compose dialogs and told an app that already carried the probe to

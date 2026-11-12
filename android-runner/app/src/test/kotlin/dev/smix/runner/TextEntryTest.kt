@@ -56,4 +56,12 @@ class TextEntryTest {
         assertTrue(s.contains("smix fill --set-text"))
         assertFalse(TextEntry.composedSentence("x", null).contains("()"))
     }
+
+    @Test
+    fun aSetFieldThatLeftTheScreenIsDoneNotEmpty() {
+        assertTrue(TextEntry.leftAfterSet(took = true, present = false))
+        assertFalse(TextEntry.leftAfterSet(took = true, present = true))
+        // refused and then gone: nothing says the text went in
+        assertFalse(TextEntry.leftAfterSet(took = false, present = false))
+    }
 }
