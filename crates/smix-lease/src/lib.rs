@@ -24,6 +24,7 @@
 //! everything after that is a pure function. It is what lets the ordering
 //! of a teardown be tested without a device.
 
+pub mod beat;
 mod carry;
 mod guards;
 pub mod held;
@@ -33,16 +34,6 @@ pub mod vanish;
 pub use guards::*;
 
 use serde::{Deserialize, Serialize};
-
-/// How long a holder may go without a heartbeat before its lease is
-/// considered abandoned.
-///
-/// Holders beat every 30 s, so this tolerates two missed beats. The
-/// tolerance is not politeness: a machine under load — or one that just
-/// came back from sleep — can starve a healthy holder past a single
-/// interval, and declaring that holder dead would have a second process
-/// tear down a session that is still running.
-pub const STALE_AFTER_SECS: i64 = 90;
 
 /// Enough to recognise a process later, or refuse to signal it.
 ///
@@ -717,11 +708,17 @@ pub fn assess(facts: &Facts) -> Admission {
     // reclaiming costs somebody their session — and the way out of a
     // genuinely wedged holder is to end the process, which a person can
     // establish and this cannot.
-    if heartbeat_expired(&lease.heartbeat_at, &facts.now) {
-        return deny(true);
+    //
+    // Unless it holds nothing. A boot row says who may shut the device
+    // down, not who is using it — the dead-holder branch reads it that
+    // way too — and a long-lived holder that gave the device back keeps
+    // only that: an MCP server after smix_release was still named as the
+    // device's user for as long as it ran.
+    if holds_something(lease) {
+        deny(true)
+    } else {
+        Admission::Granted
     }
-
-    deny(true)
 }
 
 /// Is this workspace entitled to shut this device down?
@@ -808,21 +805,15 @@ pub fn is_process_backed(r: &Resource) -> bool {
     }
 }
 
-/// Has the holder stopped beating for longer than [`STALE_AFTER_SECS`]?
-///
-/// An unparseable timestamp answers `false` — refuse to preempt rather
-/// than preempt on a reading we could not take. This branch is only ever
-/// reached with the holder's process alive and matching, so `false` keeps
-/// a running session running and reports a named holder the operator can
-/// act on; `true` would tear down a live session on the strength of a
-/// corrupt string. Not a fallback for a missing value — a decision about
-/// which way to be wrong.
-fn heartbeat_expired(heartbeat_at: &str, now: &str) -> bool {
-    let parse = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok();
-    match (parse(heartbeat_at), parse(now)) {
-        (Some(hb), Some(n)) => (n - hb).num_seconds() > STALE_AFTER_SECS,
-        _ => false,
-    }
+/// Whether `lease` holds anything on its holder's behalf: a process it
+/// started, a claim, or a row this binary cannot read. A boot row alone
+/// does not; it says who may shut the device down.
+#[must_use]
+pub fn holds_something(lease: &Lease) -> bool {
+    lease.resources.iter().any(|row| {
+        row.known()
+            .is_none_or(|r| is_process_backed(r) || matches!(r, Resource::Claimed { .. }))
+    })
 }
 
 /// The closes a dead holder's lease owes, in the order they must happen.

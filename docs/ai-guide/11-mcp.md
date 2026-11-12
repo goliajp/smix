@@ -55,6 +55,13 @@ smix_use        { "udid": "<udid>", "bundleId": "com.example.app" }
 app; `bundleId` is required. Until a `smix_use` has succeeded, every other tool
 answers that no device is bound and names `smix_use`.
 
+While a session drives a device it holds the device's lease, and a `smix run`
+against that device is refused (exit 7) naming the server. A session that has
+had no command for 30 minutes gives the device back by itself — runner down,
+lease released, as `smix_release` does — and its next tool call says so and
+names `smix_use`. `SMIX_MCP_IDLE_RELEASE` sets the limit: `45m`, `2h`, `90s`,
+or `off` to keep the device for as long as the server runs.
+
 ## A session
 
 What driving actually looks like:

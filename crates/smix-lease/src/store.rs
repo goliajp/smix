@@ -592,6 +592,11 @@ pub fn add_resource(dir: &LeaseDir, device_id: &str, resource: Resource) -> Resu
         heartbeat_at: now.clone(),
         resources: Vec::new(),
     });
+    // Starting something under a holder that holds nothing makes this
+    // process the holder: the other is not this resource's owner.
+    if crate::is_process_backed(&resource) && !crate::holds_something(&lease) {
+        lease.holder = identify_self();
+    }
     let same_kind = std::mem::discriminant(&resource);
     // A row this binary cannot read is never what is being replaced, so
     // it survives the de-duplication. Every `retain` in this file
@@ -733,12 +738,6 @@ pub fn record_claim(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseError> {
     add_resource(dir, device_id, Resource::Claimed { at: now_rfc3339() })
 }
 
-/// Forget every resource of one kind, and the ledger itself once nothing
-/// worth tearing down is left.
-///
-/// A `Booted { by_us: false }` row is not worth keeping a ledger for: it
-/// records a device somebody else brought up, which is precisely the
-/// thing this process must not act on.
 /// Whether a ledger still says anything a later command must reason about.
 ///
 /// Two kinds of row say nothing on their own: a boot row for a device
@@ -748,9 +747,6 @@ pub fn record_claim(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseError> {
 /// only those is a husk that reads like an occupied device — and, for the
 /// identity row, one that would later be read as a device that vanished,
 /// when all that happened is that smix shut it down itself.
-///
-/// This was spelled out in four places before the identity row existed,
-/// and a fifth kind of silent row would have had to be added to each.
 fn worth_keeping(lease: &Lease) -> bool {
     lease.resources.iter().any(|row| {
         row.known().is_none_or(|r| match r {
@@ -770,6 +766,8 @@ fn worth_keeping(lease: &Lease) -> bool {
     })
 }
 
+/// Forget every resource of one kind, and the ledger itself once nothing
+/// worth tearing down is left.
 pub fn drop_resource_kind(
     dir: &LeaseDir,
     device_id: &str,

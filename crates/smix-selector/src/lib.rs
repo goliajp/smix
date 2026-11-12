@@ -47,6 +47,8 @@
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-selector")]
 
+mod quotes;
+
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -233,12 +235,13 @@ impl Pattern {
     /// text patterns are infallible.
     pub fn compile(&self) -> Result<CompiledPattern, regex::Error> {
         match self {
-            Pattern::Text(s) => Ok(CompiledPattern::Text(s.clone())),
+            Pattern::Text(s) => Ok(CompiledPattern::Text(quotes::fold(s).into_owned())),
             Pattern::Regex { regex, flags: _ } => {
+                let regex = quotes::fold(regex);
                 let final_pattern = if regex.starts_with("(?i)") {
-                    regex.clone()
+                    regex.into_owned()
                 } else {
-                    format!("(?i){}", regex)
+                    format!("(?i){regex}")
                 };
                 regex::Regex::new(&final_pattern).map(CompiledPattern::Regex)
             }
@@ -681,26 +684,11 @@ pub fn match_text_compiled(node: &A11yNode, pattern: &CompiledPattern) -> bool {
         node.identifier.as_deref(),
         node.text.as_deref(),
     ];
+    // The pattern was folded when it was compiled; see `quotes`.
+    let mut texts = candidates.iter().flatten().map(|c| quotes::fold(c));
     match pattern {
-        CompiledPattern::Text(p) => {
-            if p.is_empty() {
-                return false;
-            }
-            for c in candidates.iter().flatten() {
-                if c.eq_ignore_ascii_case(p) {
-                    return true;
-                }
-            }
-            false
-        }
-        CompiledPattern::Regex(re) => {
-            for c in candidates.iter().flatten() {
-                if re.is_match(c) {
-                    return true;
-                }
-            }
-            false
-        }
+        CompiledPattern::Text(p) => !p.is_empty() && texts.any(|c| c.eq_ignore_ascii_case(p)),
+        CompiledPattern::Regex(re) => texts.any(|c| re.is_match(&c)),
     }
 }
 
@@ -869,49 +857,9 @@ fn format_pattern(p: &Pattern) -> String {
 /// [`Pattern::compile`] once + [`match_text_compiled`] per node.
 #[must_use]
 pub fn match_text(node: &A11yNode, pattern: &Pattern) -> bool {
-    let candidates: [Option<&str>; 6] = [
-        node.label.as_deref(),
-        node.title.as_deref(),
-        node.value.as_deref(),
-        node.placeholder_value.as_deref(),
-        node.identifier.as_deref(),
-        node.text.as_deref(),
-    ];
-    match pattern {
-        Pattern::Text(p) => {
-            if p.is_empty() {
-                return false;
-            }
-            for c in candidates.iter().flatten() {
-                if c.eq_ignore_ascii_case(p) {
-                    return true;
-                }
-            }
-            false
-        }
-        Pattern::Regex { regex, flags: _ } => {
-            // Always case-insensitive. The `flags` field is purely
-            // wire-shape for round-trip JSON parity; on the matching side we
-            // unconditionally prepend `(?i)` (or skip if user already
-            // wrote it) because Rust `regex::Regex::new` doesn't accept
-            // a separate flags arg — case folding goes in the pattern
-            // as the `(?i)` inline group.
-            let final_pattern = if regex.starts_with("(?i)") {
-                regex.clone()
-            } else {
-                format!("(?i){}", regex)
-            };
-            let Ok(re) = regex::Regex::new(&final_pattern) else {
-                return false;
-            };
-            for c in candidates.iter().flatten() {
-                if re.is_match(c) {
-                    return true;
-                }
-            }
-            false
-        }
-    }
+    pattern
+        .compile()
+        .is_ok_and(|compiled| match_text_compiled(node, &compiled))
 }
 
 #[cfg(test)]

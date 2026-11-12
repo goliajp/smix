@@ -22,6 +22,7 @@ pub async fn cmd_tree(
     keyboard: bool,
     reader: TreeReader,
     ios: bool,
+    device: Option<&str>,
 ) -> Result<(), ActError> {
     // The client rather than the driver, because the driver's `tree` hands
     // back the root alone and the source is the half a reader needs most
@@ -46,7 +47,10 @@ pub async fn cmd_tree(
     } else {
         // The accessibility reader's blind spot is a Compose dialog, and
         // the way out is an Android dependency: on iOS the note is noise.
-        if !ios && let Some(caveat) = perceived.caveat() {
+        // Nor is it the story when the system's window is in front.
+        if let Some(front) = crate::tree_note::system_in_front(&perceived.root, device) {
+            println!("# {front}");
+        } else if !ios && let Some(caveat) = perceived.caveat() {
             println!("# {caveat}");
         }
         print_tree_outline(&perceived.root, 0);

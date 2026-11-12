@@ -30,6 +30,9 @@ pub struct Bound {
 #[derive(Debug, Default)]
 pub struct SessionState {
     bound: Mutex<Option<Bound>>,
+    /// Why nothing is bound, when the server let the device go by itself
+    /// rather than because a tool asked.
+    let_go: Mutex<Option<String>>,
 }
 
 /// What to tell a caller that has not chosen a device yet.
@@ -84,6 +87,7 @@ impl SessionState {
     /// old runner needs releasing — this type tracks the choice, it does
     /// not run teardown.
     pub fn bind(&self, next: Bound) -> Option<Bound> {
+        *self.let_go.lock().expect("session lock") = None;
         let mut slot = self.bound.lock().expect("session lock");
         slot.replace(next)
     }
@@ -99,9 +103,22 @@ impl SessionState {
         self.bound.lock().expect("session lock").take()
     }
 
+    /// Drop the binding because the server let the device go, keeping
+    /// `why` for the next tool that needs one.
+    pub fn let_go(&self, why: String) -> Option<Bound> {
+        *self.let_go.lock().expect("session lock") = Some(why);
+        self.release()
+    }
+
     /// The current binding, or the error a tool should return without one.
-    pub fn require(&self) -> Result<Bound, &'static str> {
-        self.current().ok_or(UNBOUND_HINT)
+    pub fn require(&self) -> Result<Bound, String> {
+        self.current().ok_or_else(|| {
+            self.let_go
+                .lock()
+                .expect("session lock")
+                .clone()
+                .unwrap_or_else(|| UNBOUND_HINT.to_string())
+        })
     }
 }
 
@@ -205,6 +222,23 @@ mod tests {
         assert_eq!(s.release().expect("was bound").udid, "AAAA");
         assert!(s.current().is_none());
         assert_eq!(s.require().expect_err("unbound again"), UNBOUND_HINT);
+    }
+
+    #[test]
+    fn a_device_let_go_says_why_until_one_is_bound_again() {
+        let s = SessionState::new();
+        s.bind(Bound {
+            udid: "AAAA".into(),
+            port: 22087,
+        });
+        assert_eq!(s.let_go("idle".into()).expect("was bound").udid, "AAAA");
+        assert_eq!(s.require().expect_err("let go"), "idle");
+        s.bind(Bound {
+            udid: "AAAA".into(),
+            port: 22087,
+        });
+        s.release();
+        assert_eq!(s.require().expect_err("released"), UNBOUND_HINT);
     }
 
     #[test]

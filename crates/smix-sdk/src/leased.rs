@@ -31,8 +31,12 @@ pub enum AdmissionError {
     /// caller told "busy" can do nothing with that, and a person told
     /// which pid holds it can.
     #[error(
-        "device {device_id} is in use by pid {holder_pid} ({holder_cmd}), held since {acquired_at}\n\
-         Wait for it to finish, or run `smix lease status {device_id}` to see what it has open."
+        "device {device_id} is in use by pid {holder_pid} ({holder_cmd}), held since \
+         {acquired_at}{}\n\
+         Wait for it to finish, or run `smix lease status {device_id}` to see what it has \
+         open.{}",
+        idle_clause(*.idle_secs),
+        mcp_clause(.holder_cmd)
     )]
     InUse {
         /// The device.
@@ -43,6 +47,10 @@ pub enum AdmissionError {
         holder_cmd: String,
         /// Since when (RFC3339).
         acquired_at: String,
+        /// Seconds since the holder last wrote to the ledger. An MCP
+        /// server writes it as it serves commands; a `smix run` only when
+        /// it starts. `None` when the ledger's time does not parse.
+        idle_secs: Option<u64>,
     },
     /// The previous holder died, and what it left is not a service that
     /// can be adopted. Distinct from [`AdmissionError::InUse`] because
@@ -80,6 +88,24 @@ pub enum AdmissionError {
     /// The ledger itself could not be read or written.
     #[error(transparent)]
     Ledger(#[from] store::LeaseError),
+}
+
+fn idle_clause(idle_secs: Option<u64>) -> String {
+    idle_secs.map_or_else(String::new, |s| {
+        format!(", ledger last written {} ago", smix_lease::beat::spoken(s))
+    })
+}
+
+/// The one holder that can be idle for hours while alive is an MCP
+/// server whose conversation moved on; say how that ends.
+fn mcp_clause(holder_cmd: &str) -> &'static str {
+    if holder_cmd.contains("smix-mcp") {
+        "\nAn smix-mcp session gives the device back after SMIX_MCP_IDLE_RELEASE (30m unless \
+         set) with no command; one that has not is an older server or set to keep it. Its \
+         conversation can call smix_release, or end that process."
+    } else {
+        ""
+    }
 }
 
 /// A device this process holds the lease on.
@@ -144,6 +170,9 @@ impl<'a> Leased<'a> {
                     holder_pid: c.holder.pid,
                     holder_cmd: c.holder.cmd,
                     acquired_at: c.acquired_at,
+                    idle_secs: facts.existing.as_ref().and_then(|held| {
+                        smix_lease::beat::idle_secs(&held.lease.heartbeat_at, &facts.now)
+                    }),
                 });
             }
             Admission::Adoptable => {
@@ -694,7 +723,16 @@ mod tests {
             holder: store::identify_self(),
             acquired_at: store::now_rfc3339(),
             heartbeat_at: store::now_rfc3339(),
-            resources: vec![smix_lease::Row::Known(Resource::Booted { by_us: true })],
+            // A runner: a holder left with only a boot row holds nothing.
+            resources: vec![
+                smix_lease::Row::Known(Resource::Booted { by_us: true }),
+                smix_lease::Row::Known(Resource::Runner {
+                    port: 22087,
+                    bundle: None,
+                    log: None,
+                    proc: store::identify_self(),
+                }),
+            ],
         }
     }
 
@@ -763,6 +801,56 @@ mod tests {
             ex.seen.borrow().is_empty(),
             "a live session must never be cleaned up"
         );
+    }
+
+    #[test]
+    fn a_refusal_says_how_long_the_holder_has_been_quiet() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let mut lease = live_lease("UDID-QUIET");
+        lease.holder = store::identify(1).expect("pid 1 is always there");
+        lease.heartbeat_at =
+            (chrono::Utc::now() - chrono::Duration::minutes(14 * 60 + 3)).to_rfc3339();
+        store::write(&LeaseDir::at(tmp.path()), &lease).expect("write");
+        let e = Leased::acquire(
+            &NeverCalled,
+            &LeaseDir::at(tmp.path()),
+            "UDID-QUIET",
+            &executor(true),
+        )
+        .err()
+        .expect("refused");
+        let AdmissionError::InUse { idle_secs, .. } = &e else {
+            panic!("expected InUse, got {e:?}")
+        };
+        assert!(
+            idle_secs.is_some_and(|s| s >= (14 * 60 + 3) * 60),
+            "{idle_secs:?}"
+        );
+        assert!(
+            e.to_string().contains("ledger last written 14h 3m ago"),
+            "{e}"
+        );
+        assert!(
+            !e.to_string().contains("smix_release"),
+            "not an MCP holder: {e}"
+        );
+    }
+
+    #[test]
+    fn a_refused_mcp_holder_comes_with_how_it_lets_go() {
+        let e = AdmissionError::InUse {
+            device_id: "UDID".into(),
+            holder_pid: 73,
+            holder_cmd: "/usr/local/bin/smix-mcp".into(),
+            acquired_at: "2026-11-11T11:26:59Z".into(),
+            idle_secs: None,
+        };
+        let text = e.to_string();
+        assert!(
+            text.contains("SMIX_MCP_IDLE_RELEASE") && text.contains("smix_release"),
+            "{text}"
+        );
+        assert!(!text.contains("last written"), "{text}");
     }
 
     #[test]
