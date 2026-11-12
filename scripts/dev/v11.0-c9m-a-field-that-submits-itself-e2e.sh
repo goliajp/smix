@@ -121,4 +121,16 @@ result="$(holds fixture_code_result)" || cannot_judge "the code screen has no re
 [ "$result" = "code 123456" ] \
   || fail "the app received something other than what was typed: result label '$result'"
 log "typing with no field named: the app got exactly 123456"
+
+# 3. The field that leaves, set rather than typed. The set's read-back found
+# no node and called it an empty field: `text_did_not_land`, "held \"\" and
+# holds \"\"", while the app had taken the code and moved on.
+rc=0
+run_flow set-leaving '- inputText: { id: "fixture_code_leaving", text: "8765", method: setText }' || rc=$?
+result="$(holds fixture_code_result)" || cannot_judge "the code screen has no result label"
+[ "$result" = "leaving 8765" ] \
+  || cannot_judge "the app did not receive the set code (result label: '$result'), so there is nothing here about the readback"
+[ "$rc" = 0 ] \
+  || fail "the app took the set code and the step still failed (exit $rc): $(grep -m1 'FAIL' "$WORK/set-leaving.log" | cut -c1-300)"
+log "a field that left once set: the step passed, the app got 8765"
 log "PASS"

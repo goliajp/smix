@@ -59,6 +59,12 @@ object TextEntry {
             ". An app can rewrite what is set on it (a formatter or a length limit), and a " +
             "node that refuses the action is not one this way can fill."
 
+    /// Whether a set that the node accepted is done although the field could
+    /// not be read back: it left the screen, because the app took the text and
+    /// moved on (a six-digit code that submits itself on the sixth). A field
+    /// that is gone is not a field holding nothing, which is how this read.
+    fun leftAfterSet(took: Boolean, present: Boolean): Boolean = took && !present
+
     /// Give `node` the whole of `value`; whether the node took the action.
     fun set(node: AccessibilityNodeInfo, value: String): Boolean =
         node.performAction(

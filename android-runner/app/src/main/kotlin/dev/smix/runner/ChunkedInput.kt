@@ -187,9 +187,17 @@ object ChunkedInput {
     /// been sent: the app took it and moved on, so there is nothing to
     /// read it back from. Said as that — `readBack: unread` — rather
     /// than as a field that holds nothing.
-    fun leftWithEverythingBody(text: String, before: String, lastHeld: String, masked: Boolean, chunks: Int): String {
+    fun leftWithEverythingBody(
+        text: String,
+        before: String,
+        lastHeld: String,
+        masked: Boolean,
+        chunks: Int,
+        method: String? = null,
+    ): String {
         val obj = JSONObject()
             .put("ok", true)
+            .putOpt("method", method)
             .put("status", "field_left")
             .put("readBack", "unread")
             .put("text", text)
