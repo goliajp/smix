@@ -7,8 +7,9 @@
 # took the first match — a row behind the card — and the result was never
 # picked. On the fixture's -sheet-same-ids screen on an iPad simulator, in
 # full-screen mode:
-#   1. the tree marks the rows behind the card as covered, and not the one
-#      on it
+#   1. the tree marks the rows behind the card as covered, shows the rows
+#      past the bottom edge as not visible, and leaves the one on the card
+#      alone — the list runs past the screen, under the keyboard
 #   2. a flow's tapOn picks the row on the card: the card goes and the
 #      screen reads "picked Lobby Elevator"
 #   3. `smix tap id:device-row` does the same from the command line
@@ -65,13 +66,17 @@ flow open '- waitForAnimationToEnd' || fail "opening the search sheet: $(tail -3
 width="$("$SMIX" tree --device "$UDID" --port "$PORT" --json 2>/dev/null | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["root"]["bounds"]["w"]))')"
 [ "$width" -ge 700 ] || cannot_judge "the app is ${width}pt wide — the iPad is in windowed mode, not full screen"
 "$SMIX" tree --device "$UDID" --port "$PORT" >"$WORK/tree.txt" 2>&1 || fail "smix tree: $(tail -3 "$WORK/tree.txt")"
-behind="$(grep -c 'id="device-row" label="Lobby Entrance.*(covered — a touch does not reach it)' "$WORK/tree.txt" || true)"
-rows="$(grep -c 'id="device-row" label="Lobby Entrance' "$WORK/tree.txt" || true)"
-[ "$rows" -gt 0 ] || cannot_judge "the rows behind the sheet are not in the tree"
-[ "$behind" = "$rows" ] || fail "only $behind of the $rows rows behind the sheet are marked covered"
+# Rows behind the card that the outline still shows as visible must be
+# marked covered; the rest are past the bottom edge and shown as not visible.
+behind="$(grep -c '✓ id="device-row" label="Lobby Entrance.*(covered — a touch does not reach it)' "$WORK/tree.txt" || true)"
+rows="$(grep -c '✓ id="device-row" label="Lobby Entrance' "$WORK/tree.txt" || true)"
+past="$(grep -c '· id="device-row" label="Lobby Entrance' "$WORK/tree.txt" || true)"
+[ "$rows" -gt 0 ] && [ "$past" -gt 0 ] \
+  || cannot_judge "the list behind the sheet does not run past the screen ($rows shown, $past past the edge)"
+[ "$behind" = "$rows" ] || fail "only $behind of the $rows rows shown behind the sheet are marked covered"
 grep 'id="device-row" label="Lobby Elevator, Main Lobby"' "$WORK/tree.txt" | grep -q covered \
   && fail "the row on the sheet is marked covered"
-log "ok    the tree marks the $rows rows behind the sheet as covered, and not the one on it"
+log "ok    the tree marks the $rows rows behind the sheet as covered, $past past the edge as not visible, and not the one on it"
 
 flow picked '- tapOn: { id: "device-row" }
 - assertNotVisible: { id: "input-device-search" }

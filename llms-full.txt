@@ -1676,7 +1676,8 @@ flow on an app carrying the probe could not see it under any name.
 
 When a selector matches several elements and some of them are under
 something drawn over them — a form sheet or popover card on an iPad, an
-alert — the ones a touch reaches are taken first, so `tapOn: { id: row }`
+alert, the keyboard — or have their centre off the screen, the ones a touch
+reaches are taken first, so `tapOn: { id: row }`
 presses the row on the card rather than the one behind it with the same
 id. When every match is covered, the step fails `NOT_VISIBLE` rather than
 touching the cover. `smix tree` marks a covered element `(covered — a touch

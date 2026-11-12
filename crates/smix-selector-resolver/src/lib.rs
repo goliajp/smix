@@ -338,7 +338,7 @@ fn resolve_inner<'tree>(
         .into_iter()
         .filter(|n| is_visible_enough(n, tree))
         .collect();
-    let visible = reachable::reachable_first(shown_first(tree, visible));
+    let visible = reachable::reachable_first(tree, shown_first(tree, visible));
     let topmost = topmost_modal_filter(tree, visible);
     // Explicit structural intent (ancestor / spatial modifier)
     // overrides implicit interactive preference
@@ -412,7 +412,7 @@ fn resolve_inner_no_index<'tree>(
         .into_iter()
         .filter(|n| is_visible_enough(n, tree))
         .collect();
-    let visible = reachable::reachable_first(shown_first(tree, visible));
+    let visible = reachable::reachable_first(tree, shown_first(tree, visible));
     let topmost = topmost_modal_filter(tree, visible);
     let Some(after_ancestor) = apply_ancestor_filter(tree, topmost, selector) else {
         return vec![];

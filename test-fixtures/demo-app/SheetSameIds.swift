@@ -7,7 +7,7 @@ import UIKit
 /// in the tree, and `tap id:device-row` took the first of them, under the
 /// card, and reported it tapped.
 final class SheetSameIdsController: UIViewController, UITableViewDataSource, UITableViewDelegate {
-  private let names = (0..<14).map { "Lobby Entrance \($0)" }
+  private let names = (0..<40).map { "Lobby Entrance \($0)" }
   private let table = UITableView()
   private let picked = UILabel()
 
@@ -22,6 +22,7 @@ final class SheetSameIdsController: UIViewController, UITableViewDataSource, UIT
     search.addAction(UIAction { [weak self] _ in self?.openSearch() }, for: .touchUpInside)
     table.dataSource = self
     table.delegate = self
+    table.rowHeight = 53
     table.register(UITableViewCell.self, forCellReuseIdentifier: "row")
     for v in [picked, search, table] as [UIView] {
       v.translatesAutoresizingMaskIntoConstraints = false
@@ -38,6 +39,19 @@ final class SheetSameIdsController: UIViewController, UITableViewDataSource, UIT
       table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
       table.bottomAnchor.constraint(equalTo: view.bottomAnchor),
     ])
+  }
+
+  // Some row's top sits 10 points above the screen's bottom edge, whatever
+  // the iPad: it shows a sliver and its centre is off the screen — the row a
+  // consumer's tap was sent to, with the row on the sheet left unpicked.
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    let target = view.bounds.height - 10 - table.frame.minY
+    let inset = target.truncatingRemainder(dividingBy: table.rowHeight)
+    if table.contentInset.top != inset {
+      table.contentInset.top = inset
+      table.contentOffset.y = -inset
+    }
   }
 
   func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { names.count }
