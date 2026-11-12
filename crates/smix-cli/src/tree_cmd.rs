@@ -48,6 +48,7 @@ pub async fn cmd_tree(
         // The accessibility reader's blind spot is a Compose dialog, and
         // the way out is an Android dependency: on iOS the note is noise.
         // Nor is it the story when the system's window is in front.
+        crate::tree_note::centres_off_screen_hidden(&mut perceived.root);
         if let Some(front) = crate::tree_note::system_in_front(&perceived.root, device) {
             println!("# {front}");
         } else if !ios && let Some(caveat) = perceived.caveat() {

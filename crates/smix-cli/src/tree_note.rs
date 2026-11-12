@@ -69,6 +69,29 @@ fn buttons_of(node: &A11yNode) -> Vec<&str> {
     out
 }
 
+/// Mark not visible, for the outline only, every element whose centre is
+/// off the screen: one point of a row showing at the bottom edge is not a
+/// row a reader can expect a tap to reach.
+pub(crate) fn centres_off_screen_hidden(root: &mut A11yNode) {
+    fn walk(n: &mut A11yNode, screen: smix_screen::Rect) {
+        let b = n.bounds;
+        let (cx, cy) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
+        if cx < screen.x || cx >= screen.x + screen.w || cy < screen.y || cy >= screen.y + screen.h
+        {
+            n.visible = false;
+        }
+        for c in &mut n.children {
+            walk(c, screen);
+        }
+    }
+    let screen = root.bounds;
+    if screen.w > 0.0 && screen.h > 0.0 {
+        for c in &mut root.children {
+            walk(c, screen);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,5 +201,27 @@ mod tests {
             system_in_front(&screen(serde_json::json!([status_bar()])), None),
             None
         );
+    }
+
+    #[test]
+    fn a_row_with_its_centre_past_the_bottom_edge_is_not_shown_as_visible() {
+        let mut root = screen(serde_json::json!([button("on screen")]));
+        root.bounds = smix_screen::Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 1032.0,
+            h: 1376.0,
+        };
+        let mut edge = root.children[0].clone();
+        edge.bounds = smix_screen::Rect {
+            x: 0.0,
+            y: 1375.0,
+            w: 1032.0,
+            h: 70.0,
+        };
+        root.children.push(edge);
+        centres_off_screen_hidden(&mut root);
+        assert!(root.children[0].visible);
+        assert!(!root.children[1].visible);
     }
 }
