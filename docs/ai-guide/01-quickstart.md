@@ -141,7 +141,8 @@ adb -s emulator-5554 emu kill
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `simctl io ... is retired` | You called bare `xcrun simctl`. The sim safety hook is active. | Use `smix sim ...` or `smix sim exec <udid> ...` instead. |
+| `smix fence: this starts, stops, erases or creates a device outside smix` | A bare `simctl boot`, `emulator -avd` or similar. | Use `smix sim boot` / `smix sim shutdown` / `smix sim erase`, or `smix sim exec <udid> ...` for another simctl verb. |
+| `was not started by smix and nobody has claimed it` | The device came up outside smix, so smix will not drive it. | Have whoever started it stop it and `smix sim boot` it, or `smix lease claim <device> --reason "<why>"`. |
 | `runner /health` 502 / connection refused | Runner did not finish coming up. | Wait 3–5s after `smix runner up`, re-curl /health, or run `smix runner list` — it names every runner on this machine, its port, and whether the ledgers know about it. |
 | `tap_by_id: element not found` | Element off-screen (LazyRow / horizontal-scroll tab bar) | Scroll first (`adb shell input swipe`) or use a different selector. See [03-selectors.md](03-selectors.md). |
 | iOS build fails with `Cannot find 'FooScreen' in scope` | You added a new file to your Xcode project but the `.pbxproj` wasn't updated. | Add PBXBuildFile + PBXFileReference + PBXGroup + PBXSourcesBuildPhase entries. |

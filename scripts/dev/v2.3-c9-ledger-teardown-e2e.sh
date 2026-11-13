@@ -110,8 +110,15 @@ trap cleanup EXIT
 
 step "1. bring a supervised runner up"
 "$SMIX" sim boot "$UDID" >/dev/null 2>&1 || fail "sim boot failed"
+if [ "$WAS_BOOTED" = yes ]; then
+  e2e_answer_for "$UDID" "running on arrival, driven from this script's ledger" \
+    || fail "could not take $UDID on in this script's ledger"
+fi
 "$SMIX" runner up "$UDID" --bundle "$BUNDLE" --supervise >/dev/null 2>&1 \
   || fail "runner up --supervise failed"
+# the claim only had to admit the bring-up; what is judged below is that a
+# teardown leaves no ledger, and a claim is a row that outlives it
+[ "$WAS_BOOTED" = yes ] && "$SMIX" lease release "$UDID" >/dev/null
 LEDGER="$(e2e_ledger_path "$UDID")"
 [ -f "$LEDGER" ] || fail "no ledger after runner up"
 

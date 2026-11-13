@@ -26,7 +26,9 @@
 
 pub mod beat;
 mod classify;
-pub use classify::{holds_something, is_process_backed, is_service, may_shut_down, unnamed_kinds};
+pub use classify::{
+    holds_something, is_process_backed, is_service, may_drive, may_shut_down, unnamed_kinds,
+};
 mod carry;
 pub mod environment;
 mod guards;
@@ -189,23 +191,19 @@ pub enum Resource {
     },
     /// This holder took responsibility for a device it did not boot.
     ///
-    /// The ledger could already say "I booted it" and "I found it up".
-    /// Both are observations. The decision that sits between them had
-    /// nowhere to go: a machine's own dedicated emulator, running,
-    /// started by a hand that wrote no ledger is drivable by nobody,
-    /// because the only row that made a device drivable was the one that
-    /// also made it shut-downable — and nothing may claim to have booted
-    /// what it did not.
-    ///
-    /// So this row grants exactly one of the two. The device is this
-    /// holder's to drive; it is not its to switch off. [`may_shut_down`]
-    /// does not read it, which is the whole point of it being a separate
-    /// row rather than a cheaper `by_us: true`.
+    /// It grants driving ([`may_drive`]) and not switching off:
+    /// [`may_shut_down`] does not read it, which is why it is a row of its
+    /// own rather than a cheaper `by_us: true` — nothing may claim to have
+    /// booted what it did not.
     #[serde(rename_all = "camelCase")]
     Claimed {
         /// RFC3339. When the claim was made — later than the lease's own
         /// `acquired_at` whenever a holder claims a device mid-session.
         at: String,
+        /// Why a person took this device on. Written by `lease claim`,
+        /// which asks for one; absent on claims made before it did.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     /// Which AVD this emulator ledger is about, and where its console
     /// is being written.

@@ -1337,8 +1337,6 @@ pub fn up(
     runner_project: Option<&Path>,
     opts: UpOptions,
 ) -> Result<(), String> {
-    // The 2.x face: every caller that predates physical devices meant a
-    // simulator, and keeps meaning one without changing a line.
     up_on(
         root,
         udid,
@@ -1350,18 +1348,11 @@ pub fn up(
     )
 }
 
-/// [`up`], with the device world said explicitly.
-///
-/// A separate name rather than a field on [`UpOptions`]: the options
-/// struct is externally constructible, so a new field would have broken
-/// every existing `UpOptions { .. }` literal — and cost the struct its
-/// `Copy` — to say something only the physical path says. The target
-/// carries the signing team, which only exists in that world.
+/// [`up`], with the device world said explicitly (the target carries the
+/// signing team, which only the physical path has). Production comes
+/// through here with the real bring-up, and here a simulator smix did not
+/// boot or claim is refused ([`crate::device_fence`]).
 #[allow(clippy::too_many_arguments)]
-/// Thin shell over [`up_on_with`] using the real bring-up (a live
-/// `xcodebuild`). Production `smix runner up` always comes through here,
-/// so the shipped binary has no way to substitute the attempter — the
-/// seam is a compile-time injection point, not a runtime switch.
 pub fn up_on(
     root: &Path,
     udid: &str,
@@ -1371,9 +1362,15 @@ pub fn up_on(
     opts: UpOptions,
     target: RunnerTarget<'_>,
 ) -> Result<(), String> {
+    let leases = machine_leases()?;
+    if matches!(target, RunnerTarget::Simulator)
+        && let Some(why) = crate::device_fence::refusal(&leases, udid)
+    {
+        return Err(why);
+    }
     up_on_with(
         &mut RealBringUp,
-        &machine_leases()?,
+        &leases,
         root,
         udid,
         port,

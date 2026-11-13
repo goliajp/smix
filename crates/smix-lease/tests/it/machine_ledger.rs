@@ -170,6 +170,7 @@ fn a_live_holder_left_with_only_a_boot_row_is_not_in_the_way() {
         Resource::Booted { by_us: true },
         Resource::Claimed {
             at: "2026-11-11T11:27:00Z".into(),
+            reason: None,
         },
     ]);
     assert!(

@@ -59,10 +59,12 @@ mod device_in_use;
 mod device_ownership;
 mod env_orphans;
 use device_ownership::{BootClaim, EmulatorState, boot_claim};
+mod doctor_cmd;
 mod down;
 /// Distributed `smix run --nodes`: roster parsing, cross-node flow
 /// sharding, readiness gate, ssh fan-out and merged reporting.
 mod federation;
+mod fence;
 #[cfg(test)]
 mod guide_gate;
 mod init;
@@ -274,8 +276,13 @@ enum Cmd {
         #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
         runner_port: Option<u16>,
     },
-    /// Inspect and settle the device resource ledger: who holds a device,
-    /// what they left open, and closing it gracefully when they are gone.
+    /// Judge a shell command before it runs; the plugin's hooks call this.
+    Guard {
+        #[command(subcommand)]
+        action: fence::GuardAction,
+    },
+    /// The device ledger: who holds a device, what they left open, and
+    /// closing it gracefully when they are gone.
     Lease {
         #[command(subcommand)]
         action: LeaseAction,
@@ -1242,17 +1249,15 @@ enum LeaseAction {
     /// Close what a dead holder left open, by the graceful path it never
     /// got to take. A live holder is reported, never preempted.
     Reconcile { device: String },
-    /// Answer for a device this machine did not boot.
-    ///
-    /// An emulator started by hand has no ledger, so nothing here may drive
-    /// it; a claim records, once, that this machine answers for it.
-    ///
-    /// It grants driving, not switching off; `lease owner` reports it as a
-    /// claim, and the ledger ends it when the device goes off.
-    ///
-    /// Refused while somebody else's live session holds the device: a
-    /// claim is about an unheld device, not a way past a held one.
-    Claim { device: String },
+    /// Answer for a device smix did not boot, so smix may drive it (not
+    /// shut it down). Logged with its reason; refused over a live holder.
+    Claim {
+        /// The device to take on, by UDID, serial or registry alias.
+        device: String,
+        /// Why this device is taken on; written to the ledger and the log.
+        #[arg(long)]
+        reason: String,
+    },
     /// Give up a claim made by `lease claim`.
     ///
     /// Removes only the claim. A device this machine really did boot
@@ -1686,9 +1691,13 @@ enum SimAction {
         /// snapshot, which keeps whatever state the device stopped in.
         #[arg(long)]
         cold: bool,
-        /// Run an Android emulator with no window on the desktop.
+        /// Accepted for older scripts: an Android emulator has no window
+        /// unless `--window` asks for one.
         #[arg(long)]
         no_window: bool,
+        /// Show the Android emulator's window on the desktop.
+        #[arg(long, conflicts_with = "no_window")]
+        window: bool,
         /// Wait up to this many seconds for room when the machine has none.
         #[arg(long, default_value_t = 0)]
         wait: u64,
@@ -2870,7 +2879,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Doctor {
             json,
             runner_port: port,
-        } => cmd_doctor(&simctl, json, port.unwrap_or_else(runner_port)).await?,
+        } => doctor_cmd::cmd_doctor(&simctl, json, port.unwrap_or_else(runner_port)).await?,
         Cmd::Bench {
             update_baseline,
             current_file,
@@ -3090,6 +3099,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     device,
                     cold,
                     no_window,
+                    window,
                     wait,
                     unlock_pin,
                 } => {
@@ -3145,7 +3155,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     let running =
                         kind == smix_simctl::registry::DeviceKind::Emulator && adb_knows(&udid);
                     if let Some(why) =
-                        boot_cold::boot_refusal(&device, kind, running, cold, no_window)
+                        boot_cold::boot_refusal(&device, kind, running, cold, no_window || window)
                     {
                         return Err(CliError::Other(why));
                     }
@@ -3177,10 +3187,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             } else {
                                 smix_adb::BootFrom::Snapshot
                             };
-                            let started = if no_window || boot_cold::no_window_asked_by_env() {
-                                adb.start_emulator_on_without_window(&avd, &udid, &console, from)
-                            } else {
+                            let started = if window {
                                 adb.start_emulator_on_with(&avd, &udid, &console, from)
+                            } else {
+                                adb.start_emulator_on_without_window(&avd, &udid, &console, from)
                             };
                             started.map_err(|e| CliError::Other(format!("{e}")))?;
                             // recorded before the wait, which a Ctrl-C the emulator
@@ -3914,6 +3924,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 .await
                 .map_err(CliError::Other)?;
         }
+        Cmd::Guard {
+            action: fence::GuardAction::Lifecycle,
+        } => return Ok(std::process::ExitCode::from(fence::guard_lifecycle()?)),
         Cmd::Lease { action } => {
             let leases = smix_capsule::runner::machine_leases().map_err(CliError::Other)?;
             return Ok(std::process::ExitCode::from(
@@ -4483,10 +4496,11 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         .flatten()
                 }),
             );
-            // Resolve device alias if registry has it; else pass raw.
+            // the registry's id when it has the alias, else as given
             let udid = device
                 .as_deref()
                 .map(|d| resolve_device(d).unwrap_or_else(|_| d.to_string()));
+            fence::refuse_if_outside(&simctl, udid.as_deref()).await?;
             // Announce the run before it starts, and hold the device for
             // as long as this command lasts — every flow, every retry.
             // Released when this binding goes out of scope.
@@ -6129,116 +6143,6 @@ fn bundle_id_of(app: &Path) -> Result<String, CliError> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Whether the capture server is answering on its default endpoint.
-///
-/// A plain TCP connect: `capsule up` only needs the process to be there,
-/// and asking for a health route would couple doctor to a surface that is
-/// not this module's business.
-fn capture_server_reachable() -> bool {
-    use std::net::{SocketAddr, TcpStream};
-    use std::time::Duration;
-    let addr: SocketAddr = ([127, 0, 0, 1], 8787).into();
-    TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
-}
-
-async fn cmd_doctor(simctl: &SimctlClient, json: bool, port: u16) -> Result<(), CliError> {
-    // Gather, then judge. The judging is `readiness::assess`, a pure
-    // function with its ordering under test — which is the only way the
-    // "what do I run next" answer stays correct as checks are added.
-    let simctl_facts = match simctl.list_runtimes().await {
-        Ok(runtimes) => {
-            let devices = simctl.list_devices().await.unwrap_or_default();
-            Some(readiness::SimctlFacts {
-                available_runtimes: runtimes.iter().filter(|r| r.is_available).count(),
-                available_devices: devices.iter().filter(|d| d.is_available).count(),
-            })
-        }
-        // Not an error to report and abort on: "simctl does not run" is
-        // the most useful thing doctor can say, and it can only say it by
-        // continuing.
-        Err(_) => None,
-    };
-
-    // Every device this machine knows, not every device this tree
-    // knows. A doctor that reports on the checkout answers a question
-    // nobody asked: the simulators are the machine's.
-    let reg = load_registry().registry;
-    let registry = (!reg.sims().is_empty()).then(|| readiness::RegistryFacts {
-        aliases: reg.sims().len(),
-        first_alias: reg.sims().keys().next().cloned(),
-    });
-
-    // Existence checked before opening, because `Store::open` creates
-    // what it cannot find — and a health check that brings a store into
-    // being has changed the thing it was asked to report on. A workspace
-    // with no `.smix` yet simply has no store fact.
-    let downgradeable = std::env::current_dir()
-        .ok()
-        .map(|cwd| cwd.join(".smix"))
-        .filter(|dir| dir.join("kv").is_dir())
-        .and_then(|dir| smix_store::Store::open(&dir).ok())
-        .and_then(|store| store.downgradeable_to_kevy3());
-
-    let verdict = readiness::assess(&readiness::Facts {
-        simctl: simctl_facts,
-        registry,
-        // health-not-a-decider: doctor prints whether a runner is
-        // answering. It concludes nothing and drives nothing.
-        runner_up: smix_capsule::runner::health_ok(port),
-        capture_server_up: capture_server_reachable(),
-        downgradeable,
-        adb: adb_facts(),
-    });
-
-    if json {
-        let out = serde_json::to_string_pretty(&verdict)
-            .map_err(|e| CliError::Other(format!("serialize: {e}")))?;
-        println!("{out}");
-        return Ok(());
-    }
-
-    println!("smix doctor");
-    println!("============");
-    for check in &verdict.checks {
-        let mark = match check.status {
-            readiness::Status::Ok => "\u{2713}",
-            readiness::Status::Blocked => "\u{2717}",
-            readiness::Status::Skipped => "\u{2022}",
-        };
-        println!("{mark} {}", check.detail);
-    }
-    println!("{}", readiness::PLATFORM_NOTE);
-    match &verdict.next {
-        Some(next) => {
-            println!();
-            println!("next: {}", next.command);
-            println!("      {}", next.reason);
-        }
-        None => println!("\nready — nothing left to set up"),
-    }
-    Ok(())
-}
-
-/// The adb smix runs, as doctor reports it; `None` when there is none.
-fn adb_facts() -> Option<readiness::AdbFacts> {
-    let (path, source) = smix_adb::adb_path();
-    // The file a bare name stands for, which is the thing to know.
-    let found = if path.components().count() == 1 {
-        std::env::var_os("PATH").and_then(|dirs| {
-            std::env::split_paths(&dirs)
-                .map(|d| d.join(path))
-                .find(|p| p.is_file())
-        })
-    } else {
-        path.is_file().then(|| path.clone())
-    };
-    found.map(|found| readiness::AdbFacts {
-        path: found.display().to_string(),
-        source: source.to_string(),
-        cannot_start: smix_adb::adb_usable().err(),
-    })
-}
-
 /// One Android device as `adb devices -l` reports it.
 struct AndroidDevice {
     serial: String,
@@ -6833,6 +6737,7 @@ mod device_power {
             device: String::new(),
             cold: false,
             no_window: false,
+            window: false,
             wait: 0,
             unlock_pin: None,
         }
@@ -7171,6 +7076,7 @@ mod tests {
                     device: d(),
                     cold: false,
                     no_window: false,
+                    window: false,
                     wait: 0,
                     unlock_pin: None,
                 },

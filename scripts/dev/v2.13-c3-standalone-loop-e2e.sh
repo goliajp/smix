@@ -65,6 +65,10 @@ WORK="$(mktemp -d)"
 # device the ledger says smix booted, and the machine's ledger holds every
 # other smix session's rows.
 e2e_isolate_machine "$WORK"
+if [ "$WAS_BOOTED" = 1 ]; then
+  e2e_answer_for "$UDID" "running on arrival, driven from this script's ledger" \
+    || fail "could not take $UDID on in this script's ledger"
+fi
 cleanup() {
   step "teardown"
   ( cd "$WORK" && "$SMIX" down >/dev/null 2>&1 ) || true

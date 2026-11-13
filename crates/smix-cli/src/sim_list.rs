@@ -17,6 +17,19 @@ pub(crate) async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<()
         Err(e) => return Err(e.into()),
     };
     let android = android_devices();
+    let outside = crate::fence::unanswered::unanswered(
+        devices
+            .iter()
+            .filter(|d| d.state == "Booted")
+            .map(|d| d.udid.as_str())
+            .chain(
+                android
+                    .iter()
+                    .filter(|a| crate::fence::unanswered::is_running_emulator(&a.serial, &a.state))
+                    .map(|a| a.serial.as_str()),
+            ),
+    );
+    let is_outside = |id: &str| outside.iter().any(|o| o.eq_ignore_ascii_case(id));
     if json {
         let mut all: Vec<serde_json::Value> = Vec::new();
         for d in &devices {
@@ -24,6 +37,7 @@ pub(crate) async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<()
                 serde_json::to_value(d).map_err(|e| CliError::Other(format!("serialize: {e}")))?;
             if let Some(obj) = v.as_object_mut() {
                 obj.insert("platform".into(), "ios".into());
+                obj.insert("startedOutsideSmix".into(), is_outside(&d.udid).into());
             }
             all.push(v);
         }
@@ -35,6 +49,7 @@ pub(crate) async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<()
                 "state": a.state,
                 "release": a.release,
                 "registered": a.registered,
+                "startedOutsideSmix": is_outside(&a.serial),
             }));
         }
         let out = serde_json::to_string_pretty(&all)
@@ -69,6 +84,9 @@ pub(crate) async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<()
             format!("Android-{}", a.release)
         };
         println!("{:<40} {:<28} {:<10} {release}", a.serial, name, a.state);
+    }
+    if let Some(report) = crate::fence::unanswered::report(&outside) {
+        println!("\n{report}");
     }
     Ok(())
 }

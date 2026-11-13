@@ -6,5 +6,6 @@ mod boot_row_outlives_the_session;
 mod coexistence;
 mod dropping_one_kind_leaves_the_others;
 mod machine_ledger;
+mod only_a_device_someone_answers_for_is_driven;
 mod roundtrip;
 mod several_routes_on_one_device;

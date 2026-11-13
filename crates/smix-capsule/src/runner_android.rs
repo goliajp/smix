@@ -454,12 +454,8 @@ fn device_present(serial: &str) -> bool {
 }
 
 /// Bring the Kotlin runner up on `serial` and block until `/health`
-/// answers or `timeout_secs` elapses.
-/// Bring the runner up, reporting an already-serving one as up.
-///
-/// Kept at its original arity because it is a published entry point;
-/// the flag lives on `up_with`, the way the iOS side grew `up_on_with`
-/// beside `up_on`.
+/// answers or `timeout_secs` elapses. A published entry point, kept at its
+/// original arity; the options live on [`up_with_options`].
 pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(), String> {
     up_with_options(
         root,
@@ -511,17 +507,19 @@ pub fn up_with_options(
     } = *opts;
     if !device_present(serial) {
         return Err(format!(
-            "adb has no ready device {serial:?}. `adb devices` lists what is \
-             attached; start the emulator first (`emulator -avd <name>`), or \
-             pass the serial of a running one."
+            "adb has no ready device {serial:?}. Start the emulator with `smix \
+             sim boot <alias>`, or pass the serial of a running one."
         ));
     }
+    // an emulator smix neither booted nor was told to take on is refused;
+    // a physical serial is registered on its own route
+    if serial.starts_with("emulator-") {
+        crate::device_fence::check(serial)?;
+    }
 
-    // Before anything is installed, forwarded or force-stopped: is this
-    // device somebody else's right now? One device, one runner -- see
-    // `live_foreign_holder`. `--force` is not consent for this: it means
-    // "cycle a runner of ours whose session has stopped working", and
-    // the runner in question is not ours.
+    // Before anything is installed: is this device somebody else's right
+    // now (`live_foreign_holder`)? `--force` cycles a runner of ours whose
+    // session stopped working; it is not consent to take theirs.
     if !take_over && let Some(holder) = live_foreign_holder(serial) {
         return Err(foreign_holder_refusal(serial, &holder, "up"));
     }

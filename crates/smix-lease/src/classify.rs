@@ -39,6 +39,35 @@ pub fn may_shut_down(lease: Option<&Lease>) -> bool {
     })
 }
 
+/// May smix drive this device at all?
+///
+/// Only a device whose life smix answers for: one it booted, or one a
+/// person claimed with a reason. A device that came up any other way —
+/// a script spawning the emulator binary, a bare `simctl boot` — was
+/// started outside the lifecycle smix keeps, and nothing would shut it
+/// down, unlock it or know it is there.
+#[must_use]
+pub fn may_drive(lease: Option<&Lease>) -> bool {
+    lease.is_some_and(|l| l.known_resources().any(answers_for_the_device))
+}
+
+/// Whether a row says somebody answers for the device's life. Exhaustive,
+/// so a new kind of row is put on one side of this line by whoever adds it.
+fn answers_for_the_device(r: &Resource) -> bool {
+    match r {
+        Resource::Booted { by_us } => *by_us,
+        Resource::Claimed { .. } => true,
+        Resource::Runner { .. }
+        | Resource::AndroidRunner { .. }
+        | Resource::PortForward { .. }
+        | Resource::Supervisor { .. }
+        | Resource::ReversePort { .. }
+        | Resource::Emulator { .. }
+        | Resource::Environment { .. }
+        | Resource::Recording { .. } => false,
+    }
+}
+
 /// Is this resource a service — a thing that exists to be used by the
 /// next command, rather than an activity that excludes it?
 ///
