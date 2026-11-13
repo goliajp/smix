@@ -1252,6 +1252,7 @@ enum LeaseAction {
     /// Answer for a device smix did not boot, so smix may drive it (not
     /// shut it down). Logged with its reason; refused over a live holder.
     Claim {
+        /// The device to take on, by UDID, serial or registry alias.
         device: String,
         /// Why this device is taken on; written to the ledger and the log.
         #[arg(long)]

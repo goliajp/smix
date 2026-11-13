@@ -21,6 +21,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/scripts/lib/e2e-binary.sh"
 # shellcheck source=../lib/e2e-devices.sh
 source "$ROOT/scripts/lib/e2e-devices.sh"
+# shellcheck source=../lib/gate-port.sh
+source "$ROOT/scripts/lib/gate-port.sh"
 
 UDID="${SMIX_E2E_FENCE_SIM:-}"
 AVD="${SMIX_E2E_FENCE_AVD:-$E2E_ANDROID_THIRD}"
@@ -33,12 +35,18 @@ step() { printf '[fence] --- %s\n' "$*"; }
 fail() { printf '[fence] FAIL: %s\n' "$*" >&2; exit 1; }
 cannot_judge() { printf '[fence] CANNOT JUDGE: %s\n' "$*" >&2; exit 2; }
 
-SIM_UP=no
-RUNNER_PORT=""
+# set to yes only once this script has booted the simulator itself; it
+# refuses to start on one that was already up
+WE_BOOTED=no
+RUNNER_UP=no
 SERIAL=""
+gate_free_port RUNNER_PORT
 cleanup() {
-  [ -n "$RUNNER_PORT" ] && "$SMIX" runner down --runner-port "$RUNNER_PORT" >/dev/null 2>&1
-  [ "$SIM_UP" = yes ] && xcrun simctl shutdown "$UDID" >/dev/null 2>&1
+  if [ "$RUNNER_UP" = yes ] && ! "$SMIX" runner down --runner-port "$RUNNER_PORT" > "$WORK/cleanup-down.txt" 2>&1; then
+    printf '[fence] teardown: runner down on %s failed:\n' "$RUNNER_PORT" >&2
+    cat "$WORK/cleanup-down.txt" >&2
+  fi
+  [ "$WE_BOOTED" = yes ] && xcrun simctl shutdown "$UDID" >/dev/null 2>&1
   [ -n "$SERIAL" ] && e2e_stop_emulator "$SERIAL"
   rm -rf "$WORK"
 }
@@ -57,7 +65,7 @@ EXCEPTIONS="$SMIX_MACHINE_DIR/fence-exceptions.jsonl"
 
 step "iOS 1. a simulator booted by hand"
 xcrun simctl boot "$UDID" || fail "could not boot $UDID by hand"
-SIM_UP=yes
+WE_BOOTED=yes
 xcrun simctl bootstatus "$UDID" -b >/dev/null || fail "$UDID did not finish booting"
 
 step "iOS 2. sim list and doctor name it"
@@ -74,12 +82,13 @@ grep -q "$UDID" "$WORK/doctor.txt" || { cat "$WORK/doctor.txt"; fail "doctor did
 
 step "iOS 3. runner up and run refuse it, before building anything"
 start=$(date +%s)
-"$SMIX" runner up "$UDID" --bundle com.apple.Preferences --runner-port 22391 > "$WORK/up.txt" 2>&1
+"$SMIX" runner up "$UDID" --bundle com.apple.Preferences --runner-port "$RUNNER_PORT" > "$WORK/up.txt" 2>&1
 rc=$?
 took=$(( $(date +%s) - start ))
 [ "$rc" != 0 ] && grep -q "$FENCE_TEXT" "$WORK/up.txt" \
   || { cat "$WORK/up.txt"; fail "runner up was not refused by the fence (rc=$rc)"; }
 [ "$took" -lt 30 ] || fail "the refusal took ${took}s: it should come before any build"
+# raw run: what is judged is the fence's refusal, which comes before any flow runs
 "$SMIX" run --device "$UDID" "$WORK/flow.yaml" > "$WORK/run.txt" 2>&1
 rc=$?
 [ "$rc" != 0 ] && grep -q "$FENCE_TEXT" "$WORK/run.txt" \
@@ -95,20 +104,26 @@ step "iOS 4. a claim needs a reason, and is logged"
 "$SMIX" sim list 2>&1 | sed -n '/not started by smix/,$p' | grep -q "$UDID" && fail "sim list still names a claimed device"
 
 step "iOS 5. runner up goes through once it is claimed"
-RUNNER_PORT=22391
+RUNNER_UP=yes
 "$SMIX" runner up "$UDID" --bundle com.apple.Preferences --runner-port "$RUNNER_PORT" > "$WORK/up2.txt" 2>&1 \
   || { tail -20 "$WORK/up2.txt"; fail "runner up on a claimed device failed"; }
-"$SMIX" runner down --runner-port "$RUNNER_PORT" >/dev/null 2>&1 || fail "runner down failed"
-RUNNER_PORT=""
+"$SMIX" runner down --runner-port "$RUNNER_PORT" > "$WORK/down1.txt" 2>&1 \
+  || { cat "$WORK/down1.txt"; fail "runner down failed"; }
+RUNNER_UP=no
 xcrun simctl shutdown "$UDID" || fail "could not shut $UDID down"
-SIM_UP=no
+WE_BOOTED=no
 
 step "Android 1. an emulator started by hand"
-PORT=5640
-while adb devices | awk -v s="emulator-$PORT" '$1 == s { f = 1 } END { exit !f }' \
-  || lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do
-  PORT=$((PORT + 2)); [ "$PORT" -lt 5680 ] || cannot_judge "no free emulator console port"
-done
+listed() { adb devices 2>/dev/null | awk -v s="$1" '$1 == s { f = 1 } END { exit !f }'; }
+free_console_port() {
+  local p=5640
+  while [ "$p" -lt 5680 ]; do
+    listed "emulator-$p" || { lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1 || { echo "$p"; return 0; }; }
+    p=$((p + 2))
+  done
+  return 1
+}
+PORT="$(free_console_port)" || cannot_judge "no free emulator console port"
 SERIAL="emulator-$PORT"
 e2e_start_emulator "$WORK/emu.log" -avd "$AVD" -port "$PORT" -no-boot-anim -no-snapshot-save
 booted=no
@@ -121,6 +136,7 @@ done
 step "Android 2. named, and run refuses it"
 "$SMIX" sim list 2>&1 | sed -n '/not started by smix/,$p' | grep -q "$SERIAL" \
   || fail "sim list did not name $SERIAL as started outside smix"
+# raw run: what is judged is the fence's refusal, which comes before any flow runs
 "$SMIX" run --platform android --device "$SERIAL" "$WORK/flow.yaml" > "$WORK/arun.txt" 2>&1
 grep -q "$FENCE_TEXT" "$WORK/arun.txt" || { cat "$WORK/arun.txt"; fail "run on $SERIAL was not refused by the fence"; }
 "$SMIX" sim register "$ALIAS" --udid "$SERIAL" --kind emulator > "$WORK/reg.txt" 2>&1 \
@@ -130,13 +146,14 @@ SERIAL=""
 
 step "Android 3. smix sim boot, no flags: no window, and drivable"
 unset SMIX_EMULATOR_NO_WINDOW
-"$SMIX" sim boot "$ALIAS" > "$WORK/boot.txt" 2>&1 || { cat "$WORK/boot.txt"; fail "smix sim boot $ALIAS failed"; }
+"$SMIX" sim boot "$ALIAS" --wait 600 > "$WORK/boot.txt" 2>&1 || { cat "$WORK/boot.txt"; fail "smix sim boot $ALIAS failed"; }
 args="$(ps -axo args | grep -E -- "-avd $AVD( |$)" | grep -v grep | head -1)"
 [ -n "$args" ] || fail "no emulator process for $AVD after smix sim boot"
 SERIAL="emulator-$(printf '%s\n' "$args" | sed -nE 's/.*-port ([0-9]+).*/\1/p')"
 [ "$SERIAL" != "emulator-" ] || fail "no -port in: $args"
 case " $args " in *" -no-window "*) ;; *) fail "smix sim boot started a window: $args" ;; esac
 "$SMIX" sim list 2>&1 | sed -n '/not started by smix/,$p' | grep -q "$SERIAL" && fail "sim list names an emulator smix booted"
+# raw run: what is judged is only that the fence lets it past
 "$SMIX" run --platform android --device "$SERIAL" "$WORK/flow.yaml" > "$WORK/arun2.txt" 2>&1
 grep -q "$FENCE_TEXT" "$WORK/arun2.txt" && { cat "$WORK/arun2.txt"; fail "run refused an emulator smix booted"; }
 "$SMIX" sim shutdown "$ALIAS" > "$WORK/down.txt" 2>&1 || { cat "$WORK/down.txt"; fail "smix sim shutdown $ALIAS failed"; }

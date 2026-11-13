@@ -4,21 +4,21 @@
 # both of its modes: judged by the smix binary (`smix guard lifecycle`),
 # and the coarse copy it falls back to when no smix on PATH can judge.
 #
-# Set SMIX_BIN to the smix to judge with; default is this checkout's
-# debug build. The UDID is a placeholder: nothing here reaches a device.
+# The smix judged with is the one scripts/lib/e2e-binary.sh names. The
+# UDID is a placeholder: nothing here reaches a device.
 
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 GUARD="$ROOT/plugin/scripts/lifecycle-guard.sh"
-SMIX_BIN="${SMIX_BIN:-$ROOT/target/debug/smix}"
 UDID="A1B2C3D4-1111-2222-3333-444455556666"
-[ -x "$SMIX_BIN" ] || { echo "no smix at $SMIX_BIN — cargo build -p smix-cli first" >&2; exit 1; }
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin" "$work/machine"
-ln -s "$SMIX_BIN" "$work/bin/smix"
+ln -s "$SMIX" "$work/bin/smix"
 WITH_SMIX="$work/bin:/usr/bin:/bin"
 WITHOUT_SMIX="/usr/bin:/bin"
 
