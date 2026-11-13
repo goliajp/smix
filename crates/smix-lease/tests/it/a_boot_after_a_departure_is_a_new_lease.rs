@@ -93,7 +93,7 @@ fn a_boot_over_a_ledger_nobody_holds_starts_a_new_one() {
 #[test]
 fn a_boot_after_this_process_claimed_the_device_keeps_the_claim() {
     let (_t, d) = dir();
-    store::record_claim(&d, "emulator-5558").expect("claim");
+    store::record_claim(&d, "emulator-5558", "a test claims it").expect("claim");
     store::record_boot(&d, "emulator-5558", true).expect("boot");
     let now = store::read(&d, "emulator-5558")
         .expect("read")

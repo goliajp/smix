@@ -2,6 +2,39 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.1.0] — 2026-11-13
+
+### Added
+
+- **A fence around the device lifecycle.** An agent started an emulator
+  with a bare `emulator -avd`; it came up as a window, stopped on its PIN
+  screen, and nothing had a record of it. Devices are now started, stopped,
+  erased and created through smix, in two places:
+  - the plugin's hook refuses `simctl boot|shutdown|erase|create|delete|clone`,
+    `emulator -avd` / `emulator @name`, `qemu-system-*`, `adb … emu kill` and
+    `avdmanager create|delete` before they run, and names the smix command to
+    use. The judgement is the binary's (`smix guard lifecycle`), so later rule
+    changes ship with smix and do not wait on a plugin update;
+  - `smix runner up`, `smix run` and MCP `smix_use` refuse a running
+    simulator or emulator that smix neither booted nor was told to take on —
+    the device a script started where no hook could see it. `smix sim list`
+    (`startedOutsideSmix` in `--json`) and `smix doctor` name such devices.
+
+  The ways past are explicit and logged to `fence-exceptions.jsonl` in the
+  machine directory: `smix lease claim <device> --reason "<why>"`, and
+  `SMIX_FENCE_EXCEPTION="<why>"` in front of one command.
+- **`smix doctor` fails when the smix plugin is older than the CLI**, and
+  says how to update it.
+
+### Changed
+
+- **An Android emulator boots with no window unless `--window` asks for
+  one.** `--no-window` and `SMIX_EMULATOR_NO_WINDOW` are still accepted and
+  change nothing.
+- **`smix lease claim` takes `--reason`, and requires it.** The reason is
+  kept in the ledger and shown by `lease status`.
+- `smix doctor` exits 1 when one of its new checks fails.
+
 ## [26.0.0] — 2026-11-12
 
 ### Fixed

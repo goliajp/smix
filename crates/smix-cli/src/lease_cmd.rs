@@ -289,7 +289,7 @@ pub async fn run(leases: &LeaseDir, action: LeaseAction) -> Result<u8, crate::Cl
                 }
             }
         }
-        LeaseAction::Claim { device } => return claim(leases, &device),
+        LeaseAction::Claim { device, reason } => return claim(leases, &device, &reason),
         LeaseAction::Release { device } => release(leases, &device)?,
         LeaseAction::Owner { device } => return owner(leases, &device),
         LeaseAction::Migrate { from, dry_run } => migrate(leases, &from, dry_run)?,
@@ -299,11 +299,8 @@ pub async fn run(leases: &LeaseDir, action: LeaseAction) -> Result<u8, crate::Cl
     Ok(0)
 }
 
-/// Who booted this device, in one line and an exit code.
-///
-/// The device ref is resolved before the ledger is read, so a name this
-/// machine does not know is a `1` — "the question could not be asked" —
-/// rather than a `3` that would read as "nobody booted it".
+/// Who booted this device, in one line and an exit code. An unknown name
+/// is a `1` (the question could not be asked), not a `3` (nobody booted it).
 fn owner(leases: &LeaseDir, device: &str) -> Result<u8, crate::CliError> {
     let udid = crate::resolve_device(device)?;
     let facts = store::collect_facts(leases, &udid).map_err(to_cli_error)?;
@@ -316,7 +313,7 @@ fn owner(leases: &LeaseDir, device: &str) -> Result<u8, crate::CliError> {
         .known_resources()
         .any(|r| matches!(r, smix_lease::Resource::Booted { by_us: true }));
     let claimed_at = held.lease.known_resources().find_map(|r| match r {
-        smix_lease::Resource::Claimed { at } => Some(at.clone()),
+        smix_lease::Resource::Claimed { at, .. } => Some(at.clone()),
         _ => None,
     });
     if !booted_by_us && claimed_at.is_none() {
@@ -352,13 +349,9 @@ fn owner(leases: &LeaseDir, device: &str) -> Result<u8, crate::CliError> {
     Ok(0)
 }
 
-/// Answer for a device this machine did not boot.
-///
-/// Admission first, and not as politeness: a claim is a statement about
-/// a device nobody is using, and making one over somebody's live session
-/// would be the escape hatch this exists to replace, wearing a better
-/// name.
-fn claim(leases: &LeaseDir, device: &str) -> Result<u8, crate::CliError> {
+/// Answer for a device this machine did not boot. Admission first: a
+/// claim over somebody's live session would be an escape hatch.
+fn claim(leases: &LeaseDir, device: &str, reason: &str) -> Result<u8, crate::CliError> {
     let udid = crate::resolve_device(device)?;
     let facts = store::collect_facts(leases, &udid).map_err(to_cli_error)?;
     if let Admission::Denied(c) = smix_lease::assess(&facts) {
@@ -376,7 +369,8 @@ fn claim(leases: &LeaseDir, device: &str) -> Result<u8, crate::CliError> {
         println!("{udid}: smix booted this one — it is already answered for");
         return Ok(0);
     }
-    store::record_claim(leases, &udid).map_err(to_cli_error)?;
+    store::record_claim(leases, &udid, reason).map_err(to_cli_error)?;
+    crate::fence::log_exception("lease claim", &udid, reason);
     println!(
         "{udid}: claimed. Yours to drive; not yours to shut down, because \
          nothing here booted it. `smix lease release {udid}` ends it, and so \
@@ -401,7 +395,10 @@ fn release(leases: &LeaseDir, device: &str) -> Result<(), crate::CliError> {
     store::drop_resource_kind(
         leases,
         &udid,
-        &smix_lease::Resource::Claimed { at: String::new() },
+        &smix_lease::Resource::Claimed {
+            at: String::new(),
+            reason: None,
+        },
     )
     .map_err(to_cli_error)?;
     println!("{udid}: claim released");

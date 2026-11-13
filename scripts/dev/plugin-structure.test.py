@@ -149,7 +149,7 @@ if not os.access(readiness, os.X_OK):
 # runs the tests against. So the plugin holds the implementation and this
 # repo's own hook config points at it: a regression reaches us before it
 # reaches anyone who installed the plugin.
-for script in ("sim-guard.sh", "adb-guard.sh", "hook-command.py"):
+for script in ("sim-guard.sh", "adb-guard.sh", "lifecycle-guard.sh", "hook-command.py"):
     shipped = os.path.join(PLUGIN, "scripts", script)
     if not os.access(shipped, os.X_OK) and script.endswith(".sh"):
         problems.append(f"plugin/scripts/{script} is missing or not executable")
@@ -169,7 +169,7 @@ if not pre:
 else:
     if '"matcher": "Bash"' not in pre_json.replace('"matcher":"Bash"', '"matcher": "Bash"'):
         problems.append("the PreToolUse hook does not match Bash")
-    for script in ("sim-guard.sh", "adb-guard.sh"):
+    for script in ("sim-guard.sh", "adb-guard.sh", "lifecycle-guard.sh"):
         if script not in pre_json:
             problems.append(f"PreToolUse does not run {script}")
     if "${CLAUDE_PLUGIN_ROOT}" not in pre_json:

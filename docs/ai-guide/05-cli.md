@@ -214,8 +214,8 @@ person at its keyboard would have provided:
 smix sim list                  # simulators and Android devices (JSON: --json); an attached phone nobody registered is listed from adb's line and not asked anything ("registered": false)
 smix sim resolve <ALIAS>       # alias → UDID
 smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is taken starts on a free one, in a process group of its own so it outlives the terminal that started it
-smix sim boot <ALIAS> --no-window  # an Android emulator runs with no window on the desktop, driven as usual; refused on an emulator already running and on a phone
-SMIX_EMULATOR_NO_WINDOW=1 smix sim boot <ALIAS>   # the same for every boot under this setting; an emulator already running is left as it is
+smix sim boot <ALIAS>          # an Android emulator runs with no window on the desktop unless asked; `--no-window` is still accepted and changes nothing
+smix sim boot <ALIAS> --window # an Android emulator with its window on the desktop; refused on an emulator already running and on a phone
 smix sim boot <ALIAS> --cold   # an Android emulator boots from scratch instead of its Quick Boot snapshot, which keeps whatever state the device stopped in (a system UI that died stays dead); refused on anything else, and on an emulator already running
 smix sim boot <ALIAS> --unlock-pin 1357   # an Android emulator with a lock-screen PIN (or a password of letters and digits) is unlocked once it is up, with no window, before `booted` is printed; SMIX_UNLOCK_PIN is the default. Unlocked means both the user unlocked and the lock screen gone: the lock screen comes back whenever the screen goes off, so an emulator already running whose lock screen is back has its PIN entered again, and one without a PIN has its lock screen dismissed. Without a PIN, a locked emulator fails the boot with "is locked" or "shows its lock screen again"; a pattern cannot be entered. Works with the runner up. The PIN is never written down
 smix sim shutdown <ALIAS|UDID> # shutdown; for an emulator, returns once adb no longer lists it
@@ -403,7 +403,30 @@ be typed every time ends up pasted into a script, which is the same as not
 having one. Simulators are never gated: they can be erased and rebuilt in a
 minute, and a phone in somebody's pocket cannot.
 
-**Sim safety hook**: bare `xcrun simctl <verb>` is BLOCKED for mutating verbs. Read-only `simctl list` is allowed. To pass-through unmapped subcommands use `smix sim exec <ALIAS|UDID> <verb> ...` (this is accepted by the hook because the device id is explicit).
+**Device lifecycle fence**: smix starts, stops, erases and creates devices, and
+keeps who booted each one, who may shut it down and its PIN. In two places:
+
+- The plugin's hook refuses, before it runs, a command that does any of that
+  outside smix: `xcrun simctl boot|shutdown|erase|create|delete|clone`,
+  `emulator -avd <name>` / `emulator @<name>`, `qemu-system-*`,
+  `adb … emu kill`, `avdmanager create|delete`. Reading passes (`simctl list`,
+  `adb devices`, `emulator -list-avds`), and so does text that only names
+  them. The judgement is the binary's, `smix guard lifecycle` (the command on
+  stdin; exit 3 refused), so it updates with smix rather than with the plugin.
+- `smix runner up`, `smix run` and the MCP server's `smix_use` refuse a
+  running simulator or emulator that smix neither booted nor was told to take
+  on, which also catches a device a script started where no hook could see
+  it. `smix sim list` and `smix doctor` name such devices.
+
+The ways past are explicit, and written to `fence-exceptions.jsonl` in the
+machine directory: `smix lease claim <DEVICE> --reason "<why>"` takes on a
+running device, and `SMIX_FENCE_EXCEPTION="<why>" <command>` lets one command
+through the hook (the prefix covers the command it stands in front of, not an
+`export`). `smix sim exec <ALIAS|UDID> <verb> …` passes simctl verbs smix has no
+command for, with the device named.
+
+`smix doctor` fails (exit 1) when the installed smix plugin is older than the
+CLI, and every refusal from the hook says so too.
 
 `<ALIAS>` resolves against this machine's device registry, under
 `$XDG_DATA_HOME/smix/devices` (or `~/.local/share/smix/devices`), created and
@@ -839,7 +862,7 @@ smix lease list                # every device with a ledger, and whether it is i
 smix lease status <DEVICE>     # the holder, what is open, and what is owed
 smix lease status <DEVICE> --json  # {device, path, lease, heldBy}: the ledger as stored, the file it lives in, and who holds the device now (null when free)
 smix lease owner <DEVICE>      # who answers for it — exit 0 yes, 3 no record, 1 cannot ask
-smix lease claim <DEVICE>      # answer for one this machine did not boot
+smix lease claim <DEVICE> --reason "<why>"   # answer for one this machine did not boot; the reason is kept in the ledger and the fence log
 smix lease release <DEVICE>    # give that up again
 smix lease reconcile <DEVICE>  # close what an abandoned session left open
 smix lease prune               # drop ledgers that no longer describe anything
@@ -907,7 +930,7 @@ exits. The next run had to decide again, and nobody could read what was
 decided last time.
 
 ```bash
-smix lease claim emulator-5554     # yours to drive; still not yours to switch off
+smix lease claim emulator-5554 --reason "AVD kept running for the nightly"  # yours to drive; still not yours to switch off
 smix lease owner emulator-5554     # exit 0, and says "claimed", not "booted"
 smix lease release emulator-5554   # or let the device going off end it
 ```
@@ -1317,7 +1340,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:26.0.0")
+    debugImplementation("jp.golia.smix:smix-probe:26.1.0")
 }
 ```
 

@@ -44,6 +44,7 @@ fn lease_with(resources: Vec<Resource>) -> Lease {
 fn claimed() -> Resource {
     Resource::Claimed {
         at: "2026-08-24T00:00:00Z".into(),
+        reason: None,
     }
 }
 
@@ -128,8 +129,8 @@ fn a_claim_never_blocks_the_next_caller() {
 #[test]
 fn claiming_twice_restates_when_rather_than_stacking_rows() {
     let (_t, d) = dir();
-    store::record_claim(&d, "emulator-5554").expect("first claim");
-    store::record_claim(&d, "emulator-5554").expect("second claim");
+    store::record_claim(&d, "emulator-5554", "a test claims it").expect("first claim");
+    store::record_claim(&d, "emulator-5554", "a test claims it").expect("second claim");
     let l = store::read(&d, "emulator-5554")
         .expect("read")
         .expect("ledger");
@@ -144,9 +145,16 @@ fn claiming_twice_restates_when_rather_than_stacking_rows() {
 fn releasing_a_claim_leaves_a_real_boot_row_alone() {
     let (_t, d) = dir();
     store::record_boot(&d, "UDID-BOTH", true).expect("boot");
-    store::record_claim(&d, "UDID-BOTH").expect("claim");
-    store::drop_resource_kind(&d, "UDID-BOTH", &Resource::Claimed { at: String::new() })
-        .expect("release");
+    store::record_claim(&d, "UDID-BOTH", "a test claims it").expect("claim");
+    store::drop_resource_kind(
+        &d,
+        "UDID-BOTH",
+        &Resource::Claimed {
+            at: String::new(),
+            reason: None,
+        },
+    )
+    .expect("release");
     let l = store::read(&d, "UDID-BOTH")
         .expect("read")
         .expect("ledger survives");
@@ -171,7 +179,7 @@ fn a_lone_claim_is_worth_a_ledger() {
     // has to survive the process that wrote it, or the next run is back
     // to having nowhere to put the answer.
     let (_t, d) = dir();
-    store::record_claim(&d, "emulator-5554").expect("claim");
+    store::record_claim(&d, "emulator-5554", "a test claims it").expect("claim");
     store::drop_process_rows(&d, "emulator-5554").expect("teardown");
     assert!(
         store::read(&d, "emulator-5554")

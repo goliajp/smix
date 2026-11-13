@@ -242,7 +242,10 @@ pub fn compare(
                             format!("recording pid {}", proc.pid)
                         }
                         Row::Known(Resource::Booted { by_us }) => format!("booted by_us={by_us}"),
-                        Row::Known(Resource::Claimed { at }) => format!("claimed at {at}"),
+                        Row::Known(Resource::Claimed { at, reason }) => match reason {
+                            Some(why) => format!("claimed at {at}: {why}"),
+                            None => format!("claimed at {at}"),
+                        },
                         Row::Known(Resource::Emulator { avd, .. }) => format!("emulator {avd}"),
                         Row::Known(Resource::Environment { changes }) => {
                             format!("environment ({} changed)", changes.len())
@@ -624,21 +627,13 @@ pub fn add_resource(dir: &LeaseDir, device_id: &str, resource: Resource) -> Resu
 /// Write down that this device was booted, without losing an earlier
 /// answer to the same question.
 ///
-/// `add_resource` replaces same-kind rows, so a second boot of a device
-/// already up would overwrite `by_us: true` with `false` and lose that
-/// smix turned it on. `by_us` is about one transition: who took this device from off to on.
-/// A later call finding it already up learns nothing about that
-/// transition, so it must not answer for it. True is therefore sticky,
-/// and only a shutdown — which drops the row outright — ends it.
-///
-/// A boot this call performed over a ledger nobody holds starts a new
-/// lease. That ledger describes the device's previous life — it left, and
-/// the command noticed and kept its departure before booting — and
-/// writing into it handed the new life a dead holder and the old
-/// `acquired_at`. A departure is one (device, lease) pair, so when the new
-/// life ended too it matched the old record and was never kept
-/// (2026-09-25). A ledger a live process holds — this one included, when
-/// it claimed the device before booting it — is written into as before.
+/// `by_us` is about one transition, off to on, so `true` is sticky: a later
+/// call finding the device already up learns nothing about it, and only a
+/// shutdown (which drops the row) ends it. A boot this call performed over
+/// a ledger nobody holds starts a new lease, because that ledger is the
+/// device's previous life; writing into it handed the new life a dead
+/// holder and an old `acquired_at`, and its departure was then never kept
+/// (2026-09-25). A ledger a live process holds is written into as before.
 pub fn record_boot(dir: &LeaseDir, device_id: &str, by_us: bool) -> Result<(), LeaseError> {
     // A live holder — this process among them — keeps its ledger.
     if by_us && let Some(previous) = read(dir, device_id)? {
@@ -721,17 +716,18 @@ fn names_route(row: &Row, device_port: u16) -> bool {
     )
 }
 
-/// Write down that this holder answers for a device it did not boot.
-///
-/// The one row `record_boot` cannot write. `by_us` is about a transition
-/// this holder did not make, and saying `true` about it would hand the
-/// teardown path a device to switch off that somebody else switched on —
-/// which is the harm `by_us` exists to prevent, reached by lying to it.
-///
-/// Same kind replaces same kind, as everywhere else here, so claiming a
-/// device twice restates when rather than accumulating rows.
-pub fn record_claim(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseError> {
-    add_resource(dir, device_id, Resource::Claimed { at: now_rfc3339() })
+/// Write down that this holder answers for a device it did not boot, and
+/// why. The row `record_boot` cannot write (`by_us: true` would hand a
+/// teardown somebody else's device). Claiming twice restates, not adds.
+pub fn record_claim(dir: &LeaseDir, device_id: &str, reason: &str) -> Result<(), LeaseError> {
+    add_resource(
+        dir,
+        device_id,
+        Resource::Claimed {
+            at: now_rfc3339(),
+            reason: Some(reason.to_string()),
+        },
+    )
 }
 
 /// Whether a ledger still says anything a later command must reason about.

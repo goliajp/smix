@@ -79,6 +79,7 @@ fn the_runner_row_goes_and_the_claim_stays() {
             runner_row("emulator-5560"),
             Resource::Claimed {
                 at: "2026-08-25T00:00:00Z".into(),
+                reason: None,
             },
         ],
     );
