@@ -72,6 +72,7 @@ mod lease_cmd;
 mod parallel;
 mod readiness;
 mod record_cmd;
+mod register_emulator;
 mod runner_down;
 mod runner_list;
 mod sim_list;
@@ -1682,6 +1683,10 @@ enum SimAction {
         /// simulators, whose name comes from simctl.
         #[arg(long)]
         name: Option<String>,
+        /// An emulator's AVD, by name: registers it while it is off, and
+        /// `smix sim boot` starts that AVD on the serial's port.
+        #[arg(long)]
+        avd: Option<String>,
     },
     /// Boot a simulator.
     Boot {
@@ -2946,56 +2951,29 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     runner_port,
                     kind,
                     name,
+                    avd,
                 } => {
                     let kind = kind.to_registry();
                     let udid = registry::canonical_identifier(kind, &udid);
                     registry::identifier_fits(kind, &udid)
                         .map_err(|e| CliError::Other(e.to_string()))?;
                     if kind == smix_simctl::registry::DeviceKind::Emulator {
-                        if !adb_knows(&udid) {
-                            return Err(CliError::Other(format!(
-                                "adb lists no running device {udid} — check `adb devices`.\n\
-                             An emulator is checked against adb the way a simulator is \
-                             checked against simctl; only a physical device is taken as \
-                             given, because nothing here can enumerate the world's phones."
-                            )));
-                        }
-                        // Which AVD this serial is running, taken now,
-                        // while the emulator is up — the check above just
-                        // proved it is. A serial identifies the emulator
-                        // answering today; the AVD name is what starts one
-                        // tomorrow, and nothing later in the day can recover
-                        // it from a device that has since stopped.
-                        let avd = smix_adb::AdbClient::new()
-                            .avd_name(&udid)
-                            .await
-                            .ok()
-                            .filter(|a| !a.is_empty());
-                        let path = registry_path()?;
-                        let outcome = SimRegistry::register(
-                            &path,
+                        register_emulator::register(
                             &alias,
-                            smix_simctl::registry::RegisteredSim {
-                                device_name: name.unwrap_or_else(|| alias.clone()),
-                                udid: udid.clone(),
-                                runtime: String::new(),
-                                device_type: String::new(),
-                                avd_name: avd,
-                                locale,
-                                runner_port,
-                                kind,
-                                destructive_opt_in: false,
-                            },
-                        )?;
-                        let verb = match outcome {
-                            smix_simctl::registry::RegisterOutcome::Added => "registered",
-                            smix_simctl::registry::RegisterOutcome::Updated => "updated",
-                        };
-                        println!(
-                            "{verb}: {alias} → {udid} (Android emulator) in {}",
-                            smix_simctl::registry::store_dir(&path).display()
-                        );
+                            &udid,
+                            avd.as_deref(),
+                            name,
+                            locale,
+                            runner_port,
+                            kind,
+                        )
+                        .await?;
                         return Ok(std::process::ExitCode::SUCCESS);
+                    }
+                    if avd.is_some() {
+                        return Err(CliError::Other(
+                            "--avd names an Android emulator's AVD; pass --kind emulator".into(),
+                        ));
                     }
                     // A physical device is taken as given.
                     //
@@ -7049,6 +7027,7 @@ mod tests {
                     runner_port: None,
                     kind: DeviceKindArg::Simulator,
                     name: None,
+                    avd: None,
                 },
             ),
             (

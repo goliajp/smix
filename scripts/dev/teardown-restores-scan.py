@@ -159,6 +159,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v26.0-c1-f-a-picture-playing-or-frozen-e2e.sh",
     "v26.0-c1-g-settings-put-back-e2e.sh",
     "v26.0-c1-h-a-row-on-a-sheet-ipad-e2e.sh",
+    "v26.1-b-register-an-emulator-while-off-e2e.sh",
     "v26.1-device-lifecycle-fence-e2e.sh",
 }
 
