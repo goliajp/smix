@@ -228,14 +228,8 @@ pub(crate) fn machine() -> Machine {
 }
 
 fn avd_class(avd: &str) -> Class {
-    let home = std::env::var("ANDROID_AVD_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|_| {
-            std::env::var("HOME").map(|h| std::path::PathBuf::from(h).join(".android/avd"))
-        });
     // an AVD whose config cannot be read is weighed as the heavier kind
-    match home
-        .ok()
+    match crate::register_emulator::avd_home()
         .and_then(|d| std::fs::read_to_string(d.join(format!("{avd}.avd/config.ini"))).ok())
     {
         Some(ini) => Class::of_avd_config(&ini),

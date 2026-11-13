@@ -2,6 +2,17 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.2.0] — 2026-11-13
+
+### Added
+
+- **An Android emulator can be registered while it is off.** `smix sim
+  register <alias> --udid emulator-<port> --kind emulator --avd <AVD>`
+  checks that the AVD is on this machine and records it; `smix sim boot
+  <alias>` then starts it on that port. Registering used to read the AVD
+  off a running emulator, so a new AVD had to be started outside smix
+  first — which the device lifecycle fence in 26.1.0 refuses.
+
 ## [26.1.0] — 2026-11-13
 
 ### Added
