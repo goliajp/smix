@@ -100,6 +100,8 @@ fi
 
 WORK="$(mktemp -d)"
 export SMIX_MACHINE_DIR="$WORK/machine"
+e2e_answer_for "$SERIAL" "booted under the machine ledger, driven from this one" \
+  || fail "could not take $SERIAL on in this script's ledger"
 # Fails after six seconds, which is the window the scales are read in.
 cat >"$WORK/wait.yaml" <<EOF
 appId: $APPID

@@ -26,13 +26,14 @@ pub(crate) enum GuardAction {
     Lifecycle,
 }
 
-/// `smix doctor`'s fence checks: devices running outside smix, and a
-/// plugin older than this binary. Appended to `checks`; true when any of
-/// them should fail the command.
+/// `smix doctor`'s fence checks, appended to `checks`: devices running
+/// outside smix, and a plugin older than this binary. They mark a line and
+/// leave doctor's exit status alone: scripts read doctor under `set -e`,
+/// and a plugin that lags a release would fail every one of them.
 pub(crate) async fn doctor_checks(
     simctl: &smix_simctl::SimctlClient,
     checks: &mut Vec<crate::readiness::Check>,
-) -> bool {
+) {
     use crate::readiness::{Check, Status};
     let booted = crate::booted_udids(simctl).await;
     let emulators = crate::android_devices()
@@ -41,38 +42,27 @@ pub(crate) async fn doctor_checks(
         .map(|a| a.serial)
         .collect::<Vec<_>>();
     let outside = unanswered::unanswered(booted.iter().chain(&emulators).map(String::as_str));
-    let mut failed = false;
-    checks.push(match unanswered::report(&outside) {
-        Some(report) => {
-            failed = true;
-            Check {
-                id: "devices-outside-smix",
-                status: Status::Blocked,
-                detail: report,
-            }
-        }
-        None => Check {
-            id: "devices-outside-smix",
-            status: Status::Ok,
-            detail: "every running device was started or claimed through smix".into(),
-        },
+    let (status, detail) = match unanswered::report(&outside) {
+        Some(report) => (Status::Blocked, report),
+        None => (
+            Status::Ok,
+            "every running device was started or claimed through smix".into(),
+        ),
+    };
+    checks.push(Check {
+        id: "devices-outside-smix",
+        status,
+        detail,
     });
-    checks.push(match plugin_freshness::doctor_verdict() {
-        Ok(detail) => Check {
-            id: "plugin-current",
-            status: Status::Ok,
-            detail,
-        },
-        Err(detail) => {
-            failed = true;
-            Check {
-                id: "plugin-current",
-                status: Status::Blocked,
-                detail,
-            }
-        }
+    let (status, detail) = match plugin_freshness::doctor_verdict() {
+        Ok(detail) => (Status::Ok, detail),
+        Err(detail) => (Status::Blocked, detail),
+    };
+    checks.push(Check {
+        id: "plugin-current",
+        status,
+        detail,
     });
-    failed
 }
 
 /// Refuse to run against `device` when it is a running simulator or

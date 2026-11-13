@@ -2878,11 +2878,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Doctor {
             json,
             runner_port: port,
-        } => {
-            let code =
-                doctor_cmd::cmd_doctor(&simctl, json, port.unwrap_or_else(runner_port)).await?;
-            return Ok(std::process::ExitCode::from(code));
-        }
+        } => doctor_cmd::cmd_doctor(&simctl, json, port.unwrap_or_else(runner_port)).await?,
         Cmd::Bench {
             update_baseline,
             current_file,

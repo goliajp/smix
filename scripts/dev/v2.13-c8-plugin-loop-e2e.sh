@@ -62,7 +62,7 @@ e2e_yield_if_held "$UDID"
 
 step "build and install the app under test"
 bash "$ROOT/scripts/dev/build-fixture-app.sh" >/dev/null 2>&1 || fail "fixture build failed"
-xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+"$SMIX" sim boot "$UDID" >/dev/null 2>&1 || fail "could not boot $UDID through smix"
 xcrun simctl install "$UDID" "$APP" >/dev/null 2>&1 || fail "could not install the fixture"
 
 # The session runs here: an app repo, not this one. Nothing in it knows

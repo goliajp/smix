@@ -111,6 +111,14 @@ e2e_ledger_path() {
   "$SMIX" lease status "$1" --json | python3 -c 'import json, sys; print(json.load(sys.stdin)["path"])'
 }
 
+# e2e_answer_for <device> <why> — take on, in the ledger this script uses,
+# a device that was running before it arrived. smix drives only a device it
+# booted or somebody claimed, and an isolated ledger has no row for a
+# device booted under the machine's own; the claim says so, with a reason.
+e2e_answer_for() {
+  "$SMIX" lease claim "$1" --reason "e2e $(basename "$0"): $2" >/dev/null 2>&1
+}
+
 # e2e_start_emulator <log> <emulator args…> — start an emulator by hand, in
 # a process group of its own, in the background; `$!` is its launcher.
 #

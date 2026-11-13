@@ -110,6 +110,10 @@ trap cleanup EXIT
 
 step "1. a free device lets a destructive command through"
 "$SMIX" sim boot "$UDID" >/dev/null 2>&1 || fail "sim boot failed"
+if [ "$WAS_BOOTED" = yes ]; then
+  e2e_answer_for "$UDID" "running on arrival, driven from this script's ledger" \
+    || fail "could not take $UDID on in this script's ledger"
+fi
 OUT="$("$SMIX" sim keychain-reset "$UDID" 2>&1)" \
   || fail "keychain-reset refused on a free device: $OUT"
 echo "$OUT" | grep -q "keychain reset" || fail "unexpected output: $OUT"

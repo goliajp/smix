@@ -21,7 +21,7 @@ pub(crate) async fn cmd_doctor(
     simctl: &SimctlClient,
     json: bool,
     port: u16,
-) -> Result<u8, CliError> {
+) -> Result<(), CliError> {
     // Gather, then judge. The judging is `readiness::assess`, a pure
     // function with its ordering under test — which is the only way the
     // "what do I run next" answer stays correct as checks are added.
@@ -69,12 +69,12 @@ pub(crate) async fn cmd_doctor(
         downgradeable,
         adb: adb_facts(),
     });
-    let code = u8::from(fence::doctor_checks(simctl, &mut verdict.checks).await);
+    fence::doctor_checks(simctl, &mut verdict.checks).await;
     if json {
         let out = serde_json::to_string_pretty(&verdict)
             .map_err(|e| CliError::Other(format!("serialize: {e}")))?;
         println!("{out}");
-        return Ok(code);
+        return Ok(());
     }
 
     println!("smix doctor");
@@ -96,7 +96,7 @@ pub(crate) async fn cmd_doctor(
         }
         None => println!("\nready — nothing left to set up"),
     }
-    Ok(code)
+    Ok(())
 }
 
 /// The adb smix runs, as doctor reports it; `None` when there is none.

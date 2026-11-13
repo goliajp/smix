@@ -16,6 +16,14 @@ Nothing drives until a device is bound to this session.
 Calling a sense or act tool before that gets refused by name, not by a
 connection error — if you see that refusal, the fix is `smix_use`.
 
+Devices are started, stopped and created through smix (`smix sim boot`,
+`smix sim shutdown`, `smix sim erase`), never with a bare `simctl boot`,
+`emulator -avd` or the like: the hook refuses those, and a device that came
+up any other way is one smix will not drive. If a device is already running
+and `smix_use` says it "was not started by smix and nobody has claimed it",
+do not work around it — tell the person, who can stop it and boot it
+through smix, or take it on with `smix lease claim <device> --reason "<why>"`.
+
 To switch devices mid-session, call `smix_use` again. To stop, `smix_release`.
 
 ## Look before you act
@@ -70,6 +78,7 @@ driven from the terminal, and everything below is a real command.
 ```bash
 smix sim register android --udid emulator-5554 --kind emulator \
   --runner-port 22091            # says which store it wrote to
+smix sim boot android            # no window; --window to show one
 smix runner up emulator-5554 --platform android --runner-port 22091
 ```
 

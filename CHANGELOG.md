@@ -23,8 +23,8 @@ All notable changes to the `smix` workspace are documented here. The format foll
   The ways past are explicit and logged to `fence-exceptions.jsonl` in the
   machine directory: `smix lease claim <device> --reason "<why>"`, and
   `SMIX_FENCE_EXCEPTION="<why>"` in front of one command.
-- **`smix doctor` fails when the smix plugin is older than the CLI**, and
-  says how to update it.
+- **`smix doctor` marks a smix plugin older than the CLI**, and says how to
+  update it; so does every refusal from the hook.
 
 ### Changed
 
@@ -33,7 +33,6 @@ All notable changes to the `smix` workspace are documented here. The format foll
   change nothing.
 - **`smix lease claim` takes `--reason`, and requires it.** The reason is
   kept in the ledger and shown by `lease status`.
-- `smix doctor` exits 1 when one of its new checks fails.
 
 ## [26.0.0] — 2026-11-12
 

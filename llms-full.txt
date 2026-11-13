@@ -2956,8 +2956,8 @@ through the hook (the prefix covers the command it stands in front of, not an
 `export`). `smix sim exec <ALIAS|UDID> <verb> …` passes simctl verbs smix has no
 command for, with the device named.
 
-`smix doctor` fails (exit 1) when the installed smix plugin is older than the
-CLI, and every refusal from the hook says so too.
+`smix doctor` marks an installed smix plugin older than the CLI (its exit
+status is unchanged), and every refusal from the hook says so too.
 
 `<ALIAS>` resolves against this machine's device registry, under
 `$XDG_DATA_HOME/smix/devices` (or `~/.local/share/smix/devices`), created and
