@@ -2,6 +2,15 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.4.0] — 2026-11-15
+
+### Added
+
+- **`smix sim appearance` on an Android emulator.** `light` / `dark` sets
+  the system night mode and returns once the configuration apps receive
+  has changed, so a screenshot taken right after it is already in the
+  new mode. No runner is needed.
+
 ## [26.3.0] — 2026-11-14
 
 ### Added
