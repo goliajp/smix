@@ -48,18 +48,22 @@ async fn set_night_mode(serial: &str, night: bool) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?;
     let deadline = Instant::now() + Duration::from_secs(10);
-    let mut seen = None;
-    while Instant::now() < deadline {
+    let seen = loop {
+        // a read that began before the deadline still counts
+        let looked = Instant::now();
         let config = adb
             .shell(serial, &["am", "get-config"])
             .await
             .map_err(|e| e.to_string())?;
-        seen = night_of_config(&config);
+        let seen = night_of_config(&config);
         if seen == Some(night) {
             return Ok(());
         }
+        if looked >= deadline {
+            break seen;
+        }
         tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    };
     let seen = match seen {
         Some(true) => "night",
         Some(false) => "notnight",
