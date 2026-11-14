@@ -2,6 +2,26 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.3.0] — 2026-11-14
+
+### Added
+
+- **`smix sim orientation <device> <orientation>`** turns a simulator or
+  emulator from the command line, the same turn as the flow step
+  `setOrientation`, through the device's runner.
+
+### Fixed
+
+- **`setOrientation` on an Android tablet.** `PORTRAIT` was sent as
+  rotation 0, which on a tablet whose screen is landscape at rest is
+  landscape; the read-back agreed with that number, so the step said ok
+  and the screen did not turn. Rotations are now counted from the
+  display's natural axis, on phones and tablets alike.
+- **A verb's `--device` given as an alias** was compared, as the alias,
+  with the UDID or serial that holds the runner's port, and refused as
+  "port … reaches emulator-5584, and the command named <alias>". The
+  alias is resolved through the registry first.
+
 ## [26.2.0] — 2026-11-13
 
 ### Added

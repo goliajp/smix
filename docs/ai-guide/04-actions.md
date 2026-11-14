@@ -674,7 +674,8 @@ with `from`, `to` and `holdMs` / `durationMs` / `releaseMs`.
 - iOS: the runner sets `XCUIDevice.shared.orientation`.
 - iOS foldable simulator (iPhone Duo): it ignores `XCUIDevice.orientation`, folded or not, so smix turns it the way Device Hub's orientation picker does and waits until the device reads the new orientation back. The orientation is measured against the lit screen. Folded, `PORTRAIT_UPSIDE_DOWN` cannot be reached; unfolded, `LANDSCAPE_LEFT` cannot. Either one is refused by name rather than ignored.
 - visionOS (Vision Pro simulator): refused — a headset has no device orientation.
-- Android: `adb shell content insert --uri content://settings/system --bind name:s:user_rotation`.
+- Android: the runner freezes the display's rotation and reads it back; a step that does not arrive fails with `rotation_did_not_take`. Rotation is counted from the display's natural axis, so `PORTRAIT` on a tablet whose screen is landscape at rest turns it to portrait.
+- The CLI does the same turn outside a flow: `smix sim orientation <device> portrait`.
 - Some apps lock orientation in Info.plist / manifest → setOrientation no-op; assert with `assertVisible` against orientation-dependent label to verify.
 
 ## Folding (foldable simulators)

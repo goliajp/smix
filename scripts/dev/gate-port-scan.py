@@ -67,7 +67,7 @@ RUNNER_COMMANDS = {
     "scroll", "hide-keyboard", "tree", "describe", "system-popups",
     "system-popup-action", "authoring suggest", "authoring capture-tree",
     "authoring diff-tree", "authoring record", "diagnostic dump",
-    "sim screenshot",
+    "sim screenshot", "sim orientation",
 }
 # Offer a runner port only to write it into the registry; they dial nothing.
 RECORDS_A_PORT = {

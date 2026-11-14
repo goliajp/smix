@@ -1359,40 +1359,27 @@ class SmixHttpServer(
         // upside-down case it emulates with two rotations and cannot
         // promise on every device.
         val orientation = RunnerWire.decodeSetOrientation(readBodyString(session))
-        when (orientation) {
-            "portrait" -> device.setOrientationNatural()
-            "landscapeLeft" -> device.setOrientationLeft()
-            "landscapeRight" -> device.setOrientationRight()
-            "portraitUpsideDown" ->
-                // UiDevice has no upside-down call. The emulation that
-                // used to be here — natural, then two left rotations —
-                // lands at rotation 1 rather than 2 (measured,
-                // emulator-5554), and nothing checked, so this verb has
-                // been quietly doing something else and saying it
-                // worked. The settings route gets there.
-                RunnerWire.rotateUpsideDownCommands().forEach { runShellCommand(it) }
-            else -> return errorJson(
-                Response.Status.BAD_REQUEST,
-                "bad_orientation",
-                "expected portrait | landscapeLeft | landscapeRight | portraitUpsideDown, got '$orientation'",
-            )
+        val natural = Orientation.naturalIsLandscape(device.displayWidth, device.displayHeight, device.displayRotation)
+        val want = Orientation.rotationFor(orientation, natural) ?: return errorJson(
+            Response.Status.BAD_REQUEST,
+            "bad_orientation",
+            "expected portrait | landscapeLeft | landscapeRight | portraitUpsideDown, got '$orientation'",
+        )
+        when (Orientation.turnFor(want)) {
+            Orientation.Turn.NATURAL -> device.setOrientationNatural()
+            Orientation.Turn.LEFT -> device.setOrientationLeft()
+            Orientation.Turn.RIGHT -> device.setOrientationRight()
+            Orientation.Turn.SETTINGS -> Orientation.settingsCommands(want).forEach { runShellCommand(it) }
         }
         val clock = routeClock("/set-orientation")
         device.waitForIdle(800)
-        // A rotation is a transition, and one look cannot answer a
-        // question about a transition — the settings route in
-        // particular takes a moment longer than the window manager's
-        // own calls, and a single read right after it caught the
-        // display still at its old value.
-        val want = RunnerWire.rotationFor(orientation)
+        // a rotation is a transition: the settings route in particular
+        // takes a moment longer, and one read right after it caught the
+        // display still at its old value
         val rotation = clock.stage("rotation") {
             Poll.until(clock.budget(ROTATION_ARRIVES_MS), 50, { device.displayRotation }, { it == want })
         } ?: -1
-        val body = RunnerWire.setOrientationBody(
-            RunnerWire.rotationMatches(orientation, rotation),
-            orientation,
-            rotation,
-        )
+        val body = RunnerWire.setOrientationBody(rotation == want, orientation, rotation)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
