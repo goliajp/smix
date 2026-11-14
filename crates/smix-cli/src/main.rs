@@ -42,6 +42,7 @@ mod drag_cmd;
 mod fill_secret;
 mod hover_cmd;
 mod log_sources;
+mod appearance_cmd;
 mod orientation_cmd;
 mod pinch_cmd;
 mod platform;
@@ -1937,12 +1938,12 @@ enum SimAction {
     },
     /// Turn the device: portrait, landscape, landscapeLeft, landscapeRight or portraitUpsideDown (its runner must be up).
     Orientation(orientation_cmd::OrientationArgs),
-    /// Set simulator UI appearance (light / dark).
+    /// Set light or dark appearance (an emulator: its system night mode).
     Appearance {
-        /// Which device, by UDID or registry alias.
+        /// Which device, by UDID, emulator serial or registry alias.
         device: String,
         /// `light` or `dark`.
-        #[arg(value_parser = parse_appearance)]
+        #[arg(value_parser = appearance_cmd::parse_appearance)]
         mode: Appearance,
     },
     /// Allow destructive actions on a physical device, once.
@@ -2063,14 +2064,6 @@ fn parse_kv_pair(s: &str) -> Result<(String, String), String> {
         return Err(format!("empty KEY in `{s}`"));
     }
     Ok((k.to_string(), v.to_string()))
-}
-
-fn parse_appearance(s: &str) -> Result<Appearance, String> {
-    match s.to_ascii_lowercase().as_str() {
-        "light" => Ok(Appearance::Light),
-        "dark" => Ok(Appearance::Dark),
-        other => Err(format!("expected 'light' or 'dark', got {:?}", other)),
-    }
 }
 
 /// Whether a device reference is asking "where is my device" rather
@@ -2487,12 +2480,11 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
             | SimAction::Resolve { .. } => return None,
 
             SimAction::Boot { .. } | SimAction::Shutdown { .. } => POWERABLE,
-            // both runners turn the display
-            SimAction::Orientation(_) => POWERABLE,
+            // both runners turn the display; both kinds have a night mode
+            SimAction::Orientation(_) | SimAction::Appearance { .. } => POWERABLE,
 
             SimAction::Erase { .. }
             | SimAction::Repair { .. }
-            | SimAction::Appearance { .. }
             | SimAction::Locale { .. }
             | SimAction::Exec { .. }
             // A hinge exists on a foldable simulator, through CoreSimulator.
@@ -2549,7 +2541,7 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         SimAction::Screenshot { .. } => Some("screenshot"),
         SimAction::KeychainReset { .. } => Some("keychain_reset"),
         // No row, because none of these is a `DeviceControl` method:
-        // powering a device, erasing it, and the three simulator-only
+        // powering a device, erasing it, turning it, and the device
         // settings. Their refusals are built from their own support
         // list instead, by `refusal_for`.
         SimAction::Posture { .. } | SimAction::Orientation(_) => None,
@@ -3581,9 +3573,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 SimAction::Orientation(args) => orientation_cmd::run(&simctl, args).await?,
                 SimAction::Appearance { device, mode } => {
-                    let udid = resolve_device(&device)?;
-                    simctl.set_appearance(&udid, mode).await?;
-                    println!("appearance: {udid} → {}", mode.as_str());
+                    appearance_cmd::run(&simctl, &device, mode).await?
                 }
                 SimAction::AllowDestructive { device } => {
                     let path = registry_path()?;
@@ -7325,7 +7315,7 @@ mod tests {
     /// not, and it was the false half a consumer read.
     #[test]
     fn a_verb_the_table_cannot_answer_for_refuses_without_claiming_simctl() {
-        for verb in ["erase", "appearance", "locale", "exec"] {
+        for verb in ["erase", "locale", "exec"] {
             let action = sim_verb(verb);
             assert!(
                 table_action_of(&action).is_none(),
