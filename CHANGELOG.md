@@ -11,6 +11,13 @@ All notable changes to the `smix` workspace are documented here. The format foll
   has changed, so a screenshot taken right after it is already in the
   new mode. No runner is needed.
 
+### Fixed
+
+- **A smix process that started a child on one thread while opening its
+  store on another could be refused** with "kevy data dir … is already
+  open in another engine". The child briefly held a copy of the store's
+  locks; the open now waits for it.
+
 ## [26.3.0] — 2026-11-14
 
 ### Added

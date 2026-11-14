@@ -29,8 +29,10 @@
 
 use std::path::{Path, PathBuf};
 
+use engine::open_engine;
 use kevy_embedded::{Config, KevyMetric, Store as KevyStore};
 
+mod engine;
 mod import;
 pub use import::import_legacy_records;
 
@@ -248,10 +250,7 @@ impl Store {
         })?;
 
         let dir = root.join("kv");
-        let inner = KevyStore::open(kevy_config(&dir)).map_err(|source| StoreError::Open {
-            path: dir.clone(),
-            source: std::io::Error::other(source),
-        })?;
+        let inner = open_engine(&dir)?;
         compact_if_overgrown(&inner, &dir);
         Ok(Store {
             inner,
@@ -291,10 +290,7 @@ impl Store {
             return Ok(None);
         }
         let dir = root.join("kv");
-        let inner = KevyStore::open(kevy_config(&dir)).map_err(|source| StoreError::Open {
-            path: dir.clone(),
-            source: std::io::Error::other(source),
-        })?;
+        let inner = open_engine(&dir)?;
         Ok(Some(Store {
             inner,
             root: root.to_path_buf(),
