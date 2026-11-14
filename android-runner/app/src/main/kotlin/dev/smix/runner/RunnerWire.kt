@@ -468,53 +468,6 @@ object RunnerWire {
 
     fun statusOkBody(): String = JSONObject().put("status", "ok").toString()
 
-    /// Turning the display upside down, which UiAutomator has no call
-    /// for.
-    ///
-    /// `setOrientationNatural()` followed by two left rotations was the
-    /// emulation here, and it does not arrive: measured on
-    /// emulator-5554 (API 36) it leaves the display at rotation 1, and
-    /// the route reported success anyway because nothing looked. The
-    /// settings route does arrive — rotation 2, same emulator, same
-    /// minute — and needs the accelerometer frozen first, which is what
-    /// the UiAutomator calls do for the other three.
-    fun rotateUpsideDownCommands(): List<String> = listOf(
-        "settings put system accelerometer_rotation 0",
-        "settings put system user_rotation 2",
-    )
-
-    /// Which `Surface.ROTATION_*` each orientation name should leave
-    /// the display in.
-    ///
-    /// Measured on emulator-5554 (API 36) rather than assumed: the
-    /// names are smix's, the numbers are Android's, and the pairing is
-    /// a fact about the device, not about either vocabulary.
-    fun rotationFor(orientation: String): Int? = when (orientation) {
-        "portrait" -> 0
-        "landscapeLeft" -> 1
-        "landscapeRight" -> 3
-        "portraitUpsideDown" -> 2
-        else -> null
-    }
-
-    /// Whether the display ended up where the caller asked for.
-    ///
-    /// An unknown name is rejected by the route before this, so a
-    /// `null` expectation here would be a bug rather than a pass.
-    fun rotationMatches(orientation: String, rotation: Int): Boolean =
-        rotationFor(orientation) == rotation
-
-    // The rotation the display is left in, and whether it is the one
-    // asked for. `portraitUpsideDown` is emulated with two rotations
-    // and not every device ends up where that aims, which the route
-    // used to report as success regardless.
-    fun setOrientationBody(ok: Boolean, orientation: String, rotation: Int): String = JSONObject()
-        .put("ok", ok)
-        .put("status", if (ok) "ok" else "rotation_did_not_take")
-        .put("orientation", orientation)
-        .put("rotation", rotation)
-        .toString()
-
     fun tapByIdBody(
         ok: Boolean,
         id: String,

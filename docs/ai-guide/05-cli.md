@@ -230,6 +230,7 @@ smix sim install <ALIAS|UDID> <path/to.app|.apk>   # every kind; reinstalling st
 smix sim uninstall <ALIAS|UDID> <bundle-id|package>  # every kind; on a physical one, after allow-destructive
 smix sim openurl <ALIAS|UDID> <url>   # every kind; deeplink, app-level, no device lease needed
 smix sim appearance <ALIAS|UDID> light|dark   # simulator only
+smix sim orientation <ALIAS|UDID> portrait|landscape|landscapeLeft|landscapeRight|portraitUpsideDown   # simulator and emulator, through the device's runner (must be up); the same turn as `setOrientation`
 smix sim keychain-reset <ALIAS|UDID>   # simulator only
 smix sim allow-destructive <ALIAS|UDID>   # physical devices only; once, not per command
 smix sim exec <ALIAS|UDID> <verb> [args...]

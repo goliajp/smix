@@ -42,6 +42,7 @@ mod drag_cmd;
 mod fill_secret;
 mod hover_cmd;
 mod log_sources;
+mod orientation_cmd;
 mod pinch_cmd;
 mod platform;
 mod runner_target;
@@ -1934,6 +1935,8 @@ enum SimAction {
         /// The URL to open — a deeplink the app registered, or any scheme the OS handles.
         url: String,
     },
+    /// Turn the device: portrait, landscape, landscapeLeft, landscapeRight or portraitUpsideDown (its runner must be up).
+    Orientation(orientation_cmd::OrientationArgs),
     /// Set simulator UI appearance (light / dark).
     Appearance {
         /// Which device, by UDID or registry alias.
@@ -2419,6 +2422,7 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         | SimAction::Crashes { device, .. }
         | SimAction::Openurl { device, .. }
         | SimAction::Appearance { device, .. }
+        | SimAction::Orientation(orientation_cmd::OrientationArgs { device, .. })
         | SimAction::AllowDestructive { device }
         | SimAction::KeychainReset { device }
         | SimAction::Locale { device, .. }
@@ -2427,16 +2431,6 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
 }
 
 /// Which device kinds each `smix sim` verb can actually act on.
-///
-/// An exhaustive match, deliberately: adding a verb will not compile
-/// until somebody says which devices it works on. The alternative is a
-/// hand-kept list of "the verbs I remembered to check", which is how
-/// `capsule up` came to run `simctl boot` against an emulator and sit
-/// there until it timed out 120 seconds later, reporting the timeout
-/// rather than the mistake.
-///
-/// `None` means the verb takes no device, or acts on the registry
-/// rather than the device.
 fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::DeviceKind>> {
     use DeviceKind::{Emulator, Simulator};
     use smix_simctl::registry::DeviceKind;
@@ -2493,6 +2487,8 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
             | SimAction::Resolve { .. } => return None,
 
             SimAction::Boot { .. } | SimAction::Shutdown { .. } => POWERABLE,
+            // both runners turn the display
+            SimAction::Orientation(_) => POWERABLE,
 
             SimAction::Erase { .. }
             | SimAction::Repair { .. }
@@ -2556,7 +2552,7 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         // powering a device, erasing it, and the three simulator-only
         // settings. Their refusals are built from their own support
         // list instead, by `refusal_for`.
-        SimAction::Posture { .. } => None,
+        SimAction::Posture { .. } | SimAction::Orientation(_) => None,
         SimAction::List { .. }
         | SimAction::Budget(_)
         | SimAction::Register { .. }
@@ -2900,13 +2896,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Diagnostic { action } => cmd_diagnostic(action).await?,
         Cmd::Session { action } => cmd_session(action).await?,
         Cmd::Sim { action } => {
-            // One gate for every `sim` verb, before any of them runs.
-            // Putting it inside the arms would mean remembering it in
-            // each — and the arms that most needed it are exactly the
-            // ones nobody remembered.
-            // Governance before transport. Both can refuse the same
-            // verb on the same device; the difference is what the
-            // person is told, and only one of the two is the rule.
+            // one gate for every `sim` verb, before any arm runs;
+            // governance before transport, so the person is told the rule
             guard_destructive_action(&action)?;
             if let Some(device) = sim_action_device(&action) {
                 guard_sim_verb(&action, device)?;
@@ -3588,6 +3579,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         .map_err(|e| CliError::Other(e.to_string()))?;
                     println!("opened: {url} on {udid}");
                 }
+                SimAction::Orientation(args) => orientation_cmd::run(&simctl, args).await?,
                 SimAction::Appearance { device, mode } => {
                     let udid = resolve_device(&device)?;
                     simctl.set_appearance(&udid, mode).await?;
@@ -5219,6 +5211,7 @@ fn is_destructive(action: &SimAction) -> bool {
         // destructive one, and it is not this.
         | SimAction::Permission { .. }
         | SimAction::Appearance { .. }
+        | SimAction::Orientation(_)
         | SimAction::Locale { .. } => false,
     }
 }
@@ -7121,6 +7114,14 @@ mod tests {
                     device: d(),
                     mode: Appearance::Light,
                 },
+            ),
+            (
+                "orientation",
+                SimAction::Orientation(orientation_cmd::OrientationArgs {
+                    device: d(),
+                    orientation: smix_driver::Orientation::Portrait,
+                    port: None,
+                }),
             ),
             ("keychain-reset", SimAction::KeychainReset { device: d() }),
             (

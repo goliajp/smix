@@ -162,19 +162,6 @@ class RunnerWireEncodeTest {
     }
 
     @Test
-    fun everyOrientationNameHasOneRotationAndTheyAreAllDifferent() {
-        val names = listOf("portrait", "landscapeLeft", "landscapeRight", "portraitUpsideDown")
-        val rotations = names.map { RunnerWire.rotationFor(it) }
-        assertEquals(listOf(0, 1, 3, 2), rotations)
-        // Four names, four rotations: two names sharing one would make
-        // the read-back unable to tell them apart.
-        assertEquals(4, rotations.toSet().size)
-        assertEquals(null, RunnerWire.rotationFor("sideways"))
-        assertTrue(RunnerWire.rotationMatches("landscapeLeft", 1))
-        assertFalse(RunnerWire.rotationMatches("landscapeLeft", 3))
-    }
-
-    @Test
     fun theRoutesThatUsedToAnswerStatusOkNowCarryWhatTheyDecided() {
         // Each of these built a body with `status: "ok"` in it and no
         // `ok` field at all, so a failure reached the host as a pass.
@@ -188,7 +175,7 @@ class RunnerWireEncodeTest {
             JSONObject(RunnerWire.foregroundBody(false, "dev.smix.fixture", "foreground=com.android.launcher3"))
                 .getBoolean("ok"),
         )
-        assertEquals(false, JSONObject(RunnerWire.setOrientationBody(false, "portrait", 1)).getBoolean("ok"))
+        assertEquals(false, JSONObject(Orientation.body(false, "portrait", 1)).getBoolean("ok"))
         assertEquals(true, JSONObject(RunnerWire.tapAtNormCoordBody(true, 1080, 2400, 5, 6, NO_CHAIN)).getBoolean("ok"))
     }
 
@@ -213,13 +200,6 @@ class RunnerWireEncodeTest {
         val obj = JSONObject(RunnerWire.statusOkBody())
         assertEquals("ok", obj.getString("status"))
         assertEquals(1, obj.length())
-    }
-
-    @Test
-    fun setOrientationEchoesLiteral() {
-        val obj = JSONObject(RunnerWire.setOrientationBody(true, "landscapeRight", 3))
-        assertEquals("ok", obj.getString("status"))
-        assertEquals("landscapeRight", obj.getString("orientation"))
     }
 
     // MARK: - /tap-by-id (Rust client reads `ok`)

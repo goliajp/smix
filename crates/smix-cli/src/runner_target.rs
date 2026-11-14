@@ -248,7 +248,9 @@ pub(crate) fn name_the_device(device: Option<&str>, android: bool) {
         } else {
             smix_runner_client::OwnerProbe::Ios
         };
-        let _ = NAMED_DEVICE.set((d.to_string(), probe));
+        // the port's owner is known by UDID or serial, never by alias
+        let id = crate::lookup_registered(d).map_or_else(|| d.to_string(), |s| s.udid);
+        let _ = NAMED_DEVICE.set((id, probe));
     }
 }
 
