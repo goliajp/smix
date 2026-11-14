@@ -468,6 +468,15 @@ object RunnerWire {
 
     fun statusOkBody(): String = JSONObject().put("status", "ok").toString()
 
+    // the rotation the display was left in, and whether it is the one
+    // asked for; the rotation rules are in [Orientation]
+    fun setOrientationBody(ok: Boolean, orientation: String, rotation: Int): String = JSONObject()
+        .put("ok", ok)
+        .put("status", if (ok) "ok" else "rotation_did_not_take")
+        .put("orientation", orientation)
+        .put("rotation", rotation)
+        .toString()
+
     fun tapByIdBody(
         ok: Boolean,
         id: String,

@@ -4,8 +4,6 @@
 // Free of android.* imports so it runs as a JVM unit test.
 package dev.smix.runner
 
-import org.json.JSONObject
-
 object Orientation {
     /// Whether the display is landscape at rotation 0, from its size and
     /// rotation as they are now. A tablet's natural axis is landscape, a
@@ -52,13 +50,4 @@ object Orientation {
         "settings put system accelerometer_rotation 0",
         "settings put system user_rotation $rotation",
     )
-
-    /// The rotation the display was left in, and whether it is the one
-    /// asked for.
-    fun body(ok: Boolean, orientation: String, rotation: Int): String = JSONObject()
-        .put("ok", ok)
-        .put("status", if (ok) "ok" else "rotation_did_not_take")
-        .put("orientation", orientation)
-        .put("rotation", rotation)
-        .toString()
 }

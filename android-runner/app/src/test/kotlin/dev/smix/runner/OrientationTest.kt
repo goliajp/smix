@@ -58,10 +58,10 @@ class OrientationTest {
 
     @Test
     fun theBodySaysWhetherTheRotationTook() {
-        val ok = JSONObject(Orientation.body(true, "landscapeRight", 3))
+        val ok = JSONObject(RunnerWire.setOrientationBody(true, "landscapeRight", 3))
         assertEquals("ok", ok.getString("status"))
         assertEquals("landscapeRight", ok.getString("orientation"))
-        val not = JSONObject(Orientation.body(false, "portrait", 0))
+        val not = JSONObject(RunnerWire.setOrientationBody(false, "portrait", 0))
         assertEquals(false, not.getBoolean("ok"))
         assertEquals("rotation_did_not_take", not.getString("status"))
     }

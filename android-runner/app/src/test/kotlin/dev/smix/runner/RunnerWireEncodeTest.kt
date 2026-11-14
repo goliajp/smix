@@ -175,7 +175,7 @@ class RunnerWireEncodeTest {
             JSONObject(RunnerWire.foregroundBody(false, "dev.smix.fixture", "foreground=com.android.launcher3"))
                 .getBoolean("ok"),
         )
-        assertEquals(false, JSONObject(Orientation.body(false, "portrait", 1)).getBoolean("ok"))
+        assertEquals(false, JSONObject(RunnerWire.setOrientationBody(false, "portrait", 1)).getBoolean("ok"))
         assertEquals(true, JSONObject(RunnerWire.tapAtNormCoordBody(true, 1080, 2400, 5, 6, NO_CHAIN)).getBoolean("ok"))
     }
 

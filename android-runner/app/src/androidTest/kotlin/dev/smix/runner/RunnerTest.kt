@@ -1379,7 +1379,7 @@ class SmixHttpServer(
         val rotation = clock.stage("rotation") {
             Poll.until(clock.budget(ROTATION_ARRIVES_MS), 50, { device.displayRotation }, { it == want })
         } ?: -1
-        val body = Orientation.body(rotation == want, orientation, rotation)
+        val body = RunnerWire.setOrientationBody(rotation == want, orientation, rotation)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
