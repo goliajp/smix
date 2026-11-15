@@ -12,7 +12,7 @@ object RouteLimits {
     val MS: Map<String, Long> = mapOf(
         "/back" to 11_500L,
         "/hide-keyboard" to 6_500L,
-        "/set-orientation" to 7_800L,
+        "/set-orientation" to 9_800L,
         "/tap-by-id" to 8_075L,
         "/clear-text" to 19_000L,
         "/foreground" to 7_500L,
