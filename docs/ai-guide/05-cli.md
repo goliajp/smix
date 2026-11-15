@@ -212,6 +212,7 @@ person at its keyboard would have provided:
 
 ```bash
 smix sim list                  # simulators and Android devices (JSON: --json); an attached phone nobody registered is listed from adb's line and not asked anything ("registered": false)
+#   --json rows carry "formFactor": "phone" | "tablet" | "watch" | "tv" | "vision" — a simulator by its device type; a running emulator or registered phone by `ro.build.characteristics` naming tablet / tv / watch, else smallest width ≥ 600 dp is a tablet; absent for an attached phone nobody registered and for an Android device that does not answer
 smix sim resolve <ALIAS>       # alias → UDID
 smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is taken starts on a free one, in a process group of its own so it outlives the terminal that started it
 smix sim register <ALIAS> --udid emulator-<port> --kind emulator --avd <AVD>   # an Android emulator, registered while it is off; `sim boot` starts that AVD on that port (a running one is registered without --avd, its AVD read off it)

@@ -2,6 +2,21 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.5.0] — 2026-11-16
+
+### Added
+
+- **`smix sim list --json` says whether each device is a phone or a
+  tablet.** Every row a device can answer for carries `formFactor`:
+  `phone`, `tablet`, `watch`, `tv` or `vision`. A simulator is read from
+  its device type. A running emulator or registered phone is a tablet,
+  tv or watch when `ro.build.characteristics` says so; otherwise it is a
+  tablet when its smallest width is 600 dp or more (the size apps are
+  given, so `wm size` overrides count) and a phone below that. An
+  attached phone nobody registered, and an Android device that answers
+  neither question, have no `formFactor` (an emulator that is off is not
+  listed at all).
+
 ## [26.4.1] — 2026-11-15
 
 ### Fixed

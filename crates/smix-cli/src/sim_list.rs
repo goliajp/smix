@@ -4,6 +4,8 @@ use smix_simctl::{DeviceControlError, SimctlClient};
 
 use crate::{CliError, android_devices, may_ask_release};
 
+mod form_factor;
+
 pub(crate) async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
     let devices = match simctl.list_devices().await {
         Ok(d) => d,
@@ -38,11 +40,14 @@ pub(crate) async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<()
             if let Some(obj) = v.as_object_mut() {
                 obj.insert("platform".into(), "ios".into());
                 obj.insert("startedOutsideSmix".into(), is_outside(&d.udid).into());
+                if let Some(form) = form_factor::of_simulator(&d.device_type_identifier) {
+                    obj.insert("formFactor".into(), form.into());
+                }
             }
             all.push(v);
         }
         for a in &android {
-            all.push(serde_json::json!({
+            let mut row = serde_json::json!({
                 "platform": "android",
                 "udid": a.serial,
                 "name": if a.model.is_empty() { a.serial.clone() } else { a.model.clone() },
@@ -50,7 +55,14 @@ pub(crate) async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<()
                 "release": a.release,
                 "registered": a.registered,
                 "startedOutsideSmix": is_outside(&a.serial),
-            }));
+            });
+            // only a device smix may ask, and only while adb can reach it
+            if may_ask_release(&a.serial, a.registered) && a.state == "device" {
+                if let Some(form) = form_factor::of_android(&a.serial) {
+                    row["formFactor"] = form.into();
+                }
+            }
+            all.push(row);
         }
         let out = serde_json::to_string_pretty(&all)
             .map_err(|e| CliError::Other(format!("serialize: {e}")))?;
