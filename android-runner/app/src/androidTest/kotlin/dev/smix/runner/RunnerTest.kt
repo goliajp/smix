@@ -350,7 +350,7 @@ class SmixHttpServer(
                 uri == "/back" && session.method == Method.POST -> serveBack()
                 // LONGEST WAIT /hide-keyboard: 6500 ms — a 0.5 s idle wait, KEYBOARD_GONE_MS and one look past it
                 uri == "/hide-keyboard" && session.method == Method.POST -> serveHideKeyboard()
-                // LONGEST WAIT /set-orientation: 7800 ms — a 0.8 s idle wait, ROTATION_ARRIVES_MS and one look past it
+                // LONGEST WAIT /set-orientation: 9800 ms — a 0.8 s idle wait, ROTATION_ARRIVES_MS, one look past it and a refusal's 2 s dumpsys read
                 uri == "/set-orientation" && session.method == Method.POST ->
                     serveSetOrientation(session)
                 // LONGEST WAIT /tap-by-id: 8075 ms — the 1.5 s poll, one lookup's 2 s idle wait, 75 ms, a 0.5 s idle wait and one look past the poll
@@ -1354,10 +1354,7 @@ class SmixHttpServer(
 
     private fun serveSetOrientation(session: IHTTPSession): Response {
         // OK MEANS: outcome — the display is left in the rotation that
-        // was asked for, read back from `displayRotation`. It used to
-        // answer `status: ok` unconditionally, including for the
-        // upside-down case it emulates with two rotations and cannot
-        // promise on every device.
+        // was asked for, read back from `displayRotation`
         val orientation = RunnerWire.decodeSetOrientation(readBodyString(session))
         val natural = Orientation.naturalIsLandscape(device.displayWidth, device.displayHeight, device.displayRotation)
         val want = Orientation.rotationFor(orientation, natural) ?: return errorJson(
@@ -1379,7 +1376,10 @@ class SmixHttpServer(
         val rotation = clock.stage("rotation") {
             Poll.until(clock.budget(ROTATION_ARRIVES_MS), 50, { device.displayRotation }, { it == want })
         } ?: -1
-        val body = RunnerWire.setOrientationBody(rotation == want, orientation, rotation)
+        val saw = if (rotation == want) null else Orientation.didNotTakeSaw(
+            rotation, want, device.currentPackageName, Orientation.requestedOf(shellOutput("dumpsys window displays", 2000)),
+        )
+        val body = RunnerWire.setOrientationBody(rotation == want, orientation, rotation, saw)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 

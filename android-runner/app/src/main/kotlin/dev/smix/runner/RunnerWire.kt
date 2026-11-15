@@ -470,11 +470,12 @@ object RunnerWire {
 
     // the rotation the display was left in, and whether it is the one
     // asked for; the rotation rules are in [Orientation]
-    fun setOrientationBody(ok: Boolean, orientation: String, rotation: Int): String = JSONObject()
+    fun setOrientationBody(ok: Boolean, orientation: String, rotation: Int, saw: String? = null): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "rotation_did_not_take")
         .put("orientation", orientation)
         .put("rotation", rotation)
+        .apply { if (!ok) put("error", "rotation_did_not_take").put("saw", saw ?: "no detail given") }
         .toString()
 
     fun tapByIdBody(

@@ -50,4 +50,38 @@ object Orientation {
         "settings put system accelerometer_rotation 0",
         "settings put system user_rotation $rotation",
     )
+
+    /// The orientation the window manager is holding the display to, from
+    /// `dumpsys window displays`: the app in front's request, resolved.
+    fun requestedOf(dump: String): Int? =
+        Regex("mLastOrientation=(-?\\d+)").find(dump)?.groupValues?.get(1)?.toIntOrNull()
+
+    /// The `ActivityInfo.SCREEN_ORIENTATION_*` values that pin the display
+    /// to one axis, by name; null for the ones that let it turn.
+    fun fixedName(requested: Int): String? = when (requested) {
+        0 -> "landscape"
+        1 -> "portrait"
+        5 -> "nosensor"
+        6 -> "sensorLandscape"
+        7 -> "sensorPortrait"
+        8 -> "reverseLandscape"
+        9 -> "reversePortrait"
+        11 -> "userLandscape"
+        12 -> "userPortrait"
+        14 -> "locked"
+        else -> null
+    }
+
+    /// What a rotation that did not take saw, for the refusal.
+    fun didNotTakeSaw(rotation: Int, want: Int, foreground: String?, requested: Int?): String {
+        val app = foreground ?: "the app in front"
+        val stayed = "the display stayed at rotation $rotation (asked for $want)"
+        val fixed = requested?.let { fixedName(it) }
+        return if (fixed != null) {
+            "$stayed: $app asks for a fixed orientation ($fixed), and Android keeps it while that app is in front; " +
+                "the app has to allow rotation for the display to turn"
+        } else {
+            "$stayed; $app does not fix the orientation (requested ${requested ?: "unknown"})"
+        }
+    }
 }
