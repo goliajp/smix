@@ -72,7 +72,7 @@ fn last_value<'a>(block: &'a str, label: &str) -> Option<&'a str> {
     block
         .lines()
         .filter_map(|l| l.split_once(label).map(|(_, v)| v.trim()))
-        .last()
+        .next_back()
 }
 
 #[cfg(test)]

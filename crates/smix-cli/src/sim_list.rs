@@ -57,10 +57,11 @@ pub(crate) async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<()
                 "startedOutsideSmix": is_outside(&a.serial),
             });
             // only a device smix may ask, and only while adb can reach it
-            if may_ask_release(&a.serial, a.registered) && a.state == "device" {
-                if let Some(form) = form_factor::of_android(&a.serial) {
-                    row["formFactor"] = form.into();
-                }
+            if may_ask_release(&a.serial, a.registered)
+                && a.state == "device"
+                && let Some(form) = form_factor::of_android(&a.serial)
+            {
+                row["formFactor"] = form.into();
             }
             all.push(row);
         }
