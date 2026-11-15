@@ -65,4 +65,28 @@ class OrientationTest {
         assertEquals(false, not.getBoolean("ok"))
         assertEquals("rotation_did_not_take", not.getString("status"))
     }
+
+    @Test
+    fun aRotationAnAppPinnedSaysWhichAppAndWhatItAskedFor() {
+        // read off emulator-5554, API 36: the launcher in front, then Settings
+        val launcher = "  mLastOrientationSource=WindowedMagnification:0:31@68443349\n    mLastOrientation=5\n"
+        val settings = "    mLastOrientation=-1\n"
+        assertEquals(5, Orientation.requestedOf(launcher))
+        assertEquals(-1, Orientation.requestedOf(settings))
+        assertEquals(null, Orientation.requestedOf("no such line"))
+        val pinned = Orientation.didNotTakeSaw(0, 1, "com.example.app", 1)
+        assertTrue(pinned, pinned.contains("com.example.app asks for a fixed orientation (portrait)"))
+        val free = Orientation.didNotTakeSaw(0, 1, null, -1)
+        assertTrue(free, free.contains("does not fix the orientation"))
+        assertEquals(null, Orientation.fixedName(-1))
+        assertEquals(null, Orientation.fixedName(4))
+    }
+
+    @Test
+    fun aRefusedTurnNamesItselfForTheHost() {
+        val not = JSONObject(RunnerWire.setOrientationBody(false, "landscapeLeft", 0, "the display stayed"))
+        assertEquals("rotation_did_not_take", not.getString("error"))
+        assertEquals("the display stayed", not.getString("saw"))
+        assertFalse(JSONObject(RunnerWire.setOrientationBody(true, "portrait", 0)).has("error"))
+    }
 }

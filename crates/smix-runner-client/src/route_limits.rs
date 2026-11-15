@@ -226,9 +226,9 @@ pub const ROUTES: &[Route] = &[
     // iOS: activate(). Android: 0.5 s idle wait and 3 s for the package to
     // come to the front.
     r("/foreground", ms(XCUI_APP_CALL_MS), ms(3_500), false).looks(1),
-    // iOS: a 0.2 s settle. Android: 0.8 s idle wait and 3 s for the
-    // rotation to arrive.
-    r("/set-orientation", ms(200), ms(3_800), true).looks(1),
+    // iOS: a 0.2 s settle. Android: 0.8 s idle wait, 3 s for the
+    // rotation to arrive and, when it does not, 2 s to read why.
+    r("/set-orientation", ms(200), ms(5_800), true).looks(1),
     // iOS only: XCTest's 5.3 s for any turn, and the turn itself. Android
     // has no crown.
     r("/rotate-crown", REQ, NONE, true),

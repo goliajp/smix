@@ -2,6 +2,18 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.4.1] — 2026-11-15
+
+### Fixed
+
+- **An Android rotation the foreground app pins now says so.** When the
+  app in front asks for a fixed orientation (a phone app locked to
+  portrait, the launcher), Android keeps the display where it is, and
+  `setOrientation` / `smix sim orientation` failed with only "the action
+  did not happen". The refusal now names the app and the orientation it
+  asks for. The new message comes with the Android runner, so
+  `smix runner install --force` brings it.
+
 ## [26.4.0] — 2026-11-15
 
 ### Added
