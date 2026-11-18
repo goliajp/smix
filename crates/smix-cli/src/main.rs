@@ -42,7 +42,9 @@ mod describe_cmd;
 mod drag_cmd;
 mod fill_secret;
 mod hover_cmd;
+mod locale_cmd;
 mod log_sources;
+mod navigation_cmd;
 mod orientation_cmd;
 mod pinch_cmd;
 mod platform;
@@ -86,7 +88,7 @@ mod script;
 
 use clap::{Parser, Subcommand};
 use smix_simctl::registry::{self, RegistryError, SimRegistry};
-use smix_simctl::{Appearance, DeviceControlError, LaunchResult, SimctlClient};
+use smix_simctl::{DeviceControlError, LaunchResult, SimctlClient};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -1939,13 +1941,9 @@ enum SimAction {
     /// Turn the device: portrait, landscape, landscapeLeft, landscapeRight or portraitUpsideDown (its runner must be up).
     Orientation(orientation_cmd::OrientationArgs),
     /// Set light or dark appearance (an emulator: its system night mode).
-    Appearance {
-        /// Which device, by UDID, emulator serial or registry alias.
-        device: String,
-        /// `light` or `dark`.
-        #[arg(value_parser = appearance_cmd::parse_appearance)]
-        mode: Appearance,
-    },
+    Appearance(appearance_cmd::AppearanceArgs),
+    /// Switch an emulator between three-button and gesture navigation, or print which is in use.
+    Navigation(navigation_cmd::NavigationArgs),
     /// Allow destructive actions on a physical device, once.
     ///
     /// Simulators are never gated — they can be erased and rebuilt in a
@@ -2414,7 +2412,8 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         | SimAction::Frontmost { device, .. }
         | SimAction::Crashes { device, .. }
         | SimAction::Openurl { device, .. }
-        | SimAction::Appearance { device, .. }
+        | SimAction::Appearance(appearance_cmd::AppearanceArgs { device, .. })
+        | SimAction::Navigation(navigation_cmd::NavigationArgs { device, .. })
         | SimAction::Orientation(orientation_cmd::OrientationArgs { device, .. })
         | SimAction::AllowDestructive { device }
         | SimAction::KeychainReset { device }
@@ -2481,7 +2480,9 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
 
             SimAction::Boot { .. } | SimAction::Shutdown { .. } => POWERABLE,
             // both runners turn the display; both kinds have a night mode
-            SimAction::Orientation(_) | SimAction::Appearance { .. } => POWERABLE,
+            SimAction::Orientation(_) | SimAction::Appearance(_) => POWERABLE,
+            // the navbar overlays; a phone's own navigation is its owner's
+            SimAction::Navigation(_) => &[Emulator],
 
             SimAction::Erase { .. }
             | SimAction::Repair { .. }
@@ -2556,7 +2557,8 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         | SimAction::Shutdown { .. }
         | SimAction::Erase { .. }
         | SimAction::Repair { .. }
-        | SimAction::Appearance { .. }
+        | SimAction::Appearance(_)
+        | SimAction::Navigation(_)
         | SimAction::Locale { .. }
         | SimAction::Exec { .. } => None,
     }
@@ -3572,9 +3574,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     println!("opened: {url} on {udid}");
                 }
                 SimAction::Orientation(args) => orientation_cmd::run(&simctl, args).await?,
-                SimAction::Appearance { device, mode } => {
-                    appearance_cmd::run(&simctl, &device, mode).await?
-                }
+                SimAction::Appearance(args) => appearance_cmd::run(&simctl, args).await?,
+                SimAction::Navigation(args) => navigation_cmd::run(args).await?,
                 SimAction::AllowDestructive { device } => {
                     let path = registry_path()?;
                     match smix_simctl::registry::SimRegistry::allow_destructive(&path, &device) {
@@ -3605,29 +3606,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     device,
                     lang,
                     reboot,
-                } => {
-                    let udid = resolve_device(&device)?;
-                    // Read current locale first — no-op if already desired.
-                    let current = simctl.current_locale(&udid).await.ok().flatten();
-                    if current.as_deref() == Some(lang.as_str()) {
-                        println!("locale already: {lang}");
-                        return Ok(ExitCode::SUCCESS);
-                    }
-                    simctl.set_locale(&udid, &lang).await?;
-                    if reboot {
-                        println!("locale: written {lang} — rebooting sim to apply");
-                        simctl.shutdown(&udid).await?;
-                        simctl.boot(&udid).await?;
-                        println!("locale: {lang} enforced (sim rebooted)");
-                    } else {
-                        println!(
-                            "locale: written {lang}\n\
-                         note: running apps cache locale at process-start — \
-                         restart the target app, or re-run with `--reboot` to \
-                         cycle the sim so subsequent launches see the new locale."
-                        );
-                    }
-                }
+                } => locale_cmd::run(&simctl, &device, &lang, reboot).await?,
                 SimAction::Exec { device, verb, args } => {
                     return cmd_sim_exec(&device, &verb, &args).await;
                 }
@@ -5200,7 +5179,8 @@ fn is_destructive(action: &SimAction) -> bool {
         // verb with the other argument. `privacy_reset_all` is the
         // destructive one, and it is not this.
         | SimAction::Permission { .. }
-        | SimAction::Appearance { .. }
+        | SimAction::Appearance(_)
+        | SimAction::Navigation(_)
         | SimAction::Orientation(_)
         | SimAction::Locale { .. } => false,
     }
@@ -7100,10 +7080,17 @@ mod tests {
             ),
             (
                 "appearance",
-                SimAction::Appearance {
+                SimAction::Appearance(appearance_cmd::AppearanceArgs {
                     device: d(),
-                    mode: Appearance::Light,
-                },
+                    mode: smix_simctl::Appearance::Light,
+                }),
+            ),
+            (
+                "navigation",
+                SimAction::Navigation(navigation_cmd::NavigationArgs {
+                    device: d(),
+                    mode: None,
+                }),
             ),
             (
                 "orientation",
@@ -7793,6 +7780,8 @@ mod tests {
             vec!["smix", "sim", "uninstall", "02", "com.example.app"],
             vec!["smix", "sim", "openurl", "02", "https://example.com"],
             vec!["smix", "sim", "appearance", "02", "dark"],
+            vec!["smix", "sim", "navigation", "emulator-5554"],
+            vec!["smix", "sim", "navigation", "emulator-5554", "three-button"],
             vec!["smix", "sim", "keychain-reset", "02"],
             vec!["smix", "sim", "resolve", "02"],
         ] {

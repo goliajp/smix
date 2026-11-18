@@ -2,6 +2,18 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.6.0] — 2026-11-18
+
+### Added
+
+- **`smix sim navigation <device> [three-button|gesture]` on an Android
+  emulator.** Switches the system navigation between three buttons and
+  gestures, and returns once both the `navigation_mode` setting and the
+  navigation bar the window manager lays out have changed (a 48 dp bar
+  with three buttons on a phone, a 24 dp gesture handle). Without a mode
+  it prints the one in use, including `two-button` on an image still set
+  to it. A physical phone is refused: its navigation is its owner's.
+
 ## [26.5.0] — 2026-11-16
 
 ### Added

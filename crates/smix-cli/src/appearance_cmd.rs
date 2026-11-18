@@ -5,6 +5,16 @@ use smix_simctl::registry::DeviceKind;
 use smix_simctl::{Appearance, SimctlClient};
 use std::time::{Duration, Instant};
 
+/// What the command line said.
+#[derive(clap::Args, Debug)]
+pub struct AppearanceArgs {
+    /// Which device, by UDID, emulator serial or registry alias.
+    pub device: String,
+    /// `light` or `dark`.
+    #[arg(value_parser = parse_appearance)]
+    pub mode: Appearance,
+}
+
 pub fn parse_appearance(s: &str) -> Result<Appearance, String> {
     match s.to_ascii_lowercase().as_str() {
         "light" => Ok(Appearance::Light),
@@ -13,11 +23,8 @@ pub fn parse_appearance(s: &str) -> Result<Appearance, String> {
     }
 }
 
-pub async fn run(
-    simctl: &SimctlClient,
-    device: &str,
-    mode: Appearance,
-) -> Result<(), crate::CliError> {
+pub async fn run(simctl: &SimctlClient, args: AppearanceArgs) -> Result<(), crate::CliError> {
+    let (device, mode) = (args.device.as_str(), args.mode);
     if crate::device_kind_of(device) != DeviceKind::Emulator {
         let udid = crate::resolve_device(device)?;
         simctl.set_appearance(&udid, mode).await?;
