@@ -231,6 +231,7 @@ smix sim install <ALIAS|UDID> <path/to.app|.apk>   # every kind; reinstalling st
 smix sim uninstall <ALIAS|UDID> <bundle-id|package>  # every kind; on a physical one, after allow-destructive
 smix sim openurl <ALIAS|UDID> <url>   # every kind; deeplink, app-level, no device lease needed
 smix sim appearance <ALIAS|UDID|SERIAL> light|dark   # simulator and emulator (system night mode, returns once the configuration apps get has changed); no runner needed
+smix sim navigation <ALIAS|SERIAL> [three-button|gesture]   # Android emulator only; without a mode prints the one in use (three-button, two-button or gesture); returns once the setting and the navigation bar have both changed; no runner needed
 smix sim orientation <ALIAS|UDID> portrait|landscape|landscapeLeft|landscapeRight|portraitUpsideDown   # simulator and emulator, through the device's runner (must be up); the same turn as `setOrientation`
 smix sim keychain-reset <ALIAS|UDID>   # simulator only
 smix sim allow-destructive <ALIAS|UDID>   # physical devices only; once, not per command
@@ -1343,7 +1344,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:26.5.0")
+    debugImplementation("jp.golia.smix:smix-probe:26.6.0")
 }
 ```
 
