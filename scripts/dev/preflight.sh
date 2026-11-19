@@ -207,6 +207,8 @@ SOURCE_GATES=(
   three-readers-agree
   fuzz-lockfiles-are-usable
   fuzz-lockfiles-are-usable.test
+  probe-source-since-is-current
+  probe-source-since-is-current.test
   android-a4-verdict.test
   a-verdict-answers-in-sentences
   a-verdict-answers-in-sentences.test
