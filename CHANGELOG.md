@@ -2,6 +2,18 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.6.1] — 2026-11-20
+
+### Changed
+
+- **The warning that an app's smix-probe is behind fires only when the
+  probe has changed since that app's version.** It used to fire whenever
+  the probe's version number differed from smix's, although most releases
+  leave the probe untouched: the probe source today is the one 22.1.0
+  shipped, so an app on `smix-probe:22.1.0` or later is current and is no
+  longer told to upgrade. An older probe is told which release to depend
+  on at least.
+
 ## [26.6.0] — 2026-11-18
 
 ### Added

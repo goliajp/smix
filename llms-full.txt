@@ -2735,8 +2735,11 @@ person at its keyboard would have provided:
   `smix sim register`.
 - **The app's probe is its own version.** It is built into the app, so a
   new smix's probe fixes reach a run only once the app depends on
-  `jp.golia.smix:smix-probe:<version>` and is rebuilt; a run against an app
-  with another release's probe says so once.
+  `jp.golia.smix:smix-probe:<version>` and is rebuilt. Most releases leave
+  the probe unchanged, so a run says so once only when the app's probe is
+  older than the release the current probe source dates from, and names
+  that release; a probe from that release or later is current whatever its
+  number.
 
 ## `smix` — environment + low-level
 
@@ -3876,7 +3879,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:26.6.0")
+    debugImplementation("jp.golia.smix:smix-probe:26.6.1")
 }
 ```
 
