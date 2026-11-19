@@ -102,6 +102,8 @@ LOCAL = {
     "the runner-commands gate can still go red": "runner-commands-match-the-cli.test",
     "fuzz lockfiles are usable": "fuzz-lockfiles-are-usable",
     "the fuzz-lockfile gate can still go red": "fuzz-lockfiles-are-usable.test",
+    "the probe source matches the release smix names for it": "probe-source-since-is-current",
+    "the probe-source gate can still go red": "probe-source-since-is-current.test",
     "the A4 window verdict can still speak": "android-a4-verdict.test",
     "every verdict answers in sentences": "a-verdict-answers-in-sentences",
     "the verdict sweep can still go red": "a-verdict-answers-in-sentences.test",
