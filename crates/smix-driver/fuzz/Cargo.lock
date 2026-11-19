@@ -557,9 +557,9 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "pin-project-lite"
-version = "0.2.17"
+version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+checksum = "c938015719552d665fd0553b90d96cd7ff58e83e4c061ca99e6bb78865a72752"
 
 [[package]]
 name = "png"
@@ -771,7 +771,7 @@ checksum = "3244542535d5de959d90ec55d1b5ff0fd2bb7b1310223907d5f11932847f7b59"
 
 [[package]]
 name = "smix-adb"
-version = "26.6.0"
+version = "26.6.1"
 dependencies = [
  "chrono",
  "serde",
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "26.6.0"
+version = "26.6.1"
 dependencies = [
  "async-trait",
  "png",
@@ -813,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "26.6.0"
+version = "26.6.1"
 dependencies = [
  "serde",
  "smix-screen",
@@ -822,7 +822,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "26.6.0"
+version = "26.6.1"
 dependencies = [
  "smix-input",
  "smix-screen",
@@ -833,14 +833,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "26.6.0"
+version = "26.6.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-runner-client"
-version = "26.6.0"
+version = "26.6.1"
 dependencies = [
  "reqwest",
  "serde",
@@ -859,7 +859,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "26.6.0"
+version = "26.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -870,7 +870,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "26.6.0"
+version = "26.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -878,7 +878,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "26.6.0"
+version = "26.6.1"
 dependencies = [
  "regex",
  "serde",
@@ -887,7 +887,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "26.6.0"
+version = "26.6.1"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -895,7 +895,7 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "26.6.0"
+version = "26.6.1"
 dependencies = [
  "tokio",
 ]
