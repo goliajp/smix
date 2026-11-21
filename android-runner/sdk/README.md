@@ -9,7 +9,7 @@ to Kotlin via UniFFI 0.32 bindings + a lazy lambda injection pattern.
 ```kotlin
 // android-runner/app/build.gradle.kts (consumer side)
 dependencies {
-    androidTestImplementation("jp.golia.smix:smix-sdk:26.6.1")
+    androidTestImplementation("jp.golia.smix:smix-sdk:26.7.0")
 }
 ```
 
@@ -22,7 +22,7 @@ as unnamed views and cannot be addressed by id.
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:26.6.1")
+    debugImplementation("jp.golia.smix:smix-probe:26.7.0")
 }
 ```
 
