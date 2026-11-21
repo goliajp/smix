@@ -81,9 +81,9 @@ checksum = "776dfebd015e2d8732c684a2c71003674ccb49457b539b9e82151ba38e96dd7c"
 
 [[package]]
 name = "cc"
-version = "1.11.2"
+version = "1.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ef9e3e8154a45c7a95cff4c1299702106ad94062d7bb85fdc5d3a5afd91d45"
+checksum = "02f0e023adb368345ce0ca6cdfc0f24a06554468d0e8503e14a0841de79bfa69"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -175,9 +175,9 @@ dependencies = [
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -771,7 +771,7 @@ checksum = "3244542535d5de959d90ec55d1b5ff0fd2bb7b1310223907d5f11932847f7b59"
 
 [[package]]
 name = "smix-adb"
-version = "26.6.1"
+version = "26.7.0"
 dependencies = [
  "chrono",
  "serde",
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "26.6.1"
+version = "26.7.0"
 dependencies = [
  "async-trait",
  "png",
@@ -813,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "26.6.1"
+version = "26.7.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -822,7 +822,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "26.6.1"
+version = "26.7.0"
 dependencies = [
  "smix-input",
  "smix-screen",
@@ -833,14 +833,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "26.6.1"
+version = "26.7.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-runner-client"
-version = "26.6.1"
+version = "26.7.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -859,7 +859,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "26.6.1"
+version = "26.7.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -870,7 +870,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "26.6.1"
+version = "26.7.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -878,7 +878,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "26.6.1"
+version = "26.7.0"
 dependencies = [
  "regex",
  "serde",
@@ -887,7 +887,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "26.6.1"
+version = "26.7.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -895,7 +895,7 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "26.6.1"
+version = "26.7.0"
 dependencies = [
  "tokio",
 ]
@@ -1105,9 +1105,9 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",

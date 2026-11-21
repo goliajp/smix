@@ -41,7 +41,10 @@ pub async fn cmd_tree(
     }
     perceived.root = smix_screen::masked(&perceived.root);
     if json {
-        let s = serde_json::to_string_pretty(&perceived)
+        let mut out = serde_json::to_value(&perceived)
+            .map_err(|e| ActError::Transport(format!("serde: {e}")))?;
+        out["unitsPerPoint"] = units_per_point(&client, ios).await?.into();
+        let s = serde_json::to_string_pretty(&out)
             .map_err(|e| ActError::Transport(format!("serde: {e}")))?;
         println!("{s}");
     } else {
@@ -57,6 +60,30 @@ pub async fn cmd_tree(
         print_tree_outline(&perceived.root, 0);
     }
     Ok(())
+}
+
+/// How many of `bounds`' units make one point (iOS) or dp (Android).
+///
+/// The iOS runner's tree is in points and it has no `/display`; Android's
+/// readers report pixels, and its runner says the density. A runner smix
+/// only assumed to be iOS (no registered kind, just a port) is still
+/// asked, so an Android one reached that way is not reported as points.
+async fn units_per_point(
+    client: &smix_runner_client::HttpRunnerClient,
+    ios: bool,
+) -> Result<f64, ActError> {
+    match client.display().await {
+        Ok(d) => Ok(d.pixels_per_point),
+        Err(smix_runner_client::RunnerTransportError::NonSuccessStatus { status: 404, .. })
+            if ios =>
+        {
+            Ok(1.0)
+        }
+        Err(e) => Err(ActError::Transport(format!(
+            "/display: {e} — the tree's bounds are in pixels and this runner does not say \
+             its density; `smix runner up --force` installs a runner that does"
+        ))),
+    }
 }
 
 /// Drop the keys under every keyboard, recording how many there were.
