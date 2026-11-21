@@ -1162,8 +1162,9 @@ after the status bar.
 ### What `bounds` is measured in, and why the two platforms differ
 
 Every node in `smix tree --json` carries `bounds: {x, y, w, h}`. **The
-unit is not the same on both platforms**, and nothing about the number
-says which one you have:
+unit is not the same on both platforms**; the top-level `unitsPerPoint`
+says how many of those units make one point (iOS) or dp (Android) — `1`
+on iOS, the density on Android (`2.75` on a 440dpi device):
 
 | | unit | on a device |
 |---|---|---|
@@ -1181,8 +1182,14 @@ changing the constant:
 
 The failure is silent in both directions — a checker ported without the
 conversion either passes everything or fails everything, and both look
-like a working checker. Read the density from the device
-(`adb shell wm density`) rather than assuming a number.
+like a working checker. Divide by `unitsPerPoint` from the same output
+rather than assuming a number.
+
+On iOS the tree is what XCUITest exposes. A UIKit screen's plain views
+are in it as `other` nodes with their frames — a view controller's view,
+a cell's content view, a table's 1pt separators — but a view
+accessibility hides is not, and neither is anything that is not a view,
+such as a SwiftUI background.
 
 **`--then-screenshot` is for UI that does not wait.** A control bar that
 hides itself after a few seconds outlives neither a second command nor

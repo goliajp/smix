@@ -2,6 +2,17 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.7.0] — 2026-11-21
+
+### Added
+
+- **`smix tree --json` says what its `bounds` are measured in.** A new
+  top-level `unitsPerPoint` is how many of the tree's units make one
+  point (iOS) or dp (Android): `1` on iOS, whose tree is in points, and
+  the device's density on Android, whose readers report pixels (`2.75` on
+  a 440dpi emulator). A spacing or size check reads it from the same
+  output instead of asking the device for its density separately.
+
 ## [26.6.1] — 2026-11-20
 
 ### Changed
