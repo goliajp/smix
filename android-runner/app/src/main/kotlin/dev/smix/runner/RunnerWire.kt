@@ -261,12 +261,6 @@ object RunnerWire {
         else -> null
     }
 
-    // UiDevice.swipe(x, y, x, y, steps) — same start/end coord with
-    // explicit step count approximates a long press; each step adds
-    // ~5ms, so steps = duration / 5 ms.
-    fun longPressSteps(durationMs: Long): Int =
-        (durationMs / 5).toInt().coerceAtLeast(1)
-
     // Android `input text` interprets unescaped spaces as separators.
     // UiAutomation.executeShellCommand does NOT run through `sh -c`; it
     // splits on whitespace + execs directly, so quote characters are

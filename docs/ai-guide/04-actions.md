@@ -232,7 +232,15 @@ before it acts.
   `XCUIElement.press(forDuration:)` is not used — it was measured taking
   a constant ~2.6s for every hold from 500ms to 6000ms on iOS 26.5, so
   the duration it performed was not the one it was given.
-- Android: the runner's coordinate long press, held for `duration`.
+- Android: one finger down on the element's centre, held for `duration`,
+  and lifted in place, with no moves in between. Before 26.8 the runner
+  held the press with a move event every 5 ms, so the press the app
+  received lasted several times `duration` (a 1500 ms press took about
+  10 s), and an app slow to process those moves could fail it.
+- Releasing the press counts as a click when the element has no
+  long-press handler, on both platforms. To test what happens when a
+  control is rebuilt while it is pressed, long-press it and check
+  whether the release clicked it.
 - Judged like `tapOn` on both platforms: a press delivered to something
   other than the element fails with `TAP_MISSED`.
 
