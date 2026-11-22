@@ -15,7 +15,7 @@ All notable changes to the `smix` workspace are documented here. The format foll
   at the same point: a 1500 ms press is held 1500 ms by the app's own
   touch times, a view with a long-press handler gets the long press, and
   one with only a click handler is clicked on release. A tap held with
-  `holdMs` is pressed the same way. Bring the Android runner up with
+  `holdMs` on `/tap-at-norm-coord` is pressed the same way. Bring the Android runner up with
   `--force` once to install it.
 
 ## [26.7.0] — 2026-11-21
