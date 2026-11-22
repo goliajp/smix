@@ -95,6 +95,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v15.1-c14-a-keyboard-in-pieces-e2e.sh",
     "v16.0-c2-a-keyboard-put-away-touches-nothing-e2e.sh",
     "v16.0-c9-text-past-ascii-e2e.sh",
+    "v26.8-c1-a-long-press-is-held-e2e.sh",
     "smoke-chain-e2e.sh",
     "v11.0-c5-runner-brings-the-app-back-e2e.sh",
     "v11.0-c2-a-failure-says-whose-screen-e2e.sh",

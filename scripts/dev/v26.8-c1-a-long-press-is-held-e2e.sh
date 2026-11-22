@@ -101,8 +101,9 @@ press() { # $1 ms, $2 target; fails the gate when it errors or a 1.5 s press is 
     || fail "a $1 ms long press took longer than 4 s"
 }
 
-for busy in false true; do
-  adb -s "$SERIAL" shell am start -W -S -n "$APPID/.HoldActivity" --ez busy "$busy" >/dev/null 2>&1 \
+for screen in idle loaded; do
+  loaded=false; [ "$screen" = loaded ] && loaded=true
+  adb -s "$SERIAL" shell am start -W -S -n "$APPID/.HoldActivity" --ez busy "$loaded" >/dev/null 2>&1 \
     || fail "could not start the hold screen"
   press 1500 hold_target
   press 1500 hold_target
@@ -110,13 +111,13 @@ for busy in false true; do
   press 1500 hold_plain
   down="$(read_id hold_last)"
   ms="${down#down }"; ms="${ms% ms}"
-  case "$ms" in ''|*[!0-9]*) fail "busy=$busy: the plain button's last press reads '$down'" ;; esac
+  case "$ms" in ''|*[!0-9]*) fail "$screen screen: the plain button's last press reads '$down'" ;; esac
   [ "$ms" -ge 1450 ] && [ "$ms" -le 2000 ] \
-    || fail "busy=$busy: a 1500 ms press was down $ms ms in the app, not 1450–2000"
+    || fail "$screen screen: a 1500 ms press was down $ms ms in the app, not 1450–2000"
   got="$(read_id hold_result)"
   [ "$got" = "held 2 tapped 1 clicked 1" ] \
-    || fail "busy=$busy: two 1.5 s presses and a 100 ms one on the long-press button and a 1.5 s one on the plain button left the app saying '$got', not 'held 2 tapped 1 clicked 1'"
-  log "busy=$busy: the app counted two long presses, one tap, and one click of the plain button, held $ms ms"
+    || fail "$screen screen: two 1.5 s presses and a 100 ms one on the long-press button and a 1.5 s one on the plain button left the app saying '$got', not 'held 2 tapped 1 clicked 1'"
+  log "$screen screen: the app counted two long presses, one tap, and one click of the plain button, held $ms ms"
 done
 
 log "V26.8-C1-E2E-PASS on $SERIAL"
