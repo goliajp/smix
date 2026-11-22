@@ -690,7 +690,7 @@ class SmixHttpServer(
         if (placed is AimCheck.Placement.Refuse) return newFixedLengthResponse(Response.Status.CONFLICT, "application/json", placed.body)
         val (tx, ty, chain) = (placed as AimCheck.Placement.Touch).let { Triple(it.x, it.y, it.reading) }
         val ok = TapBurst.decode(payload).touch(
-            { device.click(tx, ty) }, { device.swipe(tx, ty, tx, ty, RunnerWire.longPressSteps(it)) }, Thread::sleep,
+            { device.click(tx, ty) }, { hold(tx, ty, it) }, Thread::sleep,
         )
         // Give the dispatched IO event time to render before /tree probes
         // observe the post-tap UI state.
@@ -871,6 +871,17 @@ class SmixHttpServer(
         val ok = injectPinch(events)
         device.waitForIdle(500)
         return newFixedLengthResponse(Response.Status.OK, "application/json", RunnerWire.dragBody(ok))
+    }
+
+    /// One finger down at `(x, y)`, up `ms` later, and nothing between.
+    private fun hold(x: Int, y: Int, ms: Long): Boolean {
+        val at = PinchGesture.Point(x.toFloat(), y.toFloat())
+        return injectPinch(
+            listOf(
+                PinchGesture.Event(0, PinchGesture.Action.DOWN, listOf(at)),
+                PinchGesture.Event(ms, PinchGesture.Action.UP, listOf(at)),
+            ),
+        )
     }
 
     /// Put a two-finger timeline in as touchscreen motion events, each at
@@ -1613,15 +1624,21 @@ class SmixHttpServer(
     }
 
     private fun serveLongPressAtNormCoord(session: IHTTPSession): Response {
-        // OK MEANS: injected — a long press is a swipe that does not
-        // travel, so this is `InteractionController.swipe`'s answer.
+        // OK MEANS: injected — the finger went down, stayed for the
+        // duration, and came up, each as one touchscreen event.
+        //
+        // Not `UiDevice.swipe(x, y, x, y, steps)`: that holds by sending
+        // a move every 5 ms and waits for the app to finish each one, so a
+        // 1.5 s press was 300 moves and took 10 s on an idle screen, and
+        // an app slow to finish them failed it outright. A long press is
+        // the time between down and up; nothing in between is needed.
         val payload = readBodyString(session)
         val req = RunnerWire.decodeLongPressAtNormCoord(payload)
         val (w, h) = displaySize()
         val px = RunnerWire.normToPixel(req.nx, w)
         val py = RunnerWire.normToPixel(req.ny, h)
         val chain = hitChainAt(session, RunnerWire.decodeAimedBy(payload), px, py)
-        val injected = device.swipe(px, py, px, py, RunnerWire.longPressSteps(req.durationMs))
+        val injected = hold(px, py, req.durationMs)
         device.waitForIdle(500)
         val body = RunnerWire.longPressBody(injected, px, py, req.durationMs, chain)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)

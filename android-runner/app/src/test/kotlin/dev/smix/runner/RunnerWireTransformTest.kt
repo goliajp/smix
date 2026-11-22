@@ -54,16 +54,6 @@ class RunnerWireTransformTest {
         assertNull(RunnerWire.swipeOnceCoords("diagonal", 1000, 2000))
     }
 
-    // MARK: - longPressSteps
-
-    @Test
-    fun longPressStepsAre5msEachWithFloorOfOne() {
-        assertEquals(100, RunnerWire.longPressSteps(500L))
-        assertEquals(1, RunnerWire.longPressSteps(0L))
-        assertEquals(1, RunnerWire.longPressSteps(4L))
-        assertEquals(240, RunnerWire.longPressSteps(1200L))
-    }
-
     // MARK: - input text escaping
 
     @Test

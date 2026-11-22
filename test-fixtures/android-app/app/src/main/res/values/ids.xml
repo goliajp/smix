@@ -54,4 +54,8 @@
     <item name="cover_sheet" type="id" />
     <item name="cover_sheet_taps" type="id" />
     <item name="fixture_decor_hint" type="id" />
+    <item name="hold_target" type="id" />
+    <item name="hold_result" type="id" />
+    <item name="hold_plain" type="id" />
+    <item name="hold_last" type="id" />
 </resources>
