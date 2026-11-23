@@ -2821,8 +2821,10 @@ still `tapOn` a banner that is on screen.
   notifications (an Android data message is delivered anyway, with a note);
   6 the payload is not one the platform takes; 1 anything else. Android
   delivers nothing to a force-stopped app, a real push included, and `push`
-  says so; `smix sim terminate` force-stops. For a killed app that still
-  gets pushes, send it to the background and `adb shell am kill <BUNDLE>`.
+  says so; `smix sim terminate` force-stops. For a killed app that
+  still gets pushes, send it to the background and run `smix sim terminate
+  <DEVICE> <BUNDLE> --reclaim`, which ends it the way the system does to
+  take its memory back.
 - **`permission … notifications`** on a simulator is SpringBoard's record.
   Setting it restarts SpringBoard (a few seconds, and whatever app is open
   ends), so it is refused while a runner is up; already as asked, it does

@@ -233,7 +233,7 @@ pub async fn push(
         return Err(PushRefused::Device(format!(
             "{bundle} was force-stopped, and Android delivers no push to it until it is opened \
              again — a real one is held back the same way. To test a killed app, end it without \
-             stopping it: send it to the background, then `adb -s {serial} shell am kill {bundle}`"
+             stopping it: send it to the background, then `smix sim terminate {serial} {bundle} --reclaim`"
         )));
     }
     let id = adb
