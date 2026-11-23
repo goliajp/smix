@@ -990,6 +990,8 @@ smix lease renew --scope qa --holder agent-3                 # during a long ste
 smix lease release --scope qa --holder agent-3
 smix lease status --scope qa                                 # holder, queue, recent automatic releases
 smix lease status --scope                                    # every scope on this machine
+smix lease status --scope qa --json                          # the same for a script
+smix lease scope qa --remove                                 # delete it; exits 3 while held or waited for
 ```
 
 - **In turn.** `--wait` queues and returns when it is this holder's turn,
@@ -1017,6 +1019,17 @@ smix lease status --scope                                    # every scope on th
   serial it runs as, so declaring `qa-android-01` also covers the
   `emulator-5560` it is running as today. Devices in no scope are not
   affected.
+- **Open to anyone while free, unless you say otherwise.** Declared with
+  `--require-holder`, its devices are refused (exit 3) while nobody holds
+  the scope, too. Declaring a scope again replaces its devices and this
+  setting, so repeat the flag to keep it.
+- **Declared first.** `acquire`, `renew`, `release` and `status --scope NAME`
+  on a scope that covers no device are an error (exit 1) naming the scopes
+  there are: a misspelt name would otherwise protect nothing.
+- **`--json`** prints `{"scope", "devices", "requireHolder", "holder",
+  "queue", "released"}`; `holder` is `{"holder", "since", "lastSeen",
+  "idleSecs", "until", "pid"}`, or null when nobody holds it. Times are
+  RFC 3339. A bare `--scope` prints an array.
 - `--until` works as in `bench-lock`: `+40m <note>` is turned into a clock
   time when the hold starts.
 
@@ -1429,7 +1442,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:26.10.0")
+    debugImplementation("jp.golia.smix:smix-probe:26.11.0")
 }
 ```
 

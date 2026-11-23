@@ -46,6 +46,12 @@ fn text(o: &Output) -> String {
     )
 }
 
+/// A scope has to be declared before it is taken.
+fn declared(m: &std::path::Path) {
+    let o = run(m, &["lease", "scope", "s", "--device", "emulator-5998"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+}
+
 fn wait_in_line(m: &std::path::Path, holder: &str) -> Child {
     smix(
         m,
@@ -84,6 +90,7 @@ fn until_status(m: &std::path::Path, want: &str) -> String {
 #[test]
 fn holders_get_the_scope_in_the_order_they_asked() {
     let m = machine("order");
+    declared(&m);
     assert_eq!(
         run(&m, &["lease", "acquire", "--scope", "s", "--holder", "a"])
             .status
@@ -128,6 +135,7 @@ fn holders_get_the_scope_in_the_order_they_asked() {
 #[test]
 fn a_hold_tied_to_a_process_ends_when_it_does() {
     let m = machine("pid");
+    declared(&m);
     let mut sleeper = Command::new("sleep").arg("30").spawn().expect("sleep");
     let pid = sleeper.id().to_string();
     let took = run(
@@ -211,5 +219,120 @@ fn a_device_command_on_a_held_scope_is_refused_unless_it_is_the_holders() {
         Some(0)
     );
     let free = run(&m, &args);
+    assert!(!text(&free).contains("scope s"), "{}", text(&free));
+}
+
+#[test]
+fn a_status_as_json_says_who_holds_it_and_null_when_nobody_does() {
+    let m = machine("json");
+    declared(&m);
+    let read = |args: &[&str]| -> serde_json::Value {
+        let o = run(&m, args);
+        assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+        serde_json::from_slice(&o.stdout).unwrap_or_else(|e| panic!("{e}: {}", text(&o)))
+    };
+    let one = ["lease", "status", "--scope", "s", "--json"];
+    let free = read(&one);
+    assert_eq!(free["scope"], "s");
+    assert_eq!(free["devices"], serde_json::json!(["emulator-5998"]));
+    assert!(free["holder"].is_null() && free.get("holder").is_some());
+    assert_eq!(free["requireHolder"], false);
+
+    let took = run(
+        &m,
+        &[
+            "lease", "acquire", "--scope", "s", "--holder", "a", "--idle", "7",
+        ],
+    );
+    assert_eq!(took.status.code(), Some(0), "{}", text(&took));
+    let mut b = wait_in_line(&m, "b");
+    assert!(until_status(&m, "1. b").contains("1. b"));
+    let held = read(&one);
+    assert_eq!(held["holder"]["holder"], "a");
+    assert_eq!(held["holder"]["idleSecs"], 420);
+    assert!(held["holder"]["lastSeen"].is_string() && held["holder"]["since"].is_string());
+    assert!(
+        held["holder"]
+            .get("until")
+            .is_some_and(serde_json::Value::is_null)
+    );
+    assert_eq!(held["queue"][0]["holder"], "b");
+    assert_eq!(held["released"], serde_json::json!([]));
+
+    let all = read(&["lease", "status", "--json", "--scope"]);
+    assert_eq!(all.as_array().map(Vec::len), Some(1));
+    assert_eq!(all[0]["scope"], "s");
+    b.kill().expect("kill");
+    b.wait().expect("reap");
+}
+
+#[test]
+fn a_scope_nobody_declared_is_an_error_and_is_not_made() {
+    let m = machine("undeclared");
+    declared(&m);
+    for args in [
+        &["lease", "status", "--scope", "typo"][..],
+        &["lease", "status", "--scope", "typo", "--json"],
+        &["lease", "acquire", "--scope", "typo", "--holder", "a"],
+        &["lease", "renew", "--scope", "typo", "--holder", "a"],
+        &["lease", "release", "--scope", "typo", "--holder", "a"],
+        &["lease", "scope", "typo", "--remove"],
+    ] {
+        let o = run(&m, args);
+        assert_eq!(o.status.code(), Some(1), "{args:?}: {}", text(&o));
+        assert!(text(&o).contains("no scope typo"), "{}", text(&o));
+    }
+    let all = text(&run(&m, &["lease", "status", "--scope"]));
+    assert!(all.contains("s: devices") && !all.contains("typo"), "{all}");
+}
+
+#[test]
+fn a_scope_is_removed_only_when_nobody_holds_it() {
+    let m = machine("remove");
+    declared(&m);
+    run(&m, &["lease", "acquire", "--scope", "s", "--holder", "a"]);
+    let held = run(&m, &["lease", "scope", "s", "--remove"]);
+    assert_eq!(held.status.code(), Some(3), "{}", text(&held));
+    assert!(text(&held).contains("held by a"), "{}", text(&held));
+    let still = text(&run(&m, &["lease", "status", "--scope", "s"]));
+    assert!(still.contains("held by a"), "{still}");
+
+    run(&m, &["lease", "release", "--scope", "s", "--holder", "a"]);
+    let gone = run(&m, &["lease", "scope", "s", "--remove"]);
+    assert_eq!(gone.status.code(), Some(0), "{}", text(&gone));
+    let after = run(&m, &["lease", "status", "--scope", "s"]);
+    assert_eq!(after.status.code(), Some(1), "{}", text(&after));
+}
+
+#[test]
+fn a_scope_that_requires_a_holder_refuses_while_nobody_holds_it() {
+    let m = machine("require");
+    let declare = |extra: &[&str]| {
+        let mut args = vec!["lease", "scope", "s", "--device", "emulator-5998"];
+        args.extend(extra);
+        let o = run(&m, &args);
+        assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    };
+    declare(&["--require-holder"]);
+    let as_holder = |holder: Option<&str>| {
+        let mut c = smix(&m, &["sim", "frontmost", "emulator-5998"]);
+        if let Some(h) = holder {
+            c.env("SMIX_LEASE_HOLDER", h);
+        }
+        c.output().unwrap()
+    };
+    for who in [None, Some("a")] {
+        let o = as_holder(who);
+        assert_eq!(o.status.code(), Some(3), "{}", text(&o));
+        assert!(text(&o).contains("nobody does"), "{}", text(&o));
+    }
+    run(&m, &["lease", "acquire", "--scope", "s", "--holder", "a"]);
+    let mine = as_holder(Some("a"));
+    assert!(!text(&mine).contains("scope s"), "{}", text(&mine));
+    assert_eq!(as_holder(Some("b")).status.code(), Some(3));
+    run(&m, &["lease", "release", "--scope", "s", "--holder", "a"]);
+    // declared again without it, a free scope is anyone's
+    declare(&[]);
+    let free = as_holder(None);
     assert!(!text(&free).contains("scope s"), "{}", text(&free));
 }

@@ -22,6 +22,11 @@ pub enum LeaseAction {
         /// "cmd", "alive"}`, or null when a new claim would be granted —
         /// for a script to read instead of building the ledger's path or
         /// judging the holder itself.
+        ///
+        /// With `--scope NAME`, the scope: `{"scope", "devices",
+        /// "requireHolder", "holder", "queue", "released"}`, where `holder`
+        /// is `{"holder", "since", "lastSeen", "idleSecs", "until", "pid"}`
+        /// or null. With a bare `--scope`, an array of these.
         #[arg(long)]
         json: bool,
     },
@@ -75,13 +80,25 @@ pub enum LeaseAction {
         holder: String,
     },
     /// Say which devices a scope covers. Names are compared as devices:
-    /// a registry alias covers the serial or UDID it runs as.
+    /// a registry alias covers the serial or UDID it runs as. Declaring it
+    /// again replaces the devices and `--require-holder`, and leaves the
+    /// holder and queue alone.
     Scope {
         /// The scope's name.
         name: String,
         /// A device it covers; repeat for each. Replaces the list.
-        #[arg(long = "device", required = true)]
+        #[arg(
+            long = "device",
+            required_unless_present = "remove",
+            conflicts_with = "remove"
+        )]
         devices: Vec<String>,
+        /// Refuse device commands on it while nobody holds it, too.
+        #[arg(long, conflicts_with = "remove")]
+        require_holder: bool,
+        /// Delete the scope. Exits 3 while somebody holds or waits for it.
+        #[arg(long)]
+        remove: bool,
     },
     /// Who answers for this device, in one line and an exit code.
     ///
