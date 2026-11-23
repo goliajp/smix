@@ -23,6 +23,7 @@ macro_rules! println {
 mod act;
 mod budget;
 mod budget_cmd;
+mod command_devices;
 mod cleanup_cmd;
 mod footprint;
 mod settle_flags;
@@ -49,6 +50,7 @@ mod orientation_cmd;
 mod pinch_cmd;
 mod platform;
 mod runner_target;
+mod scope_lease;
 use runner_target::{project_key, runner_dial_port, runner_dial_target};
 mod sim_crashes;
 mod swipe_cmd;
@@ -290,7 +292,7 @@ enum Cmd {
     /// closing it gracefully when they are gone.
     Lease {
         #[command(subcommand)]
-        action: LeaseAction,
+        action: lease_cmd::LeaseAction,
     },
     /// Record the device screen. The recording is written into the device
     /// ledger, so it survives the process that started it and can be
@@ -1234,108 +1236,6 @@ enum RecordAction {
     Status { device: String },
 }
 
-#[derive(Subcommand, Debug)]
-enum LeaseAction {
-    /// Every device with a ledger, and whether its holder is still there.
-    List,
-    /// One device: the holder, what is open, and the verdict.
-    Status {
-        /// The device: an alias, a UDID or a serial.
-        device: String,
-        /// Print the device's ledger as JSON — `{"device", "path", "lease",
-        /// "heldBy"}`: the file it lives in, the lease as it is stored (null
-        /// when there is none), and who holds the device now — `{"pid",
-        /// "cmd", "alive"}`, or null when a new claim would be granted —
-        /// for a script to read instead of building the ledger's path or
-        /// judging the holder itself.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Close what a dead holder left open, by the graceful path it never
-    /// got to take. A live holder is reported, never preempted.
-    Reconcile { device: String },
-    /// Answer for a device smix did not boot, so smix may drive it (not
-    /// shut it down). Logged with its reason; refused over a live holder.
-    Claim {
-        /// The device to take on, by UDID, serial or registry alias.
-        device: String,
-        /// Why this device is taken on; written to the ledger and the log.
-        #[arg(long)]
-        reason: String,
-    },
-    /// Give up a claim made by `lease claim`.
-    ///
-    /// Removes only the claim. A device this machine really did boot
-    /// keeps saying so, because that row answers a different question.
-    Release { device: String },
-    /// Who answers for this device, in one line and an exit code.
-    ///
-    /// `0` means a ledger says smix booted it, and names the session;
-    /// `3` means no ledger says that — somebody else turned it on, or
-    /// nobody wrote it down; `1` means the question could not be asked.
-    /// Three codes rather than two: a check that answers "safe" when it
-    /// means "I do not know" is the shape this cycle keeps finding.
-    ///
-    /// A claim answers `0` as well, and says so: the same entitlement to
-    /// drive, deliberately not to shut down.
-    ///
-    /// Not a teardown permission: it answers "did smix boot this", not
-    /// "did *you*" — which task a device is for is its owner, in
-    /// `smix status`.
-    Owner { device: String },
-    /// Fold per-checkout ledgers into this machine's.
-    ///
-    /// Ledgers used to live in whichever `.smix/` was above the working
-    /// directory. Adds and never removes; running it twice does nothing
-    /// the second time.
-    Migrate {
-        /// A checkout (or its `.smix/leases`) to read. Repeatable.
-        /// Defaults to the one above the working directory.
-        #[arg(long = "from", value_name = "DIR")]
-        from: Vec<PathBuf>,
-        /// Say what would move and move nothing.
-        ///
-        /// The same decision path as the real thing, split only at the
-        /// write — a rehearsal that works the answer out for itself is
-        /// answering about itself.
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Delete ledgers that no longer describe anything.
-    ///
-    /// A ledger that can only be added to stops describing the machine:
-    /// a holder that died without releasing, or a boot row for a device
-    /// that is off, sits there for ever and every later command has to
-    /// reason around it. Says what it deleted and why; keeps everything
-    /// else and says why too.
-    Prune {
-        /// Report what would go, and delete nothing.
-        #[arg(long)]
-        dry_run: bool,
-        /// Look at this one device's ledger and no other.
-        ///
-        /// Prune reads every ledger on the machine, and a machine is
-        /// shared: without this, cleaning up after your own device meant
-        /// running a judgement over somebody else's rows too.
-        #[arg(long, value_name = "DEVICE")]
-        device: Option<String>,
-    },
-    /// Devices that left while a ledger still said they were here.
-    ///
-    /// Noticed by the next `run`, `runner`, `sim` or `lease` command after
-    /// the device went: an emulator that exited, a simulator shut down
-    /// from outside, a phone unplugged. Each entry says which device (and
-    /// its AVD), when it was noticed, when its ledger last heard from it,
-    /// who held it, whether smix booted it, what answers on its port now,
-    /// and — for an emulator smix started — the last lines it printed on
-    /// its console. An emulator smix did not start has no console here to
-    /// read, and its exit status is nobody's to collect.
-    History {
-        /// Print the history as JSON.
-        #[arg(long)]
-        json: bool,
-    },
-}
 
 #[derive(Subcommand, Debug)]
 enum RunnerAction {
@@ -2859,6 +2759,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Run { .. } | Cmd::Runner { .. } | Cmd::Sim { .. } | Cmd::Lease { .. }
     ) {
         departures::notice(&invoked_as()).await;
+    }
+    if let Some(code) = scope_lease::gate(&cli.cmd) {
+        return Ok(code);
     }
 
     let simctl = SimctlClient::new();

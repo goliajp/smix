@@ -60,6 +60,35 @@ pub fn use_needs_a_bundle(bundle_id: Option<&str>, udid: &str) -> Result<(), Str
     }
 }
 
+/// Whether `smix_use` may start on `udid`: it names an app, and the
+/// device is not in a scope somebody else holds (`smix lease acquire`).
+/// The holder is the one `SMIX_LEASE_HOLDER` names in this server's
+/// environment, the same as for a CLI command.
+pub fn use_may_start(bundle_id: Option<&str>, udid: &str) -> Result<(), String> {
+    use_needs_a_bundle(bundle_id, udid)?;
+    let Some(dir) = smix_lease::scope::ScopeDir::machine() else {
+        return Ok(());
+    };
+    if dir.names().is_empty() {
+        return Ok(());
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+    let registry = smix_simctl::registry::SimRegistry::open_all(&cwd).registry;
+    let ids = |name: &str| {
+        let mut ids = std::collections::BTreeSet::from([name.to_string(), name.to_ascii_uppercase()]);
+        if let Some(sim) = registry.lookup(name) {
+            ids.extend([sim.udid.to_ascii_uppercase(), sim.device_name.clone()]);
+        }
+        ids
+    };
+    let me = std::env::var(smix_lease::scope::HOLDER_ENV).ok().filter(|s| !s.is_empty());
+    let alive = |p: &smix_lease::ProcIdentity| smix_lease::store::probe(p).identity_matches;
+    match smix_lease::scope::refusal(&dir, &ids(udid), &ids, me.as_deref(), &alive) {
+        Some(why) => Err(why),
+        None => Ok(()),
+    }
+}
+
 impl SessionState {
     /// A session with nothing bound.
     #[must_use]
