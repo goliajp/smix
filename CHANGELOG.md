@@ -17,6 +17,8 @@ All notable changes to the `smix` workspace are documented here. The format foll
 - **`smix sim permission <device> <bundle> notifications allow`** works on a
   simulator, without a prompt, where it used to be refused; and `allow` /
   `deny` are taken beside `grant` / `revoke`.
+- **`smix sim terminate … --reclaim`** ends a background Android app the way
+  the system does, so its notifications stay and pushes still reach it.
 - **`smix sim lock <device>`** locks a simulator or turns an emulator's
   screen off.
 

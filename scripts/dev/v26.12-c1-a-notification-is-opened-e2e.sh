@@ -128,7 +128,8 @@ for t in One Two Three; do and_push "$t" || fail "4: $(cat "$WORK/out.log")"; do
 [ "$(code "$SMIX" sim push "$SERIAL" --bundle "$AND_APP" --payload "$WORK/one.json")" = 6 ] || fail "4: took an APNs payload"
 
 log "5. Android: the oldest of three folded together"
-adb -s "$SERIAL" shell am kill "$AND_APP"
+"$SMIX" sim terminate "$SERIAL" "$AND_APP" --reclaim >"$WORK/out.log" 2>&1 || fail "5: $(cat "$WORK/out.log")"
+[ -z "$(adb -s "$SERIAL" shell pidof "$AND_APP")" ] || fail "5: it still runs"
 sleep 8 # the heads-ups leave the screen
 [ "$(code "$SMIX" sim notification tap "$SERIAL" --bundle "$AND_APP" --title One --port "$AND_PORT")" = 0 ] || fail "5: $(cat "$WORK/out.log")"
 [ "$(and_titles)" = "Three Two" ] || fail "5: left: $(and_titles)"

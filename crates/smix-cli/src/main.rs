@@ -59,6 +59,7 @@ mod scope_lease;
 use runner_target::{project_key, runner_dial_port, runner_dial_target};
 mod sim_crashes;
 mod swipe_cmd;
+mod terminate_cmd;
 mod tree_cmd;
 mod tree_note;
 mod window_cmd;
@@ -1689,12 +1690,7 @@ enum SimAction {
         launch_args: Vec<String>,
     },
     /// Terminate an app by bundle id.
-    Terminate {
-        /// Which device, by UDID or registry alias.
-        device: String,
-        /// The app to stop.
-        bundle_id: String,
-    },
+    Terminate(terminate_cmd::TerminateArgs),
     /// Put an app on a device: an `.app` on a simulator, an `.apk` on an
     /// Android emulator or phone.
     ///
@@ -2289,7 +2285,7 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         | SimAction::Screenshot { device, .. }
         | SimAction::Posture { device, .. }
         | SimAction::Launch { device, .. }
-        | SimAction::Terminate { device, .. }
+        | SimAction::Terminate(terminate_cmd::TerminateArgs { device, .. })
         | SimAction::Install { device, .. }
         | SimAction::Uninstall { device, .. }
         | SimAction::Reverse { device, .. }
@@ -2397,7 +2393,7 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
             | SimAction::Crashes { .. }
             | SimAction::Permission(_)
             | SimAction::Launch { .. }
-            | SimAction::Terminate { .. }
+            | SimAction::Terminate(_)
             | SimAction::Openurl { .. } => unreachable!("answered by the platform table"),
         }
         .to_vec(),
@@ -2429,7 +2425,7 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         // and pointing at the row is what stopped the CLI keeping a
         // second opinion about where they work.
         SimAction::Launch { .. } => Some("launch"),
-        SimAction::Terminate { .. } => Some("terminate"),
+        SimAction::Terminate(_) => Some("terminate"),
         SimAction::Install { .. } => Some("install"),
         SimAction::Uninstall { .. } => Some("uninstall"),
         SimAction::Openurl { .. } => Some("open_url"),
@@ -3274,14 +3270,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         println!("launched: {bundle_id} on {udid} (pid {pid})");
                     }
                 }
-                SimAction::Terminate { device, bundle_id } => {
-                    let udid = resolve_device(&device)?;
-                    device_control_for(device_kind_of(&device), &udid)
-                        .terminate(&udid, &bundle_id)
-                        .await
-                        .map_err(|e| CliError::Other(e.to_string()))?;
-                    println!("terminated: {bundle_id} on {udid}");
-                }
+                SimAction::Terminate(args) => terminate_cmd::run(args).await?,
                 SimAction::Install { device, app_path } => {
                     let udid = resolve_device(&device)?;
                     let kind = device_kind_of(&device);
@@ -5010,7 +4999,7 @@ fn is_destructive(action: &SimAction) -> bool {
         // A fold is undone by the next fold.
         | SimAction::Posture { .. }
         | SimAction::Launch { .. }
-        | SimAction::Terminate { .. }
+        | SimAction::Terminate(_)
         | SimAction::Install { .. }
         | SimAction::Openurl { .. }
         // A route to this machine takes nothing off the device.
@@ -6904,10 +6893,11 @@ mod tests {
             ),
             (
                 "terminate",
-                SimAction::Terminate {
+                SimAction::Terminate(terminate_cmd::TerminateArgs {
                     device: d(),
                     bundle_id: d(),
-                },
+                    reclaim: false,
+                }),
             ),
             (
                 "install",
