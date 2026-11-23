@@ -18,8 +18,8 @@ workspace = true
 
 [dependencies]
 serde.workspace = true
-smix-input = { path = "../smix-input", version = "26.8.0" }
-smix-selector = { path = "../smix-selector", version = "26.8.0" }
+smix-input = { path = "../smix-input", version = "26.9.0" }
+smix-selector = { path = "../smix-selector", version = "26.9.0" }
 
 [dev-dependencies]
 serde_json.workspace = true

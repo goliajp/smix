@@ -871,6 +871,7 @@ smix lease status <DEVICE> --json  # {device, path, lease, heldBy}: the ledger a
 smix lease owner <DEVICE>      # who answers for it — exit 0 yes, 3 no record, 1 cannot ask
 smix lease claim <DEVICE> --reason "<why>"   # answer for one this machine did not boot; the reason is kept in the ledger and the fence log
 smix lease release <DEVICE>    # give that up again
+smix lease acquire --scope <S> --holder <H> --wait   # take a shared group of devices in turn (see below)
 smix lease reconcile <DEVICE>  # close what an abandoned session left open
 smix lease prune               # drop ledgers that no longer describe anything
 smix lease prune --dry-run     # ...or say what it would drop, and drop nothing
@@ -948,6 +949,55 @@ machine did not boot, because the claim says in as many words that it did
 not. It is refused while somebody else's live session holds the device:
 claiming is a statement about a device nobody is using, not a way past one
 that is.
+
+### Taking turns on shared devices (`smix lease acquire`)
+
+When several agents or scripts share a few devices, one at a time, a scope
+gives them out in turn. Name the devices once, then each agent takes the
+scope before it drives them and lets go when it is done:
+
+```bash
+smix lease scope qa --device sim-qa --device qa-android-01   # which devices it covers
+smix lease acquire --scope qa --holder agent-3 --wait --until "+40m login suite"
+export SMIX_LEASE_HOLDER=agent-3                             # every device command runs as the holder
+smix run login.yaml --device sim-qa
+smix lease renew --scope qa --holder agent-3                 # during a long step that touches no device
+smix lease release --scope qa --holder agent-3
+smix lease status --scope qa                                 # holder, queue, recent automatic releases
+smix lease status --scope                                    # every scope on this machine
+```
+
+- **In turn.** `--wait` queues and returns when it is this holder's turn,
+  in the order holders asked, however often each one asks. Without
+  `--wait`, a scope somebody else holds exits 75 at once and names them.
+  `--max-wait <secs>` gives up with exit 75, naming the holder and the queue.
+- **One place per holder.** Asking again as the same holder keeps the place
+  it has; it does not add another.
+- **Released when the holder goes quiet.** Every device command run with
+  `SMIX_LEASE_HOLDER=<holder>` renews the hold; `lease renew` does for a
+  step that runs no device command. A hold not renewed for `--idle`
+  minutes (default 20) is released and the next in line gets it, and
+  `status` shows it was released automatically and why. A holder's process
+  is not used to decide this, because agents running inside one long-lived
+  process share it. A caller that has a process of its own can pass
+  `--pid <pid>`: the hold then also ends when that process exits.
+- **Enforced.** While the scope is held, a device command on any of its
+  devices from anyone else, or with `SMIX_LEASE_HOLDER` unset, is refused
+  with exit 3 before it touches the device, and says who holds it. That
+  covers `sim` commands, every command given `--device`, `smix run`,
+  `runner up`/`down`, and the MCP server's `smix_use`. A command given only
+  `--port` is matched to the device whose runner smix started on that
+  port; a port no runner of smix's answers on is not checked.
+- **Devices are compared as devices.** A registry alias covers the UDID or
+  serial it runs as, so declaring `qa-android-01` also covers the
+  `emulator-5560` it is running as today. Devices in no scope are not
+  affected.
+- `--until` works as in `bench-lock`: `+40m <note>` is turned into a clock
+  time when the hold starts.
+
+A scope is a queue, not the device ledger. The ledger records who answers
+for a device and what to close after a session dies; a scope only says
+whose turn it is.
 
 ### Whose a device is, and the whole machine (`--owner`, `smix status`)
 
@@ -1354,7 +1404,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:26.8.0")
+    debugImplementation("jp.golia.smix:smix-probe:26.9.0")
 }
 ```
 

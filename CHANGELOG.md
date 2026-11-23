@@ -2,6 +2,26 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.9.0] — 2026-11-23
+
+### Added
+
+- **`smix lease acquire / renew / scope`, and `status` / `release` with
+  `--scope`: devices shared by several agents, given out in turn.** A scope
+  names a group of devices (`smix lease scope qa --device sim-qa --device
+  qa-android-01`). `acquire --wait` queues in the order holders asked and
+  returns on this holder's turn; without `--wait` a held scope exits 75 and
+  names the holder, and `--max-wait` gives up the same way. A holder asking
+  again keeps its place. Every device command run with
+  `SMIX_LEASE_HOLDER=<holder>` renews the hold, as does `lease renew`, and
+  a hold left quiet for `--idle` minutes (default 20) is released to the
+  next in line and recorded; `--pid` also ends it when a named process
+  exits. While a scope is held, a device command on one of its devices from
+  anyone else is refused with exit 3 before it touches the device: `sim`
+  commands, anything given `--device`, `smix run`, `runner up`/`down`,
+  commands given only `--port` (matched through the runner smix started on
+  it), and the MCP server's `smix_use`.
+
 ## [26.8.0] — 2026-11-23
 
 ### Fixed

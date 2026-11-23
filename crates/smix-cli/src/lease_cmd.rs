@@ -5,99 +5,11 @@
 //! it thinks: a mechanism that silently decides which processes to signal
 //! is one nobody can trust or debug. These three verbs are that window.
 
-use crate::LeaseAction;
+pub use crate::lease_action::LeaseAction;
+pub use crate::lease_words::{describe, divergence_note, held_by_json};
 use smix_lease::store::{CheckoutLedgers, LeaseDir, LedgerDivergence};
-use smix_lease::{Admission, StaleReason, store};
+use smix_lease::{Admission, store};
 use std::path::{Path, PathBuf};
-
-/// Render the verdict for one device.
-///
-/// Pure so the wording is testable — the phrasing is the product here,
-/// not a detail of it.
-pub fn describe(device_id: &str, admission: &Admission) -> String {
-    match admission {
-        Admission::Granted => format!("{device_id}: free"),
-        Admission::Denied(c) if c.holder_alive => format!(
-            "{device_id}: held by pid {} ({}) since {}",
-            c.holder.pid, c.holder.cmd, c.acquired_at
-        ),
-        Admission::Denied(c) => format!(
-            "{device_id}: in use — the command that took it (pid {}) has exited, \
-             but what it started is still running",
-            c.holder.pid
-        ),
-        Admission::Adoptable => format!(
-            "{device_id}: a finished session left its runner serving — the next \
-             command takes the lease over as-is"
-        ),
-        Admission::Reclaimable { cleanup, reason } => {
-            let why = match reason {
-                StaleReason::HolderExited => "holder exited",
-                StaleReason::PidRecycled => "holder gone, its pid was reused",
-                StaleReason::HeartbeatExpired => "holder stopped responding",
-            };
-            format!(
-                "{device_id}: abandoned ({why}) — {} close(s) owed",
-                cleanup.len()
-            )
-        }
-    }
-}
-
-/// Who holds a device, for a script: `null` when a new claim would be
-/// granted, otherwise the pid and command that hold it and whether that
-/// process is still alive.
-///
-/// The human line says the same thing in words. A script that parsed
-/// those words, or read the stored lease and judged the holder's
-/// liveness itself, would keep a second copy of `assess` (2026-09-26:
-/// e2e scripts deciding whether to yield a device).
-pub fn held_by_json(admission: &Admission) -> serde_json::Value {
-    match admission {
-        Admission::Denied(c) => serde_json::json!({
-            "pid": c.holder.pid,
-            "cmd": c.holder.cmd,
-            "alive": c.holder_alive,
-        }),
-        Admission::Granted | Admission::Adoptable | Admission::Reclaimable { .. } => {
-            serde_json::Value::Null
-        }
-    }
-}
-
-/// The note for one device the tree's old book records differently.
-///
-/// Pure so the wording is testable. It says when the tree's copy was
-/// last written, and never that something is writing it: a book frozen
-/// since the ledgers moved disagrees with the machine's on every device
-/// it names, forever, and "Something still writes there" turned that
-/// into a claim about a live writer with nothing behind it.
-pub fn divergence_note(
-    d: &LedgerDivergence,
-    checkout: &str,
-    tree: &Path,
-    leases: &str,
-    last_written: Option<&str>,
-) -> String {
-    match d {
-        LedgerDivergence::OnlyInCheckout { device_id } => format!(
-            "note: {device_id} has a ledger in {checkout} and none here — no other \
-             checkout can see it. `smix lease migrate --from {}` brings it over.",
-            tree.display()
-        ),
-        LedgerDivergence::Disagrees { device_id, detail } => {
-            let when = match last_written {
-                Some(t) => format!("That copy was last written {t}"),
-                None => "When it was last written could not be read".to_string(),
-            };
-            format!(
-                "note: {device_id} is recorded differently in {checkout} — {detail}. \
-                 {when}; this smix only reads it. This command answers from \
-                 {leases} alone."
-            )
-        }
-    }
-}
 
 /// Run the subcommand.
 ///
@@ -175,7 +87,17 @@ pub async fn run(leases: &LeaseDir, action: LeaseAction) -> Result<u8, crate::Cl
             }
             say_divergences(None);
         }
-        LeaseAction::Status { device, json: true } => {
+        // the scope verbs are answered by `scope_lease::run` before this
+        LeaseAction::Status { scope: Some(_), .. }
+        | LeaseAction::Release { scope: Some(_), .. }
+        | LeaseAction::Acquire(_)
+        | LeaseAction::Renew { .. }
+        | LeaseAction::Scope { .. } => unreachable!("routed to scope_lease::run"),
+        LeaseAction::Status {
+            device: Some(device),
+            json: true,
+            ..
+        } => {
             let udid = crate::resolve_device(&device)?;
             let lease = store::read(leases, &udid).map_err(to_cli_error)?;
             let path = store::lease_path(leases, &udid).map_err(to_cli_error)?;
@@ -187,8 +109,9 @@ pub async fn run(leases: &LeaseDir, action: LeaseAction) -> Result<u8, crate::Cl
             );
         }
         LeaseAction::Status {
-            device,
+            device: Some(device),
             json: false,
+            ..
         } => {
             let udid = crate::resolve_device(&device)?;
             let facts = store::collect_facts(leases, &udid).map_err(to_cli_error)?;
@@ -290,7 +213,13 @@ pub async fn run(leases: &LeaseDir, action: LeaseAction) -> Result<u8, crate::Cl
             }
         }
         LeaseAction::Claim { device, reason } => return claim(leases, &device, &reason),
-        LeaseAction::Release { device } => release(leases, &device)?,
+        LeaseAction::Release {
+            device: Some(device),
+            ..
+        } => release(leases, &device)?,
+        LeaseAction::Status { device: None, .. } | LeaseAction::Release { device: None, .. } => {
+            unreachable!("clap requires a device or --scope")
+        }
         LeaseAction::Owner { device } => return owner(leases, &device),
         LeaseAction::Migrate { from, dry_run } => migrate(leases, &from, dry_run)?,
         LeaseAction::Prune { dry_run, device } => prune(leases, dry_run, device.as_deref()).await?,
@@ -590,7 +519,7 @@ fn to_cli_error(e: store::LeaseError) -> crate::CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use smix_lease::{CleanupAction, Contention, ProcIdentity};
+    use smix_lease::{CleanupAction, Contention, ProcIdentity, StaleReason};
 
     fn ident(pid: u32) -> ProcIdentity {
         ProcIdentity {

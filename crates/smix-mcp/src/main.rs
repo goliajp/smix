@@ -221,7 +221,7 @@ impl SmixMcpService {
         Parameters(params): Parameters<UseParams>,
     ) -> Result<CallToolResult, McpError> {
         let port = params.port.unwrap_or(22087);
-        smix_mcp::use_needs_a_bundle(params.bundle_id.as_deref(), &params.udid)
+        smix_mcp::use_may_start(params.bundle_id.as_deref(), &params.udid)
             .map_err(|why| McpError::invalid_params(why, None))?;
 
         // Already here: bringing the runner up again would restart the app
