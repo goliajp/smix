@@ -2,9 +2,9 @@
 
 use smix_sdk::PermissionAction;
 use smix_sdk::device_control::{DeviceControl, Permission};
-use smix_simctl::SimctlClient;
 use smix_simctl::notifications::Authorization;
 use smix_simctl::registry::DeviceKind;
+use smix_simctl::{SimctlClient, SimctlPermission};
 
 /// What the command line said.
 #[derive(clap::Args, Debug)]
@@ -46,10 +46,7 @@ pub async fn run(simctl: &SimctlClient, args: PermissionArgs) -> Result<(), crat
     let failed = |e: smix_simctl::DeviceControlError| crate::CliError::Other(e.to_string());
     let device = if crate::device_kind_of(&args.device) == DeviceKind::Simulator {
         let udid = crate::resolve_device(&args.device)?;
-        if matches!(
-            permission,
-            Permission::Notifications | Permission::PostNotifications
-        ) {
+        if permission.to_simctl() == Some(SimctlPermission::Notifications) {
             return notifications(simctl, &udid, app, args.action).await;
         }
         smix_sdk::ios_device::IosDeviceControl::new()

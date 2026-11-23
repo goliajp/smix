@@ -384,7 +384,10 @@ mod tests {
     #[test]
     fn an_app_delivered_nothing_and_a_simulator_with_no_store_read_empty() {
         assert_eq!(delivered_in(&data(), "com.example.none"), Ok(vec![]));
-        assert_eq!(delivered_in(Path::new("/nonexistent"), APP), Ok(vec![]));
+        assert_eq!(
+            delivered_in(&data().join("no-such-simulator"), APP),
+            Ok(vec![])
+        );
     }
 
     #[test]
