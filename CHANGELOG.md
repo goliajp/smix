@@ -2,6 +2,24 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.12.0] — 2026-11-24
+
+### Added
+
+- **`smix sim push <device> --bundle <id> --payload <file|->`** delivers a
+  whole payload: APNs on a simulator, an FCM message on an emulator, handed
+  to the app's own `FirebaseMessagingService`. It exits 4 when the app is
+  not installed, 5 when it may not show notifications, and 6 when the
+  payload is not one the platform takes, saying why.
+- **`smix sim notification list | tap`** lists an app's notifications and
+  opens one — from a banner, a folded group, the notification centre or
+  shade, or the lock screen, with the app in the background or not running.
+- **`smix sim permission <device> <bundle> notifications allow`** works on a
+  simulator, without a prompt, where it used to be refused; and `allow` /
+  `deny` are taken beside `grant` / `revoke`.
+- **`smix sim lock <device>`** locks a simulator or turns an emulator's
+  screen off.
+
 ## [26.11.0] — 2026-11-24
 
 ### Added

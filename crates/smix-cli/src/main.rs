@@ -45,11 +45,15 @@ mod fill_secret;
 mod hover_cmd;
 mod keyboard_cmd;
 mod locale_cmd;
+mod lock_cmd;
 mod log_sources;
 mod navigation_cmd;
+mod notification_cmd;
 mod orientation_cmd;
+mod permission_cmd;
 mod pinch_cmd;
 mod platform;
+mod push_cmd;
 mod runner_target;
 mod scope_lease;
 use runner_target::{project_key, runner_dial_port, runner_dial_target};
@@ -1783,20 +1787,19 @@ enum SimAction {
     },
     /// Grant, revoke or reset one runtime permission for an app.
     ///
-    /// `simctl privacy` on a simulator and `pm grant` / `pm revoke` on
-    /// Android. A physical iPhone refuses: those grants are the owner's,
+    /// `simctl privacy` on a simulator (and SpringBoard's record for
+    /// `notifications`), `pm grant` / `pm revoke` on Android. A physical iPhone refuses: those grants are the owner's,
     /// and devicectl has no equivalent.
-    Permission {
-        /// Which device, by UDID, serial or registry alias.
-        device: String,
-        /// The app the permission belongs to.
-        bundle_id: String,
-        /// Which permission, e.g. `camera`, `location`, `post-notifications`.
-        permission: String,
-        /// What to do with it.
-        #[arg(value_parser = parse_permission_action)]
-        action: String,
-    },
+    Permission(permission_cmd::PermissionArgs),
+    /// Hand an app a whole push payload: APNs on a simulator, FCM on an emulator.
+    ///
+    /// Exits 4 when the app is not installed, 5 when it may not show
+    /// notifications, 6 when the payload is not one the platform takes.
+    Push(push_cmd::PushArgs),
+    /// Turn the screen off, which locks it when the device has a lock screen.
+    Lock(lock_cmd::LockArgs),
+    /// List an app's notifications, or open one.
+    Notification(notification_cmd::NotificationArgs),
     /// Print which app is in front.
     ///
     /// A read, not a command: it reports the app the device has resumed
@@ -1931,17 +1934,6 @@ fn parse_on_off(s: &str) -> Result<bool, String> {
         "on" => Ok(true),
         "off" => Ok(false),
         other => Err(format!("expected `on` or `off`, got `{other}`")),
-    }
-}
-
-/// One of `grant` / `revoke` / `reset`, kept as the string the action
-/// enum parses downstream.
-fn parse_permission_action(s: &str) -> Result<String, String> {
-    match s.trim().to_ascii_lowercase().as_str() {
-        a @ ("grant" | "revoke" | "reset") => Ok(a.to_string()),
-        other => Err(format!(
-            "expected `grant`, `revoke` or `reset`, got `{other}`"
-        )),
     }
 }
 
@@ -2303,7 +2295,9 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         | SimAction::Reverse { device, .. }
         | SimAction::Wake { device }
         | SimAction::StayAwake { device, .. }
-        | SimAction::Permission { device, .. }
+        | SimAction::Permission(permission_cmd::PermissionArgs { device, .. })
+        | SimAction::Push(push_cmd::PushArgs { device, .. })
+        | SimAction::Lock(lock_cmd::LockArgs { device })
         | SimAction::Frontmost { device, .. }
         | SimAction::Crashes { device, .. }
         | SimAction::Openurl { device, .. }
@@ -2315,6 +2309,7 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         | SimAction::Locale(locale_cmd::LocaleArgs { device, .. })
         | SimAction::Keyboard(keyboard_cmd::KeyboardArgs { device, .. })
         | SimAction::Exec { device, .. } => Some(device),
+        SimAction::Notification(args) => Some(args.device()),
     }
 }
 
@@ -2377,6 +2372,8 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
             SimAction::Boot { .. } | SimAction::Shutdown { .. } => POWERABLE,
             // both runners turn the display; both kinds have a night mode
             SimAction::Orientation(_) | SimAction::Appearance(_) => POWERABLE,
+            // a phone's notifications and pushes are its owner's
+            SimAction::Push(_) | SimAction::Notification(_) | SimAction::Lock(_) => POWERABLE,
             // the navbar overlays; a phone's own navigation is its owner's
             SimAction::Navigation(_) => &[Emulator],
 
@@ -2398,7 +2395,7 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
             | SimAction::StayAwake { .. }
             | SimAction::Frontmost { .. }
             | SimAction::Crashes { .. }
-            | SimAction::Permission { .. }
+            | SimAction::Permission(_)
             | SimAction::Launch { .. }
             | SimAction::Terminate { .. }
             | SimAction::Openurl { .. } => unreachable!("answered by the platform table"),
@@ -2424,7 +2421,7 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         SimAction::Reverse { .. } => Some("reverse_port"),
         SimAction::Wake { .. } => Some("wake"),
         SimAction::StayAwake { .. } => Some("set_stay_awake"),
-        SimAction::Permission { .. } => Some("set_permission"),
+        SimAction::Permission(_) => Some("set_permission"),
         SimAction::Frontmost { .. } => Some("frontmost_app"),
         SimAction::Crashes { .. } => Some("crash_reports"),
         // The lifecycle verbs. Each has a row because each is a
@@ -2458,6 +2455,9 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         | SimAction::Navigation(_)
         | SimAction::Locale(_)
         | SimAction::Keyboard(_)
+        | SimAction::Push(_)
+        | SimAction::Notification(_)
+        | SimAction::Lock(_)
         | SimAction::Exec { .. } => None,
     }
 }
@@ -3368,69 +3368,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         );
                     }
                 }
-                SimAction::Wake { device } => {
-                    let serial = resolve_android_serial(&device)?;
-                    let control = smix_sdk::android_device::AndroidDeviceControl::new();
-                    with_device_lease(&control, &serial, |leased| async move {
-                        leased.wake().await?;
-                        Ok(((), leased))
-                    })
-                    .await?;
-                    println!(
-                        "wake: {serial} screen is on \
-                         (a passcode lock is untouched — this lights the screen, it does not unlock)"
-                    );
-                }
+                SimAction::Wake { device } => lock_cmd::wake(&device).await?,
                 SimAction::StayAwake { device, state } => {
-                    let serial = resolve_android_serial(&device)?;
-                    let control = smix_sdk::android_device::AndroidDeviceControl::new();
-                    with_device_lease(&control, &serial, |leased| async move {
-                        leased.set_stay_awake(state).await?;
-                        Ok(((), leased))
-                    })
-                    .await?;
-                    let worded = if state { "on" } else { "off" };
-                    println!(
-                        "stay-awake: {serial} {worded} \
-                         (a device setting — it outlives this run until set back)"
-                    );
+                    lock_cmd::stay_awake(&device, state).await?
                 }
-                SimAction::Permission {
-                    device,
-                    bundle_id,
-                    permission,
-                    action,
-                } => {
-                    use smix_sdk::device_control::{DeviceControl, Permission};
-                    let parsed = Permission::from_name(&permission).map_err(CliError::Other)?;
-                    let what = match action.as_str() {
-                        "grant" => smix_sdk::PermissionAction::Grant,
-                        "revoke" => smix_sdk::PermissionAction::Revoke,
-                        // The value parser admits only these three.
-                        _ => smix_sdk::PermissionAction::Reset,
-                    };
-                    let kind = device_kind_of(&device);
-                    if kind == smix_simctl::registry::DeviceKind::Simulator {
-                        let udid = resolve_device(&device)?;
-                        let control = smix_sdk::ios_device::IosDeviceControl::new();
-                        control
-                            .set_permission(&udid, &bundle_id, parsed, what)
-                            .await
-                            .map_err(|e| CliError::Other(e.to_string()))?;
-                        println!("permission: {udid} {bundle_id} {} {action}", parsed.name());
-                    } else {
-                        let serial = resolve_android_serial(&device)?;
-                        let control = smix_sdk::android_device::AndroidDeviceControl::new();
-                        control
-                            .set_permission(&serial, &bundle_id, parsed, what)
-                            .await
-                            .map_err(|e| CliError::Other(e.to_string()))?;
-                        println!(
-                            "permission: {serial} {bundle_id} {} {action}",
-                            parsed.name()
-                        );
-                    }
-                }
+                SimAction::Permission(args) => permission_cmd::run(&simctl, args).await?,
+                SimAction::Lock(args) => lock_cmd::run(&simctl, args).await?,
+                SimAction::Push(args) => return push_cmd::run(&simctl, args).await,
+                SimAction::Notification(args) => notification_cmd::run(&simctl, args).await?,
                 SimAction::Frontmost { device, json } => {
                     use smix_sdk::device_control::DeviceControl;
                     let serial = resolve_android_serial(&device)?;
@@ -5080,7 +5025,10 @@ fn is_destructive(action: &SimAction) -> bool {
         // A permission grant is the app's, and revoking is the same
         // verb with the other argument. `privacy_reset_all` is the
         // destructive one, and it is not this.
-        | SimAction::Permission { .. }
+        | SimAction::Permission(_)
+        | SimAction::Push(_)
+        | SimAction::Notification(_)
+        | SimAction::Lock(_)
         | SimAction::Appearance(_)
         | SimAction::Navigation(_)
         | SimAction::Orientation(_)
@@ -6790,13 +6738,14 @@ mod tests {
 
         // The odd one out: a simulator answers this through
         // `simctl privacy`, and only a physical iPhone refuses.
-        let permission = sim_verb_supports(&SimAction::Permission {
-            device: String::new(),
-            bundle_id: String::new(),
-            permission: String::new(),
-            action: String::new(),
-        })
-        .expect("permission takes a device");
+        let permission =
+            sim_verb_supports(&SimAction::Permission(permission_cmd::PermissionArgs {
+                device: String::new(),
+                bundle_id: String::new(),
+                permission: String::new(),
+                action: smix_sdk::PermissionAction::Grant,
+            }))
+            .expect("permission takes a device");
         for kind in [Simulator, Emulator, PhysicalAndroid] {
             assert!(permission.contains(&kind), "permission dropped {kind:?}");
         }
@@ -6832,12 +6781,12 @@ mod tests {
                 "set_stay_awake",
             ),
             (
-                table_action_of(&SimAction::Permission {
+                table_action_of(&SimAction::Permission(permission_cmd::PermissionArgs {
                     device: String::new(),
                     bundle_id: String::new(),
                     permission: String::new(),
-                    action: String::new(),
-                }),
+                    action: smix_sdk::PermissionAction::Grant,
+                })),
                 "set_permission",
             ),
             (
@@ -7017,6 +6966,25 @@ mod tests {
                 }),
             ),
             (
+                "push",
+                SimAction::Push(push_cmd::PushArgs {
+                    device: d(),
+                    bundle: d(),
+                    payload: d(),
+                }),
+            ),
+            ("lock", SimAction::Lock(lock_cmd::LockArgs { device: d() })),
+            (
+                "notification",
+                SimAction::Notification(notification_cmd::NotificationArgs {
+                    action: notification_cmd::NotificationAction::List {
+                        device: d(),
+                        bundle: d(),
+                        json: false,
+                    },
+                }),
+            ),
+            (
                 "keyboard",
                 SimAction::Keyboard(keyboard_cmd::KeyboardArgs {
                     device: d(),
@@ -7052,12 +7020,12 @@ mod tests {
             ),
             (
                 "permission",
-                SimAction::Permission {
+                SimAction::Permission(permission_cmd::PermissionArgs {
                     device: d(),
                     bundle_id: d(),
                     permission: d(),
-                    action: d(),
-                },
+                    action: smix_sdk::PermissionAction::Grant,
+                }),
             ),
             (
                 "frontmost",
@@ -7251,20 +7219,6 @@ mod tests {
         assert!(err.contains("on"), "{err}");
         assert!(err.contains("off"), "{err}");
         assert!(err.contains("maybe"), "says what it could not read: {err}");
-    }
-
-    #[test]
-    fn a_permission_action_is_one_of_three() {
-        assert_eq!(parse_permission_action("grant"), Ok("grant".to_string()));
-        assert_eq!(
-            parse_permission_action(" Revoke "),
-            Ok("revoke".to_string())
-        );
-        let err = parse_permission_action("allow").expect_err("allow is not one of them");
-        assert!(
-            err.contains("grant") && err.contains("revoke") && err.contains("reset"),
-            "{err}"
-        );
     }
 
     #[test]
@@ -7696,6 +7650,46 @@ mod tests {
             vec!["smix", "sim", "keyboard", "02", "tab", "shift+tab", "space"],
             vec!["smix", "sim", "navigation", "emulator-5554", "three-button"],
             vec!["smix", "sim", "keychain-reset", "02"],
+            vec![
+                "smix",
+                "sim",
+                "permission",
+                "02",
+                "a.b",
+                "notifications",
+                "allow",
+            ],
+            vec![
+                "smix",
+                "sim",
+                "push",
+                "02",
+                "--bundle",
+                "a.b",
+                "--payload",
+                "-",
+            ],
+            vec!["smix", "sim", "lock", "02"],
+            vec![
+                "smix",
+                "sim",
+                "notification",
+                "list",
+                "02",
+                "--bundle",
+                "a.b",
+            ],
+            vec![
+                "smix",
+                "sim",
+                "notification",
+                "tap",
+                "02",
+                "--bundle",
+                "a.b",
+                "--title",
+                "T",
+            ],
             vec!["smix", "sim", "resolve", "02"],
         ] {
             Cli::try_parse_from(&argv).unwrap_or_else(|e| panic!("{argv:?} failed to parse: {e}"));

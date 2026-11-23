@@ -1,6 +1,7 @@
 //! `smix sim keyboard <device> [keys…]` — press keys on a simulator's
 //! hardware keyboard, or switch Full Keyboard Access.
 
+use crate::runner_target::refuse_beside_a_runner;
 use smix_simctl::SimctlClient;
 use smix_simctl::keyboard::{Chord, press};
 
@@ -28,20 +29,6 @@ pub struct KeyboardArgs {
 pub enum OnOff {
     On,
     Off,
-}
-
-/// A runner holds the simulator in UI-test mode, where Full Keyboard
-/// Access shows its outline and then takes no further key: measured with
-/// the same keys on one boot, runner up and down in turn.
-fn refuse_beside_a_runner(udid: &str, what: &str) -> Result<(), crate::CliError> {
-    match crate::runner_target::recorded_runner_port(udid) {
-        None => Ok(()),
-        Some(port) => Err(crate::CliError::Other(format!(
-            "{udid} has a runner up on port {port}, and {what}. Stop it first:\n  \
-             smix runner down --device {udid}\n\
-             `smix sim screenshot` works without one."
-        ))),
-    }
 }
 
 pub async fn run(simctl: &SimctlClient, args: KeyboardArgs) -> Result<(), crate::CliError> {
@@ -72,6 +59,8 @@ pub async fn run(simctl: &SimctlClient, args: KeyboardArgs) -> Result<(), crate:
         println!("keyboard: {udid} full keyboard access {state}");
         return Ok(());
     }
+    // measured with the same keys on one boot, runner up and down in turn:
+    // a UI-test session shows the outline and then takes no further key
     refuse_beside_a_runner(
         &udid,
         "while one is, Full Keyboard Access takes the first key and ignores the rest",

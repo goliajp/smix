@@ -13,13 +13,19 @@ unsafe extern "C" {
 
 const CLIENT: &str = "_TtC12SimulatorKit24SimDeviceLegacyHIDClient";
 const MESSAGE: &str = "IndigoHIDMessageForKeyboardArbitrary";
+const BUTTON: &str = "IndigoHIDMessageForButton";
+/// The lock button, as Simulator.app's Device > Lock sends it.
+const LOCK: u32 = 1;
+const BUTTONS: u32 = 0x33;
 
 type MessageFn = unsafe extern "C" fn(u32, u32) -> *mut c_void;
+type ButtonFn = unsafe extern "C" fn(u32, u32, u32) -> *mut c_void;
 
 /// A booted simulator's keyboard.
 pub(crate) struct Keyboard {
     client: Id,
     message: MessageFn,
+    button: ButtonFn,
 }
 
 fn c(s: &str) -> CString {
@@ -56,6 +62,10 @@ impl Keyboard {
         if message.is_null() {
             return Err(format!("SimulatorKit has no {MESSAGE}"));
         }
+        let button = unsafe { dlsym(kit, c(BUTTON).as_ptr()) };
+        if button.is_null() {
+            return Err(format!("SimulatorKit has no {BUTTON}"));
+        }
         let class = unsafe { objc_getClass(c(CLIENT).as_ptr()) };
         if class.is_null() {
             return Err(format!("SimulatorKit has no {CLIENT}"));
@@ -77,6 +87,7 @@ impl Keyboard {
         Ok(Self {
             client,
             message: unsafe { std::mem::transmute::<*mut c_void, MessageFn>(message) },
+            button: unsafe { std::mem::transmute::<*mut c_void, ButtonFn>(button) },
         })
     }
 
@@ -86,6 +97,21 @@ impl Keyboard {
         if message.is_null() {
             return Err(format!("SimulatorKit made no message for key {usage:#x}"));
         }
+        self.hand_over(message);
+        Ok(())
+    }
+
+    /// The lock button going down or coming up.
+    pub(crate) fn lock_button(&self, down: bool) -> Result<(), String> {
+        let message = unsafe { (self.button)(LOCK, if down { 1 } else { 2 }, BUTTONS) };
+        if message.is_null() {
+            return Err("SimulatorKit made no message for the lock button".into());
+        }
+        self.hand_over(message);
+        Ok(())
+    }
+
+    fn hand_over(&self, message: *mut c_void) {
         // freeWhenDone: the client frees the message it was handed
         let send: unsafe extern "C" fn(Id, *mut c_void, *mut c_void, bool, Id, Id) =
             unsafe { std::mem::transmute(objc_msgSend as unsafe extern "C" fn()) };
@@ -99,7 +125,6 @@ impl Keyboard {
                 std::ptr::null_mut(),
             );
         }
-        Ok(())
     }
 }
 
