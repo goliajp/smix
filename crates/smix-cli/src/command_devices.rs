@@ -5,7 +5,10 @@
 //! touches a device before this compiles. "Not mentioned" is how a check
 //! that sits in front of every command ends up in front of most of them.
 
-use crate::{AuthoringAction, CapsuleAction, Cmd, DiagnosticAction, RecordAction, RunnerAction, SessionAction};
+use crate::{
+    AuthoringAction, CapsuleAction, Cmd, DiagnosticAction, RecordAction, RunnerAction,
+    SessionAction,
+};
 
 /// What a command acts on.
 #[derive(Debug, PartialEq, Eq)]
@@ -161,7 +164,9 @@ pub(crate) fn devices(cmd: &Cmd) -> Vec<String> {
             device: Some(d), ..
         } => vec![d.to_string()],
         Touches::Runner { device: None, port } => match smix_capsule::runner::machine_leases() {
-            Ok(leases) => devices_on_port(&leases, crate::runner_target::runner_dial_port(port, None)),
+            Ok(leases) => {
+                devices_on_port(&leases, crate::runner_target::runner_dial_port(port, None))
+            }
             Err(_) => Vec::new(),
         },
     }
@@ -182,22 +187,37 @@ mod tests {
     fn a_command_says_which_device_it_acts_on() {
         touches(
             &["tap", "id:x", "--port", "22100"],
-            &Touches::Runner { device: None, port: Some(22100) },
+            &Touches::Runner {
+                device: None,
+                port: Some(22100),
+            },
         );
         touches(
             &["tree", "--device", "sim-a"],
-            &Touches::Runner { device: Some("sim-a"), port: None },
+            &Touches::Runner {
+                device: Some("sim-a"),
+                port: None,
+            },
         );
-        touches(&["sim", "screenshot", "emulator-5560", "x.png"], &Touches::Devices(vec!["emulator-5560"]));
+        touches(
+            &["sim", "screenshot", "emulator-5560", "x.png"],
+            &Touches::Devices(vec!["emulator-5560"]),
+        );
         touches(
             &["runner", "up", "qip-01", "--platform", "android"],
-            &Touches::Runner { device: Some("qip-01"), port: None },
+            &Touches::Runner {
+                device: Some("qip-01"),
+                port: None,
+            },
         );
         touches(
             &["run", "--device", "a", "--also-device", "b", "f.yaml"],
             &Touches::Devices(vec!["a", "b"]),
         );
-        touches(&["lease", "status", "--scope", "insight"], &Touches::Nothing);
+        touches(
+            &["lease", "status", "--scope", "insight"],
+            &Touches::Nothing,
+        );
         touches(&["sim", "list"], &Touches::Nothing);
     }
 
@@ -214,11 +234,23 @@ mod tests {
         let me = smix_lease::store::identify_self();
         smix_lease::store::add_resource(&leases, "emulator-5998", runner(22998, me.clone()))
             .expect("write");
-        let gone = smix_lease::ProcIdentity { started_at: "never".into(), ..me };
+        let gone = smix_lease::ProcIdentity {
+            started_at: "never".into(),
+            ..me
+        };
         smix_lease::store::add_resource(&leases, "emulator-5996", runner(22996, gone))
             .expect("write");
-        assert_eq!(devices_on_port(&leases, 22998), vec!["emulator-5998".to_string()]);
-        assert!(devices_on_port(&leases, 22996).is_empty(), "its runner is not the one recorded");
-        assert!(devices_on_port(&leases, 22997).is_empty(), "nobody on this port");
+        assert_eq!(
+            devices_on_port(&leases, 22998),
+            vec!["emulator-5998".to_string()]
+        );
+        assert!(
+            devices_on_port(&leases, 22996).is_empty(),
+            "its runner is not the one recorded"
+        );
+        assert!(
+            devices_on_port(&leases, 22997).is_empty(),
+            "nobody on this port"
+        );
     }
 }

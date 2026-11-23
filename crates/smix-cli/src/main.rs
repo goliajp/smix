@@ -23,8 +23,8 @@ macro_rules! println {
 mod act;
 mod budget;
 mod budget_cmd;
-mod command_devices;
 mod cleanup_cmd;
+mod command_devices;
 mod footprint;
 mod settle_flags;
 mod status_cmd;
@@ -74,7 +74,9 @@ mod fence;
 #[cfg(test)]
 mod guide_gate;
 mod init;
+mod lease_action;
 mod lease_cmd;
+mod lease_words;
 mod parallel;
 mod readiness;
 mod record_cmd;
@@ -1235,7 +1237,6 @@ enum RecordAction {
     /// Whether this device is recording, and where it is writing.
     Status { device: String },
 }
-
 
 #[derive(Subcommand, Debug)]
 enum RunnerAction {
@@ -3770,10 +3771,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             action: fence::GuardAction::Lifecycle,
         } => return Ok(std::process::ExitCode::from(fence::guard_lifecycle()?)),
         Cmd::Lease { action } => {
-            let leases = smix_capsule::runner::machine_leases().map_err(CliError::Other)?;
-            return Ok(std::process::ExitCode::from(
-                lease_cmd::run(&leases, action).await?,
-            ));
+            let code = match scope_lease::run(action).await? {
+                Ok(code) => code,
+                Err(action) => {
+                    let leases = smix_capsule::runner::machine_leases().map_err(CliError::Other)?;
+                    lease_cmd::run(&leases, action).await?
+                }
+            };
+            return Ok(std::process::ExitCode::from(code));
         }
         Cmd::Record { action } => {
             record_cmd::run(action).await?;

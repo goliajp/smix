@@ -120,7 +120,9 @@ pub enum Granted {
 }
 
 fn parse(t: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(t).ok().map(|d| d.with_timezone(&Utc))
+    DateTime::parse_from_rfc3339(t)
+        .ok()
+        .map(|d| d.with_timezone(&Utc))
 }
 
 /// Whole seconds from `then` to `now`, or `None` when `then` is unreadable.
@@ -244,7 +246,8 @@ impl Scope {
     /// of the same holder has taken over. Returns whether it left.
     pub fn give_up(&mut self, holder: &str, asking: &ProcIdentity) -> bool {
         let before = self.queue.len();
-        self.queue.retain(|w| !(w.holder == holder && &w.waiting == asking));
+        self.queue
+            .retain(|w| !(w.holder == holder && &w.waiting == asking));
         self.queue.len() != before
     }
 
@@ -294,8 +297,7 @@ impl ScopeDir {
         let mut names: Vec<String> = entries
             .filter_map(|e| {
                 let p = e.ok()?.path();
-                (p.extension()? == "json")
-                    .then(|| p.file_stem()?.to_str().map(str::to_string))?
+                (p.extension()? == "json").then(|| p.file_stem()?.to_str().map(str::to_string))?
             })
             .collect();
         names.sort();
@@ -306,8 +308,7 @@ impl ScopeDir {
     /// scope's lock so two processes never interleave.
     pub fn update<T>(&self, name: &str, f: impl FnOnce(&mut Scope) -> T) -> Result<T, String> {
         valid_name(name)?;
-        std::fs::create_dir_all(&self.0)
-            .map_err(|e| format!("{}: {e}", self.0.display()))?;
+        std::fs::create_dir_all(&self.0).map_err(|e| format!("{}: {e}", self.0.display()))?;
         let lock_path = self.0.join(format!(".{name}.lock"));
         let lock = std::fs::OpenOptions::new()
             .create(true)
@@ -319,8 +320,9 @@ impl ScopeDir {
             .map_err(|e| format!("{}: {e}", lock_path.display()))?;
         let path = self.file(name);
         let mut scope = match std::fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|e| format!("{}: {e}", path.display()))?,
+            Ok(bytes) => {
+                serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Scope::default(),
             Err(e) => return Err(format!("{}: {e}", path.display())),
         };
@@ -387,7 +389,11 @@ pub const HOLDER_ENV: &str = "SMIX_LEASE_HOLDER";
 pub fn shown(t: &str) -> String {
     DateTime::parse_from_rfc3339(t).map_or_else(
         |_| t.to_string(),
-        |d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string(),
+        |d| {
+            d.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        },
     )
 }
 
@@ -396,7 +402,11 @@ fn refusal_text(name: &str, h: &Hold, me: Option<&str>) -> String {
         Some(me) => format!("you run as {me}"),
         None => format!("{HOLDER_ENV} is not set"),
     };
-    let until = h.until.as_deref().map(|u| format!(", until {u}")).unwrap_or_default();
+    let until = h
+        .until
+        .as_deref()
+        .map(|u| format!(", until {u}"))
+        .unwrap_or_default();
     format!(
         "this device is in scope {name}, which {} holds (since {}{until}) — {who}. \
          Wait for it:\n  smix lease acquire --scope {name} --holder <you> --wait\n\
@@ -481,10 +491,19 @@ mod tests {
             assert_eq!(s.acquire(&ask("b", pid, true), at(1)), Granted::Queued(1));
         }
         assert_eq!(s.queue.len(), 1);
-        assert_eq!(s.queue[0].waiting.pid, 4, "the newest asker is the one waiting");
+        assert_eq!(
+            s.queue[0].waiting.pid, 4,
+            "the newest asker is the one waiting"
+        );
         assert_eq!(s.acquire(&ask("b", 5, false), at(1)), Granted::Queued(1));
-        assert_eq!(s.queue[0].waiting.pid, 4, "asking without waiting takes nothing over");
-        assert!(!s.give_up("b", &proc(2)), "an earlier asker cannot take the place away");
+        assert_eq!(
+            s.queue[0].waiting.pid, 4,
+            "asking without waiting takes nothing over"
+        );
+        assert!(
+            !s.give_up("b", &proc(2)),
+            "an earlier asker cannot take the place away"
+        );
         assert!(s.give_up("b", &proc(4)));
         assert!(s.queue.is_empty());
         assert_eq!(s.acquire(&ask("a", 9, true), at(2)), Granted::Held);
@@ -503,14 +522,24 @@ mod tests {
         let mut s = Scope::default();
         s.acquire(&ask("a", 1, true), at(0));
         s.acquire(&ask("b", 2, true), at(1));
-        assert!(!s.settle(at(DEFAULT_IDLE_SECS as i64), &all_alive), "at the limit it still holds");
+        assert!(
+            !s.settle(at(DEFAULT_IDLE_SECS as i64), &all_alive),
+            "at the limit it still holds"
+        );
         assert!(s.touch("a", at(DEFAULT_IDLE_SECS as i64)));
-        assert!(!s.settle(at(DEFAULT_IDLE_SECS as i64 * 2 - 1), &all_alive), "a command renews it");
+        assert!(
+            !s.settle(at(DEFAULT_IDLE_SECS as i64 * 2 - 1), &all_alive),
+            "a command renews it"
+        );
         assert!(s.settle(at(DEFAULT_IDLE_SECS as i64 * 2 + 1), &all_alive));
         assert_eq!(s.holder.as_ref().unwrap().holder, "b");
         let r = s.released.last().unwrap();
         assert_eq!(r.holder, "a");
-        assert!(r.reason.contains("no command from it for 20 min"), "{}", r.reason);
+        assert!(
+            r.reason.contains("no command from it for 20 min"),
+            "{}",
+            r.reason
+        );
     }
 
     #[test]
@@ -522,7 +551,11 @@ mod tests {
         assert!(!s.settle(at(5), &all_alive));
         assert!(s.settle(at(6), &|p: &ProcIdentity| p.pid != 77));
         assert!(s.holder.is_none());
-        assert!(s.released[0].reason.contains("process 77"), "{}", s.released[0].reason);
+        assert!(
+            s.released[0].reason.contains("process 77"),
+            "{}",
+            s.released[0].reason
+        );
     }
 
     #[test]
@@ -534,7 +567,11 @@ mod tests {
         assert!(s.settle(at(3), &|p: &ProcIdentity| p.pid != 2));
         assert_eq!(s.queue.len(), 1);
         assert_eq!(s.queue[0].holder, "c");
-        assert_eq!(s.holder.as_ref().unwrap().holder, "a", "the holder is not touched");
+        assert_eq!(
+            s.holder.as_ref().unwrap().holder,
+            "a",
+            "the holder is not touched"
+        );
     }
 
     #[test]
@@ -579,14 +616,32 @@ mod tests {
         let ids = |n: &str| std::collections::BTreeSet::from([n.to_string()]);
         let target = std::collections::BTreeSet::from(["dev-1".to_string()]);
         let other = std::collections::BTreeSet::from(["dev-2".to_string()]);
-        dir.update("s", |s| s.devices = vec!["dev-1".into()]).unwrap();
-        assert!(refusal(&dir, &target, &ids, None, &all_alive).is_none(), "free");
-        dir.update("s", |s| s.acquire(&ask("a", 1, true), Utc::now())).unwrap();
+        dir.update("s", |s| s.devices = vec!["dev-1".into()])
+            .unwrap();
+        assert!(
+            refusal(&dir, &target, &ids, None, &all_alive).is_none(),
+            "free"
+        );
+        dir.update("s", |s| s.acquire(&ask("a", 1, true), Utc::now()))
+            .unwrap();
         let why = refusal(&dir, &target, &ids, Some("b"), &all_alive).expect("refused");
-        assert!(why.contains("which a holds") && why.contains("you run as b"), "{why}");
-        assert!(refusal(&dir, &target, &ids, None, &all_alive).unwrap().contains("not set"));
-        assert!(refusal(&dir, &target, &ids, Some("a"), &all_alive).is_none(), "the holder");
-        assert!(refusal(&dir, &other, &ids, Some("b"), &all_alive).is_none(), "outside it");
+        assert!(
+            why.contains("which a holds") && why.contains("you run as b"),
+            "{why}"
+        );
+        assert!(
+            refusal(&dir, &target, &ids, None, &all_alive)
+                .unwrap()
+                .contains("not set")
+        );
+        assert!(
+            refusal(&dir, &target, &ids, Some("a"), &all_alive).is_none(),
+            "the holder"
+        );
+        assert!(
+            refusal(&dir, &other, &ids, Some("b"), &all_alive).is_none(),
+            "outside it"
+        );
         assert!(refusal(&dir, &Default::default(), &ids, Some("b"), &all_alive).is_none());
     }
 

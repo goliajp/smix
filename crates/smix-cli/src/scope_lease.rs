@@ -50,9 +50,8 @@ pub struct AcquireArgs {
 }
 
 fn scopes() -> Result<ScopeDir, String> {
-    ScopeDir::machine().ok_or_else(|| {
-        "no home for this machine's scopes: set XDG_DATA_HOME or HOME".to_string()
-    })
+    ScopeDir::machine()
+        .ok_or_else(|| "no home for this machine's scopes: set XDG_DATA_HOME or HOME".to_string())
 }
 
 fn alive(p: &smix_lease::ProcIdentity) -> bool {
@@ -78,7 +77,11 @@ pub(crate) fn until_label(raw: &str, now: chrono::DateTime<chrono::Local>) -> St
     } else if let Some(h) = amount.strip_suffix('h') {
         h.parse::<i64>().ok().map(|h| h * 3600)
     } else {
-        amount.strip_suffix('s').unwrap_or(amount).parse::<i64>().ok()
+        amount
+            .strip_suffix('s')
+            .unwrap_or(amount)
+            .parse::<i64>()
+            .ok()
     };
     match secs {
         Some(s) => {
@@ -95,7 +98,11 @@ fn describe_holder(scope: &Scope) -> String {
     match &scope.holder {
         None => "nobody".into(),
         Some(h) => {
-            let until = h.until.as_deref().map(|u| format!(", until {u}")).unwrap_or_default();
+            let until = h
+                .until
+                .as_deref()
+                .map(|u| format!(", until {u}"))
+                .unwrap_or_default();
             format!("{} (since {}{until})", h.holder, shown(&h.since))
         }
     }
@@ -114,7 +121,29 @@ fn describe_queue(scope: &Scope) -> String {
     format!("waiting: {}", names.join(", "))
 }
 
-pub(crate) async fn acquire(args: AcquireArgs) -> Result<u8, crate::CliError> {
+/// Answer the scope verbs of `smix lease`; anything else comes back for
+/// the device ledger's verbs.
+pub(crate) async fn run(
+    action: crate::lease_cmd::LeaseAction,
+) -> Result<Result<u8, crate::lease_cmd::LeaseAction>, crate::CliError> {
+    use crate::lease_cmd::LeaseAction as A;
+    Ok(Ok(match action {
+        A::Status {
+            scope: Some(name), ..
+        } => status(&name)?,
+        A::Release {
+            scope: Some(name),
+            holder,
+            ..
+        } => release(&name, holder.as_deref().unwrap_or_default())?,
+        A::Acquire(args) => acquire(args).await?,
+        A::Renew { scope, holder } => renew(&scope, &holder)?,
+        A::Scope { name, devices } => declare(&name, devices)?,
+        other => return Ok(Err(other)),
+    }))
+}
+
+async fn acquire(args: AcquireArgs) -> Result<u8, crate::CliError> {
     let dir = scopes().map_err(fail)?;
     let pid = match args.pid {
         Some(p) => Some(
@@ -123,7 +152,10 @@ pub(crate) async fn acquire(args: AcquireArgs) -> Result<u8, crate::CliError> {
         ),
         None => None,
     };
-    let until = args.until.as_deref().map(|u| until_label(u, chrono::Local::now()));
+    let until = args
+        .until
+        .as_deref()
+        .map(|u| until_label(u, chrono::Local::now()));
     let req = Request {
         holder: args.holder.clone(),
         wait: args.wait,
@@ -192,7 +224,7 @@ pub(crate) async fn acquire(args: AcquireArgs) -> Result<u8, crate::CliError> {
     }
 }
 
-pub(crate) fn release(name: &str, holder: &str) -> Result<u8, crate::CliError> {
+fn release(name: &str, holder: &str) -> Result<u8, crate::CliError> {
     let dir = scopes().map_err(fail)?;
     let was = dir
         .update(name, |s| {
@@ -209,7 +241,7 @@ pub(crate) fn release(name: &str, holder: &str) -> Result<u8, crate::CliError> {
     Ok(0)
 }
 
-pub(crate) fn renew(name: &str, holder: &str) -> Result<u8, crate::CliError> {
+fn renew(name: &str, holder: &str) -> Result<u8, crate::CliError> {
     let dir = scopes().map_err(fail)?;
     let (held, scope) = dir
         .update(name, |s| {
@@ -221,23 +253,34 @@ pub(crate) fn renew(name: &str, holder: &str) -> Result<u8, crate::CliError> {
         println!("lease: {holder} renewed {name}");
         Ok(0)
     } else {
-        eprintln!("lease: {holder} does not hold {name}; it is held by {}", describe_holder(&scope));
+        eprintln!(
+            "lease: {holder} does not hold {name}; it is held by {}",
+            describe_holder(&scope)
+        );
         Ok(REFUSED)
     }
 }
 
-pub(crate) fn declare(name: &str, devices: Vec<String>) -> Result<u8, crate::CliError> {
+fn declare(name: &str, devices: Vec<String>) -> Result<u8, crate::CliError> {
     let dir = scopes().map_err(fail)?;
-    dir.update(name, |s| s.devices.clone_from(&devices)).map_err(fail)?;
+    dir.update(name, |s| s.devices.clone_from(&devices))
+        .map_err(fail)?;
     println!("lease: {name} covers {}", devices.join(", "));
     Ok(0)
 }
 
-pub(crate) fn status(name: &str) -> Result<u8, crate::CliError> {
+fn status(name: &str) -> Result<u8, crate::CliError> {
     let dir = scopes().map_err(fail)?;
-    let names = if name.is_empty() { dir.names() } else { vec![name.to_string()] };
+    let names = if name.is_empty() {
+        dir.names()
+    } else {
+        vec![name.to_string()]
+    };
     if names.is_empty() {
-        println!("lease: no scopes on this machine ({})", dir.path().display());
+        println!(
+            "lease: no scopes on this machine ({})",
+            dir.path().display()
+        );
     }
     for n in names {
         let scope = dir
@@ -246,17 +289,31 @@ pub(crate) fn status(name: &str) -> Result<u8, crate::CliError> {
                 s.clone()
             })
             .map_err(fail)?;
-        println!("{n}: devices {}", if scope.devices.is_empty() { "(none declared)".into() } else { scope.devices.join(", ") });
+        println!(
+            "{n}: devices {}",
+            if scope.devices.is_empty() {
+                "(none declared)".into()
+            } else {
+                scope.devices.join(", ")
+            }
+        );
         match &scope.holder {
             Some(h) => {
-                let pid = h.pid.as_ref().map(|p| format!(", ends with pid {}", p.pid)).unwrap_or_default();
+                let pid = h
+                    .pid
+                    .as_ref()
+                    .map(|p| format!(", ends with pid {}", p.pid))
+                    .unwrap_or_default();
                 println!(
                     "  held by {} since {}, last command {}, released after {} min idle{pid}{}",
                     h.holder,
                     shown(&h.since),
                     shown(&h.last_seen),
                     h.idle_secs / 60,
-                    h.until.as_deref().map(|u| format!(", until {u}")).unwrap_or_default()
+                    h.until
+                        .as_deref()
+                        .map(|u| format!(", until {u}"))
+                        .unwrap_or_default()
                 );
             }
             None => println!("  free"),
@@ -268,11 +325,19 @@ pub(crate) fn status(name: &str) -> Result<u8, crate::CliError> {
                 w.holder,
                 shown(&w.since),
                 w.waiting.pid,
-                w.until.as_deref().map(|u| format!(", until {u}")).unwrap_or_default()
+                w.until
+                    .as_deref()
+                    .map(|u| format!(", until {u}"))
+                    .unwrap_or_default()
             );
         }
         for r in scope.released.iter().rev().take(3) {
-            println!("  released automatically: {} at {} — {}", r.holder, shown(&r.at), r.reason);
+            println!(
+                "  released automatically: {} at {} — {}",
+                r.holder,
+                shown(&r.at),
+                r.reason
+            );
         }
     }
     Ok(0)
@@ -309,7 +374,13 @@ pub(crate) fn gate(cmd: &crate::Cmd) -> Option<ExitCode> {
     let devices = crate::command_devices::devices(cmd);
     let me = std::env::var(HOLDER_ENV).ok().filter(|s| !s.is_empty());
     let targets: BTreeSet<String> = devices.iter().flat_map(|d| identities(d)).collect();
-    let why = smix_lease::scope::refusal(&ScopeDir::machine()?, &targets, &identities, me.as_deref(), &alive)?;
+    let why = smix_lease::scope::refusal(
+        &ScopeDir::machine()?,
+        &targets,
+        &identities,
+        me.as_deref(),
+        &alive,
+    )?;
     eprintln!("error: {why}");
     Some(ExitCode::from(REFUSED))
 }
@@ -326,7 +397,10 @@ mod tests {
         let base = t.format("%H:%M").to_string();
         assert_ne!(until_label("+45m build", t), "+45m build");
         assert!(until_label("+45m build", t).ends_with(" build"));
-        assert!(!until_label("+2h", t).contains(&base), "two hours on is another time");
+        assert!(
+            !until_label("+2h", t).contains(&base),
+            "two hours on is another time"
+        );
         assert_eq!(until_label("+90 x", t), until_label("+90s x", t));
         assert_eq!(until_label("23:30 nightly", t), "23:30 nightly");
         assert_eq!(until_label("+soon", t), "+soon");

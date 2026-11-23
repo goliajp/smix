@@ -75,13 +75,16 @@ pub fn use_may_start(bundle_id: Option<&str>, udid: &str) -> Result<(), String> 
     let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
     let registry = smix_simctl::registry::SimRegistry::open_all(&cwd).registry;
     let ids = |name: &str| {
-        let mut ids = std::collections::BTreeSet::from([name.to_string(), name.to_ascii_uppercase()]);
+        let mut ids =
+            std::collections::BTreeSet::from([name.to_string(), name.to_ascii_uppercase()]);
         if let Some(sim) = registry.lookup(name) {
             ids.extend([sim.udid.to_ascii_uppercase(), sim.device_name.clone()]);
         }
         ids
     };
-    let me = std::env::var(smix_lease::scope::HOLDER_ENV).ok().filter(|s| !s.is_empty());
+    let me = std::env::var(smix_lease::scope::HOLDER_ENV)
+        .ok()
+        .filter(|s| !s.is_empty());
     let alive = |p: &smix_lease::ProcIdentity| smix_lease::store::probe(p).identity_matches;
     match smix_lease::scope::refusal(&dir, &ids(udid), &ids, me.as_deref(), &alive) {
         Some(why) => Err(why),
