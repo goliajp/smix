@@ -71,8 +71,10 @@ fn wait_in_line(m: &std::path::Path, holder: &str) -> Child {
 fn until_status(m: &std::path::Path, want: &str) -> String {
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
+        // a look that began before the deadline still counts
+        let looked = Instant::now();
         let s = text(&run(m, &["lease", "status", "--scope", "s"]));
-        if s.contains(want) || Instant::now() > deadline {
+        if s.contains(want) || looked >= deadline {
             return s;
         }
         std::thread::sleep(Duration::from_millis(200));
