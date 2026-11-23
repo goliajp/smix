@@ -23,6 +23,7 @@ pub use defaults::{
 /// Crash reports macOS wrote for a simulator's processes. See
 /// [`crash_report::for_simulator`].
 mod boot;
+mod bplist;
 mod capture;
 pub mod crash_report;
 /// Which of a simulator's screens is lit.
@@ -31,6 +32,7 @@ pub mod displays;
 pub mod keyboard;
 #[cfg(target_os = "macos")]
 mod keyboard_sys;
+pub mod notifications;
 pub mod poster_store;
 pub mod posture;
 #[cfg(target_os = "macos")]

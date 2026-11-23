@@ -25,7 +25,9 @@ pub(crate) fn refusal_in_plain_words(
              refuses it (Operation not permitted), because notification authorization is \
              not kept where simctl writes. Let the app ask, then answer the prompt with \
              `- tapOn: \"Allow\"` (or \"Don't Allow\"); tapOn presses a button on a system \
-             popup when the app has none by that name.\nsimctl said: {said}"
+             popup when the app has none by that name. Between runs, with no runner up, \
+             `smix sim permission <device> <app> notifications allow` sets it without a \
+             prompt.\nsimctl said: {said}"
         ),
     )
 }

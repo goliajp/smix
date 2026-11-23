@@ -255,6 +255,51 @@ installed: app-debug.apk on emulator-5554
   dev.smix.fixture was running and this reinstall stopped it — bring it back with `smix sim launch <device> dev.smix.fixture`
 ```
 
+### Pushes and notifications (`smix sim push`, `smix sim notification`)
+
+```bash
+smix sim permission <DEVICE> <BUNDLE> notifications allow      # no prompt; deny, reset
+smix sim push <DEVICE> --bundle <BUNDLE> --payload push.json   # or `--payload -` for standard input
+smix sim notification list <DEVICE> --bundle <BUNDLE> [--json]
+smix sim notification tap <DEVICE> --bundle <BUNDLE> --title "Order shipped"
+smix sim notification tap <DEVICE> --bundle <BUNDLE> --index 0 # 0 is the newest in `list`
+```
+
+Simulators and emulators. A phone's are its owner's; on a phone a flow can
+still `tapOn` a banner that is on screen.
+
+- **`push`** delivers the whole payload as it is, nested keys included. On a
+  simulator it is an APNs payload (`aps` and the app's own keys, 4096 bytes
+  at most; a `Simulator Target Bundle` key is not needed). On an emulator it
+  is an FCM message — `{"notification": {"title", "body"}, "data": {…},
+  "android": {"notification": {…}}}`, with or without the outer `message` —
+  and reaches the app's own `FirebaseMessagingService` the way Google Play
+  services hands one over. FCM's `data` values are strings, so nested JSON
+  goes there as text. That needs a root shell: an emulator image with Google
+  APIs and without the Play Store.
+- **Exit codes**: 0 delivered; 4 the app is not installed; 5 it may not show
+  notifications (an Android data message is delivered anyway, with a note);
+  6 the payload is not one the platform takes; 1 anything else. Android
+  delivers nothing to a force-stopped app, a real push included, and `push`
+  says so; `smix sim terminate` force-stops. For a killed app that still
+  gets pushes, send it to the background and `adb shell am kill <BUNDLE>`.
+- **`permission … notifications`** on a simulator is SpringBoard's record.
+  Setting it restarts SpringBoard (a few seconds, and whatever app is open
+  ends), so it is refused while a runner is up; already as asked, it does
+  nothing.
+- **`list`** reads what the app was delivered and nobody has opened or
+  dismissed, newest first. With a runner up it also says where each is:
+  `banner`, `list` (on screen now, in the notification centre, the shade or
+  on the lock screen) or `hidden`. Stopping an Android app takes its
+  notifications away.
+- **`tap`** needs the runner up. It opens the notification from wherever it
+  is: a banner, the notification centre or shade, folded in its app's
+  group, or on the lock screen with the screen off; the app may be in the
+  background or not running. It returns once the notification is gone from
+  the app's list, and fails naming the ones there are when none has that
+  title. Several alike are told apart by `--index` only when all of them are
+  on screen. A screen locked with a PIN has to be unlocked first.
+
 ### A simulator's hardware keyboard (`smix sim keyboard`)
 
 Whether a control can be reached and pressed with a keyboard alone:
@@ -343,7 +388,8 @@ state, and — when something goes wrong — an answer to "what was in front" an
 ```bash
 smix sim wake <DEVICE>                                    # turn the screen on
 smix sim stay-awake <DEVICE> on                           # and keep it on while charging
-smix sim permission <DEVICE> <BUNDLE> camera grant        # grant / revoke / reset one permission
+smix sim permission <DEVICE> <BUNDLE> camera grant        # grant (allow) / revoke (deny) / reset one permission
+smix sim lock <DEVICE>                                    # screen off, locked when it has a lock screen
 smix sim frontmost <DEVICE>                               # which app is in front
 smix sim crashes <DEVICE> --app <BUNDLE>                  # what the device recorded
 ```
@@ -1442,7 +1488,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:26.11.0")
+    debugImplementation("jp.golia.smix:smix-probe:26.12.0")
 }
 ```
 

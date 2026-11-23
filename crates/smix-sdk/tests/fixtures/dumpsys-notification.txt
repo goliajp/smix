@@ -1,0 +1,52 @@
+Current Notification Manager state:
+  Notification List:
+    NotificationRecord(0x0e23ad39: pkg=dev.smix.fixture user=UserHandle{0} id=0 tag=0|dev.smix.fixture|g:Aggregate_AlertingSection importance=4 key=0|dev.smix.fixture|0|0|dev.smix.fixture|g:Aggregate_AlertingSection|10500|0|dev.smix.fixture|g:Aggregate_AlertingSection: Notification(channel=smix-push shortcut=null contentView=null vibrate=null sound=null defaults=0 flags=AUTO_CANCEL|LOCAL_ONLY|GROUP_SUMMARY|AUTOGROUP_SUMMARY color=0x00000000 groupKey=0|dev.smix.fixture|g:Aggregate_AlertingSection vis=PRIVATE))
+      uid=10500 userId=0
+      opPkg=dev.smix.fixture
+      flags=AUTO_CANCEL|LOCAL_ONLY|GROUP_SUMMARY|AUTOGROUP_SUMMARY
+      originalFlags=AUTO_CANCEL|LOCAL_ONLY|GROUP_SUMMARY|AUTOGROUP_SUMMARY
+      key=0|dev.smix.fixture|0|0|dev.smix.fixture|g:Aggregate_AlertingSection|10500|0|dev.smix.fixture|g:Aggregate_AlertingSection
+      notification=
+            extras={
+                android.reduced.images=Boolean (true)
+                android.showWhen=Boolean (true)
+            }
+      mCreationTimeMs=1795471390293
+    NotificationRecord(0x0708e3f5: pkg=dev.smix.fixture user=UserHandle{0} id=175061272 tag=null importance=4 key=0|dev.smix.fixture|175061272|null|10500: Notification(channel=smix-push shortcut=null contentView=null vibrate=null sound=null defaults=0 flags=AUTO_CANCEL color=0x00000000 vis=PRIVATE))
+      uid=10500 userId=0
+      flags=AUTO_CANCEL
+      key=0|dev.smix.fixture|175061272|null|10500
+      notification=
+            extras={
+                android.title=String (T4 你好 (x))
+                android.reduced.images=Boolean (true)
+                android.text=String (B 4
+second = line)
+                android.showWhen=Boolean (true)
+            }
+      mCreationTimeMs=1795471390164
+    NotificationRecord(0x0708e3f6: pkg=dev.smix.fixture user=UserHandle{0} id=175061247 tag=null importance=4 key=0|dev.smix.fixture|175061247|null|10500: Notification(channel=smix-push shortcut=null contentView=null vibrate=null sound=null defaults=0 flags=AUTO_CANCEL color=0x00000000 vis=PRIVATE))
+      uid=10500 userId=0
+      flags=AUTO_CANCEL
+      key=0|dev.smix.fixture|175061247|null|10500
+      notification=
+            extras={
+                android.title=String (T3 你好)
+                android.text=SpannableString (B 3)
+            }
+      mCreationTimeMs=1795471390010
+    NotificationRecord(0x01: pkg=android user=UserHandle{-1} id=55 tag=null importance=2 key=-1|android|55|null|1000: Notification(channel=DEVELOPER flags=ONGOING_EVENT))
+      flags=ONGOING_EVENT|NO_CLEAR
+      key=-1|android|55|null|1000
+      notification=
+            extras={
+                android.title=String (Serial console enabled)
+            }
+      mCreationTimeMs=1795471330000
+  
+  Enqueued Notification List:
+    NotificationRecord(0x02: pkg=dev.smix.fixture user=UserHandle{0} id=9 tag=null importance=4 key=0|dev.smix.fixture|9|null|10500: Notification(channel=smix-push))
+      key=0|dev.smix.fixture|9|null|10500
+            extras={
+                android.title=String (ENQUEUED)
+            }

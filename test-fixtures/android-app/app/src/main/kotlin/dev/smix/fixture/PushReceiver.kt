@@ -26,31 +26,36 @@ class PushReceiver : BroadcastReceiver() {
         } catch (_: JSONException) {
             "none"
         }
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Pushes", NotificationManager.IMPORTANCE_HIGH),
-        )
-        val open = PendingIntent.getActivity(
-            context,
-            0,
-            Intent(context, PushActivity::class.java)
-                .putExtra(PushActivity.OPENED, "opened $title → $route")
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        manager.notify(
-            (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
-            Notification.Builder(context, CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(title)
-                .setContentText(body)
-                .setContentIntent(open)
-                .setAutoCancel(true)
-                .build(),
-        )
+        post(context, title, body, "opened $title → $route")
     }
 
     companion object {
         const val CHANNEL = "smix-push"
+
+        fun post(context: Context, title: String, body: String, opened: String) {
+            val id = (System.nanoTime() % Int.MAX_VALUE).toInt()
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL, "Pushes", NotificationManager.IMPORTANCE_HIGH),
+            )
+            val open = PendingIntent.getActivity(
+                context,
+                id,
+                Intent(context, PushActivity::class.java)
+                    .putExtra(PushActivity.OPENED, opened)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            manager.notify(
+                id,
+                Notification.Builder(context, CHANNEL)
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle(title)
+                    .setContentText(body)
+                    .setContentIntent(open)
+                    .setAutoCancel(true)
+                    .build(),
+            )
+        }
     }
 }

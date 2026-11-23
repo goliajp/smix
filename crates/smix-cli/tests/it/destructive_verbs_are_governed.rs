@@ -77,6 +77,9 @@ const NOT_DESTRUCTIVE: &[(&str, &str)] = &[
         "grants or revokes one permission; `privacy_reset_all` is the \
          destructive neighbour and it is not this",
     ),
+    ("Push", "hands the app a message"),
+    ("Lock", "turns the screen off; waking it turns it back on"),
+    ("Notification", "reads them, or opens one as a finger does"),
     ("Frontmost", "reads"),
     ("Crashes", "reads"),
     (

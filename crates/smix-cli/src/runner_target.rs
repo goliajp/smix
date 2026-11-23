@@ -130,6 +130,18 @@ pub(crate) fn recorded_runner_port(device: &str) -> Option<u16> {
     })
 }
 
+/// Refuse what a runner on this simulator would spoil or be ended by.
+pub(crate) fn refuse_beside_a_runner(udid: &str, what: &str) -> Result<(), crate::CliError> {
+    match crate::runner_target::recorded_runner_port(udid) {
+        None => Ok(()),
+        Some(port) => Err(crate::CliError::Other(format!(
+            "{udid} has a runner up on port {port}, and {what}. Stop it first:\n  \
+             smix runner down --device {udid}\n\
+             `smix sim screenshot` works without one."
+        ))),
+    }
+}
+
 /// The port to dial for `device` when no flag or `SMIX_RUNNER_PORT` says:
 /// its live runner's, else its registered `runnerPort`, else its
 /// platform's default — 28080 for an Android runner, `None` (the iOS

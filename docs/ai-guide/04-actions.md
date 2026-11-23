@@ -765,7 +765,7 @@ The runner builds for tvOS too. A television takes no touch: every act goes thro
 ```
 
 - iOS: `simctl privacy grant/deny`.
-- iOS `notifications`: iOS 27 simulators refuse it (`simctl privacy` says "Operation not permitted" for grant, revoke and reset, because notification authorization is not a TCC record), and the step fails saying so. Let the app ask and answer the prompt with `tapOn: "Allow"` or `tapOn: "Don't Allow"` (see [Tap a button on a system popup](#tap-a-button-on-a-system-popup)). A reinstall forgets the answer.
+- iOS `notifications`: iOS 27 simulators refuse it (`simctl privacy` says "Operation not permitted" for grant, revoke and reset, because notification authorization is not a TCC record), and the step fails saying so. Let the app ask and answer the prompt with `tapOn: "Allow"` or `tapOn: "Don't Allow"` (see [Tap a button on a system popup](#tap-a-button-on-a-system-popup)). A reinstall forgets the answer. Between runs, with no runner up, `smix sim permission <DEVICE> <BUNDLE> notifications allow` sets it without a prompt.
 - Android: `adb shell pm grant <pkg> android.permission.<NAME>` or revoke.
 - Available keys: camera / microphone / location / contacts / photos / calendar / notifications / motion / faceid / siri / health.
 

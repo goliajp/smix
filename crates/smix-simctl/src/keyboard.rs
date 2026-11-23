@@ -6,7 +6,6 @@
 //! next.
 
 use std::str::FromStr;
-#[cfg(target_os = "macos")]
 use std::time::Duration;
 
 /// Keys pressed together, by USB HID usage: modifiers first.
@@ -117,10 +116,69 @@ pub async fn press(_: &str, _: &[Chord]) -> Result<(), String> {
     Err("a simulator's keyboard needs macOS".into())
 }
 
+/// Press and let go of the lock button.
+#[cfg(target_os = "macos")]
+async fn press_lock(udid: &str) -> Result<(), String> {
+    let keyboard = crate::keyboard_sys::Keyboard::open(udid)?;
+    keyboard.lock_button(true)?;
+    tokio::time::sleep(DOWN).await;
+    keyboard.lock_button(false)?;
+    tokio::time::sleep(BETWEEN).await;
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn press_lock(_: &str) -> Result<(), String> {
+    Err("a simulator's lock button needs macOS".into())
+}
+
+/// `notifyutil -g`'s answer: `<name> <state>`.
+fn notify_state(said: &str) -> Option<u64> {
+    said.split_whitespace().last()?.parse().ok()
+}
+
+const LOCK_STATE: &str = "com.apple.springboard.lockstate";
 const ACCESSIBILITY: &str = "com.apple.Accessibility";
 const FULL_ACCESS: &str = "FullKeyboardAccessEnabled";
 
 impl crate::SimctlClient {
+    /// Whether the simulator's screen is locked.
+    pub async fn is_locked(&self, udid: &str) -> Result<bool, crate::DeviceControlError> {
+        let said = crate::simctl_run(&["spawn", udid, "notifyutil", "-g", LOCK_STATE]).await?;
+        match notify_state(&said) {
+            Some(n) => Ok(n != 0),
+            None => Err(crate::DeviceControlError::non_zero_exit(
+                "notifyutil",
+                1,
+                format!("{LOCK_STATE} read as {said:?}"),
+            )),
+        }
+    }
+
+    /// Lock the simulator's screen. Returns whether it was unlocked: the
+    /// button pressed on a locked one would only light it up.
+    pub async fn lock(&self, udid: &str) -> Result<bool, crate::DeviceControlError> {
+        let failed = |e: String| crate::DeviceControlError::non_zero_exit("lock", 1, e);
+        if self.is_locked(udid).await? {
+            return Ok(false);
+        }
+        press_lock(udid).await.map_err(failed)?;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            // a look that began before the deadline still counts
+            let looked = std::time::Instant::now();
+            if self.is_locked(udid).await? {
+                return Ok(true);
+            }
+            if looked >= deadline {
+                return Err(failed(format!(
+                    "{udid} is not locked 5 s after its lock button"
+                )));
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
     /// Whether Full Keyboard Access is written as on. A simulator where
     /// nobody set it has it off.
     pub async fn full_keyboard_access(
@@ -158,6 +216,14 @@ impl crate::SimctlClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_notify_state_is_the_number_at_the_end() {
+        assert_eq!(notify_state("com.apple.springboard.lockstate 1\n"), Some(1));
+        assert_eq!(notify_state("com.apple.springboard.lockstate 0"), Some(0));
+        assert_eq!(notify_state("Failed"), None);
+        assert_eq!(notify_state(""), None);
+    }
 
     #[test]
     fn a_chord_holds_its_modifiers_before_its_key() {
