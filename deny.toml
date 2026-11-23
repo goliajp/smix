@@ -13,10 +13,6 @@ no-default-features = false
 # review trigger describing when to revisit (next dep bump, upstream
 # fix, etc.).
 ignore = [
-    # `paste` — unmaintained proc-macro, transitively via
-    # oxipng / imageproc / ab_glyph. No known security impact.
-    # Review trigger: upstream oxipng / imageproc release without paste.
-    { id = "RUSTSEC-2024-0436", reason = "paste unmaintained via oxipng/imageproc transitive; no security impact" },
     # `ttf-parser` — declared unmaintained; ab_glyph 0.2 transitive.
     # Upstream has a replacement (`skrifa`) pending ab_glyph migration.
     # Review trigger: bump ab_glyph to 0.3+ once landed.
