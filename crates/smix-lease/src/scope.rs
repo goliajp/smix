@@ -17,10 +17,11 @@
 //! probe, so the queue's rules are tested without a clock or a process.
 
 use crate::ProcIdentity;
-use crate::store::machine_root;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+
+mod dir;
+pub use dir::ScopeDir;
 
 /// How long a hold lasts without a command from its holder, unless the
 /// holder said otherwise when it took it.
@@ -37,6 +38,10 @@ pub struct Scope {
     /// aliases, AVD names, UDIDs or serials. Resolved when compared.
     #[serde(default)]
     pub devices: Vec<String>,
+    /// Whether its devices may be driven only by its holder, so that with
+    /// nobody holding it nobody drives them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub require_holder: bool,
     /// Who has it now.
     #[serde(default)]
     pub holder: Option<Hold>,
@@ -264,86 +269,13 @@ impl Scope {
     }
 }
 
-/// Where a machine's scopes live.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScopeDir(PathBuf);
-
-impl ScopeDir {
-    /// This machine's, `None` when it has no home for one.
-    #[must_use]
-    pub fn machine() -> Option<Self> {
-        machine_root().map(|r| Self(r.join("scopes")))
-    }
-
-    /// A directory named outright, for a test.
-    pub fn at(path: impl Into<PathBuf>) -> Self {
-        Self(path.into())
-    }
-
-    #[must_use]
-    pub fn path(&self) -> &Path {
-        &self.0
-    }
-
-    fn file(&self, name: &str) -> PathBuf {
-        self.0.join(format!("{name}.json"))
-    }
-
-    /// Every scope's name, sorted.
-    pub fn names(&self) -> Vec<String> {
-        let Ok(entries) = std::fs::read_dir(&self.0) else {
-            return Vec::new();
-        };
-        let mut names: Vec<String> = entries
-            .filter_map(|e| {
-                let p = e.ok()?.path();
-                (p.extension()? == "json").then(|| p.file_stem()?.to_str().map(str::to_string))?
-            })
-            .collect();
-        names.sort();
-        names
-    }
-
-    /// Read `name`, let `f` change it, and write it back, all under the
-    /// scope's lock so two processes never interleave.
-    pub fn update<T>(&self, name: &str, f: impl FnOnce(&mut Scope) -> T) -> Result<T, String> {
-        valid_name(name)?;
-        std::fs::create_dir_all(&self.0).map_err(|e| format!("{}: {e}", self.0.display()))?;
-        let lock_path = self.0.join(format!(".{name}.lock"));
-        let lock = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&lock_path)
-            .map_err(|e| format!("{}: {e}", lock_path.display()))?;
-        lock.lock()
-            .map_err(|e| format!("{}: {e}", lock_path.display()))?;
-        let path = self.file(name);
-        let mut scope = match std::fs::read(&path) {
-            Ok(bytes) => {
-                serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Scope::default(),
-            Err(e) => return Err(format!("{}: {e}", path.display())),
-        };
-        let before = scope.clone();
-        let out = f(&mut scope);
-        if scope != before {
-            let tmp = self.0.join(format!(".{name}.{}.tmp", std::process::id()));
-            let json = serde_json::to_vec_pretty(&scope).map_err(|e| e.to_string())?;
-            std::fs::write(&tmp, json).map_err(|e| format!("{}: {e}", tmp.display()))?;
-            std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))?;
-        }
-        Ok(out)
-    }
-}
-
 /// The scope that keeps a command from `me` off `targets`, or `None`.
 ///
 /// `targets` are every name the command's devices are known by; `ids`
 /// gives the same for a scope's declared device. A scope covering one of
 /// the targets refuses when somebody other than `me` holds it, and is
-/// renewed when `me` does. A scope that cannot be read refuses: answering
+/// renewed when `me` does; one that requires a holder refuses while nobody
+/// holds it. A scope that cannot be read refuses: answering
 /// yes there would make the check absent on any machine whose scopes are
 /// broken.
 pub fn refusal(
@@ -364,17 +296,17 @@ pub fn refusal(
                 return None;
             }
             match (&s.holder, me) {
-                (None, _) => None,
+                (None, _) => s.require_holder.then(|| unheld_text(&name, me)),
                 (Some(h), Some(me)) if h.holder == me => {
                     s.touch(me, now);
                     None
                 }
-                (Some(h), _) => Some(h.clone()),
+                (Some(h), _) => Some(refusal_text(&name, h, me)),
             }
         });
         match read {
             Ok(None) => {}
-            Ok(Some(h)) => return Some(refusal_text(&name, &h, me)),
+            Ok(Some(why)) => return Some(why),
             Err(e) => return Some(format!("scope {name} could not be read: {e}")),
         }
     }
@@ -394,6 +326,15 @@ pub fn shown(t: &str) -> String {
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string()
         },
+    )
+}
+
+fn unheld_text(name: &str, me: Option<&str>) -> String {
+    let who = me.unwrap_or("<you>");
+    format!(
+        "this device is in scope {name}, which is driven only by whoever holds it, \
+         and nobody does. Take it:\n  smix lease acquire --scope {name} --holder {who} --wait\n\
+         then run device commands with {HOLDER_ENV}={who}."
     )
 }
 

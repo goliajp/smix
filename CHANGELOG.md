@@ -2,6 +2,24 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.11.0] — 2026-11-24
+
+### Added
+
+- **`smix lease status --scope <name> --json`** prints the scope: its
+  devices, holder (null when free), queue and automatic releases. A bare
+  `--scope` prints an array of them.
+- **`smix lease scope <name> … --require-holder`** refuses device commands
+  on the scope while nobody holds it, as well as while somebody else does.
+- **`smix lease scope <name> --remove`** deletes a scope, and exits 3 while
+  somebody holds or waits for it.
+
+### Changed
+
+- `acquire`, `renew`, `release` and `status` on a scope nobody declared are
+  an error naming the scopes there are. `status` used to call a misspelt
+  scope free, and `acquire` used to take one that covered no device.
+
 ## [26.10.0] — 2026-11-23
 
 ### Added

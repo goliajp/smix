@@ -4,6 +4,8 @@
 //! The queue's rules are `smix_lease::scope`'s. This is the command line
 //! around them: names to devices, waiting, and the words of a refusal.
 
+mod status;
+
 use smix_lease::scope::{DEFAULT_IDLE_SECS, Granted, Request, Scope, ScopeDir};
 use std::collections::BTreeSet;
 use std::process::ExitCode;
@@ -129,8 +131,10 @@ pub(crate) async fn run(
     use crate::lease_cmd::LeaseAction as A;
     Ok(Ok(match action {
         A::Status {
-            scope: Some(name), ..
-        } => status(&name)?,
+            scope: Some(name),
+            json,
+            ..
+        } => status::status(&name, json)?,
         A::Release {
             scope: Some(name),
             holder,
@@ -138,7 +142,15 @@ pub(crate) async fn run(
         } => release(&name, holder.as_deref().unwrap_or_default())?,
         A::Acquire(args) => acquire(args).await?,
         A::Renew { scope, holder } => renew(&scope, &holder)?,
-        A::Scope { name, devices } => declare(&name, devices)?,
+        A::Scope {
+            name, remove: true, ..
+        } => remove(&name)?,
+        A::Scope {
+            name,
+            devices,
+            require_holder,
+            remove: false,
+        } => declare(&name, devices, require_holder)?,
         other => return Ok(Err(other)),
     }))
 }
@@ -168,7 +180,7 @@ async fn acquire(args: AcquireArgs) -> Result<u8, crate::CliError> {
     let mut said_place = None;
     loop {
         let (granted, scope) = dir
-            .update(&args.scope, |s| {
+            .update_declared(&args.scope, |s| {
                 s.settle(now(), &alive);
                 (s.acquire(&req, now()), s.clone())
             })
@@ -227,7 +239,7 @@ async fn acquire(args: AcquireArgs) -> Result<u8, crate::CliError> {
 fn release(name: &str, holder: &str) -> Result<u8, crate::CliError> {
     let dir = scopes().map_err(fail)?;
     let was = dir
-        .update(name, |s| {
+        .update_declared(name, |s| {
             let was = s.release(holder);
             s.settle(now(), &alive);
             was
@@ -244,7 +256,7 @@ fn release(name: &str, holder: &str) -> Result<u8, crate::CliError> {
 fn renew(name: &str, holder: &str) -> Result<u8, crate::CliError> {
     let dir = scopes().map_err(fail)?;
     let (held, scope) = dir
-        .update(name, |s| {
+        .update_declared(name, |s| {
             s.settle(now(), &alive);
             (s.touch(holder, now()), s.clone())
         })
@@ -261,85 +273,36 @@ fn renew(name: &str, holder: &str) -> Result<u8, crate::CliError> {
     }
 }
 
-fn declare(name: &str, devices: Vec<String>) -> Result<u8, crate::CliError> {
+fn declare(name: &str, devices: Vec<String>, require_holder: bool) -> Result<u8, crate::CliError> {
     let dir = scopes().map_err(fail)?;
-    dir.update(name, |s| s.devices.clone_from(&devices))
-        .map_err(fail)?;
-    println!("lease: {name} covers {}", devices.join(", "));
+    dir.update(name, |s| {
+        s.devices.clone_from(&devices);
+        s.require_holder = require_holder;
+    })
+    .map_err(fail)?;
+    println!(
+        "lease: {name} covers {}; while nobody holds it, {}",
+        devices.join(", "),
+        if require_holder {
+            "nobody may drive them"
+        } else {
+            "anyone may drive them"
+        }
+    );
     Ok(0)
 }
 
-fn status(name: &str) -> Result<u8, crate::CliError> {
+fn remove(name: &str) -> Result<u8, crate::CliError> {
     let dir = scopes().map_err(fail)?;
-    let names = if name.is_empty() {
-        dir.names()
-    } else {
-        vec![name.to_string()]
-    };
-    if names.is_empty() {
-        println!(
-            "lease: no scopes on this machine ({})",
-            dir.path().display()
+    if let Err(scope) = dir.remove(name, now(), &alive).map_err(fail)? {
+        eprintln!(
+            "lease: {name} is not removed — held by {}; {}",
+            describe_holder(&scope),
+            describe_queue(&scope)
         );
+        return Ok(REFUSED);
     }
-    for n in names {
-        let scope = dir
-            .update(&n, |s| {
-                s.settle(now(), &alive);
-                s.clone()
-            })
-            .map_err(fail)?;
-        println!(
-            "{n}: devices {}",
-            if scope.devices.is_empty() {
-                "(none declared)".into()
-            } else {
-                scope.devices.join(", ")
-            }
-        );
-        match &scope.holder {
-            Some(h) => {
-                let pid = h
-                    .pid
-                    .as_ref()
-                    .map(|p| format!(", ends with pid {}", p.pid))
-                    .unwrap_or_default();
-                println!(
-                    "  held by {} since {}, last command {}, released after {} min idle{pid}{}",
-                    h.holder,
-                    shown(&h.since),
-                    shown(&h.last_seen),
-                    h.idle_secs / 60,
-                    h.until
-                        .as_deref()
-                        .map(|u| format!(", until {u}"))
-                        .unwrap_or_default()
-                );
-            }
-            None => println!("  free"),
-        }
-        for (i, w) in scope.queue.iter().enumerate() {
-            println!(
-                "  {}. {} waiting since {} (pid {}){}",
-                i + 1,
-                w.holder,
-                shown(&w.since),
-                w.waiting.pid,
-                w.until
-                    .as_deref()
-                    .map(|u| format!(", until {u}"))
-                    .unwrap_or_default()
-            );
-        }
-        for r in scope.released.iter().rev().take(3) {
-            println!(
-                "  released automatically: {} at {} — {}",
-                r.holder,
-                shown(&r.at),
-                r.reason
-            );
-        }
-    }
+    println!("lease: {name} removed");
     Ok(0)
 }
 
