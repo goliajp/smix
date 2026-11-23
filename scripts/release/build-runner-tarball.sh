@@ -75,7 +75,11 @@ mkdir -p "$DST_DIR"
 # directory, one pass, nothing to get wrong about how the two combine.
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
-cp -R "$SRC/." "$STAGE/tree"
+# What the archive leaves out that is large is left out of the copy too: the
+# Swift build cache alone is 2 GB in 16000 files, ten minutes on a busy disk.
+mkdir "$STAGE/tree"
+tar --exclude='./.build' --exclude='./.smix' --exclude='./DerivedData' \
+  --exclude='./SmixCoreFFI.xcframework*' -cf - -C "$SRC" . | tar -xf - -C "$STAGE/tree"
 python3 "$REPO_ROOT/scripts/release/runner-package-manifest.py" > "$STAGE/tree/Package.swift" \
   || { echo "error: could not build the runner manifest" >&2; exit 1; }
 

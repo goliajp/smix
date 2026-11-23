@@ -64,7 +64,7 @@ fn rows_in(root: &A11yNode, shade: bool) -> Vec<Row> {
         let Some(n) = path.last().copied() else {
             return;
         };
-        if !is_a_row(n) || n.children.iter().any(|c| holds_a_row(c)) {
+        if !is_a_row(n) || n.children.iter().any(holds_a_row) {
             return;
         }
         let line = find(n, &["notification_title"]);
