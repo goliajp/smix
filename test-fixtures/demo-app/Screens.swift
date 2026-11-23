@@ -8,6 +8,7 @@ func screenAsked(by arguments: [String]) -> UIViewController? {
   let screens: [(String, () -> UIViewController)] = [
     ("-tall-cards", { UIHostingController(rootView: TallCardsView()) }),
     ("-uikit-rows", { UIKitRowsController() }),
+    ("-keyboard-focus", { KeyboardFocusController() }),
     ("-uikit-signin", { UIKitSignInController(tapsAway: false) }),
     ("-uikit-signin-taps-away", { UIKitSignInController(tapsAway: true) }),
     ("-pinch", { PinchController() }),

@@ -255,6 +255,31 @@ installed: app-debug.apk on emulator-5554
   dev.smix.fixture was running and this reinstall stopped it — bring it back with `smix sim launch <device> dev.smix.fixture`
 ```
 
+### A simulator's hardware keyboard (`smix sim keyboard`)
+
+Whether a control can be reached and pressed with a keyboard alone:
+
+```bash
+smix sim keyboard <DEVICE> --full-access on --reboot   # Full Keyboard Access; on needs a reboot, off does not
+smix sim keyboard <DEVICE>                             # is it on?
+smix sim keyboard <DEVICE> tab down space              # press keys, one after another
+smix sim keyboard <DEVICE> shift+tab                   # with ctrl, shift, alt or cmd
+smix sim screenshot <DEVICE> focus.png                 # the focused control is outlined
+```
+
+Keys: `tab`, `space`, `return`, `escape`, `delete`, `up`, `down`, `left`,
+`right` and the letters. These are key presses, where `smix press-key tab`
+types a tab character into the focused field.
+
+**No runner may be up on the simulator**, and pressing is refused while one
+is: a UI-test session lets Full Keyboard Access show its outline and then
+take no further key. Run `smix runner down --device <DEVICE>` first, and
+bring one up afterwards with `--no-launch` to read what the app did. The
+outline goes away when a runner comes up and `hasFocus` in the tree does
+not report it, so which control is focused is read from a screenshot taken
+before that. The first Tab does not always start at the same control; press
+`up` to get to a known one.
+
 ### Physical devices
 
 A physical device must be **registered before it can be addressed** — smix
