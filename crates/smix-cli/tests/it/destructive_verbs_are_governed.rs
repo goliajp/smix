@@ -93,6 +93,10 @@ const NOT_DESTRUCTIVE: &[(&str, &str)] = &[
         "three-button or gesture on an emulator, and reversible by the same verb",
     ),
     (
+        "Keyboard",
+        "keys a hand could press, and a setting the same verb sets back",
+    ),
+    (
         "AllowDestructive",
         "grants the consent; gating it on consent is a circle",
     ),

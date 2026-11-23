@@ -2,6 +2,18 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.10.0] — 2026-11-23
+
+### Added
+
+- **`smix sim keyboard <device> [keys…]` presses keys on a simulator's
+  hardware keyboard**, and `--full-access on|off [--reboot]` switches Full
+  Keyboard Access. Tab, Shift-Tab, the arrows, Space, Return, Escape and
+  letters, with modifiers as in `shift+tab`, reach controls the way a
+  person's keyboard does. It is refused while a runner is up on the
+  simulator, because a UI-test session keeps Full Keyboard Access from
+  taking any key after the first.
+
 ## [26.9.0] — 2026-11-23
 
 ### Added

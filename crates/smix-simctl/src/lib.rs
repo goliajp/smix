@@ -27,8 +27,11 @@ mod capture;
 pub mod crash_report;
 /// Which of a simulator's screens is lit.
 pub mod displays;
-pub mod poster_store;
 /// Folding a foldable simulator.
+pub mod keyboard;
+#[cfg(target_os = "macos")]
+mod keyboard_sys;
+pub mod poster_store;
 pub mod posture;
 #[cfg(target_os = "macos")]
 mod posture_sys;

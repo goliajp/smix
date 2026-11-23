@@ -43,6 +43,7 @@ mod describe_cmd;
 mod drag_cmd;
 mod fill_secret;
 mod hover_cmd;
+mod keyboard_cmd;
 mod locale_cmd;
 mod log_sources;
 mod navigation_cmd;
@@ -1903,16 +1904,9 @@ enum SimAction {
     /// sim boot* (by `smix runner up` / `smix sim boot`); this command
     /// covers the "sim is already booted, want to change locale now"
     /// gap.
-    Locale {
-        /// Which device, by UDID or registry alias.
-        device: String,
-        /// BCP-47 tag (e.g. `en`, `en-US`, `ja`, `zh-Hans`).
-        lang: String,
-        /// Shut the sim down and boot it back up after writing the
-        /// locale, so the change is visible to apps launched next.
-        #[arg(long)]
-        reboot: bool,
-    },
+    Locale(locale_cmd::LocaleArgs),
+    /// Press keys on a simulator's hardware keyboard, or switch Full Keyboard Access.
+    Keyboard(keyboard_cmd::KeyboardArgs),
     /// Passthrough for simctl subcommands smix has not wrapped yet:
     /// `smix sim exec <DEVICE> <VERB> [ARGS...]` runs
     /// `xcrun simctl <VERB> <UDID> [ARGS...]` with simctl's original
@@ -2318,7 +2312,8 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         | SimAction::Orientation(orientation_cmd::OrientationArgs { device, .. })
         | SimAction::AllowDestructive { device }
         | SimAction::KeychainReset { device }
-        | SimAction::Locale { device, .. }
+        | SimAction::Locale(locale_cmd::LocaleArgs { device, .. })
+        | SimAction::Keyboard(keyboard_cmd::KeyboardArgs { device, .. })
         | SimAction::Exec { device, .. } => Some(device),
     }
 }
@@ -2387,7 +2382,8 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
 
             SimAction::Erase { .. }
             | SimAction::Repair { .. }
-            | SimAction::Locale { .. }
+            | SimAction::Locale(_)
+            | SimAction::Keyboard(_)
             | SimAction::Exec { .. }
             // A hinge exists on a foldable simulator, through CoreSimulator.
             | SimAction::Posture { .. } => SIMCTL,
@@ -2460,7 +2456,8 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         | SimAction::Repair { .. }
         | SimAction::Appearance(_)
         | SimAction::Navigation(_)
-        | SimAction::Locale { .. }
+        | SimAction::Locale(_)
+        | SimAction::Keyboard(_)
         | SimAction::Exec { .. } => None,
     }
 }
@@ -3506,11 +3503,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     .await?;
                     println!("keychain reset: {udid}");
                 }
-                SimAction::Locale {
-                    device,
-                    lang,
-                    reboot,
-                } => locale_cmd::run(&simctl, &device, &lang, reboot).await?,
+                SimAction::Locale(args) => locale_cmd::run(&simctl, args).await?,
+                SimAction::Keyboard(args) => keyboard_cmd::run(&simctl, args).await?,
                 SimAction::Exec { device, verb, args } => {
                     return cmd_sim_exec(&device, &verb, &args).await;
                 }
@@ -5090,7 +5084,8 @@ fn is_destructive(action: &SimAction) -> bool {
         | SimAction::Appearance(_)
         | SimAction::Navigation(_)
         | SimAction::Orientation(_)
-        | SimAction::Locale { .. } => false,
+        | SimAction::Keyboard(_)
+        | SimAction::Locale(_) => false,
     }
 }
 
@@ -7015,11 +7010,20 @@ mod tests {
             ),
             (
                 "locale",
-                SimAction::Locale {
+                SimAction::Locale(locale_cmd::LocaleArgs {
                     device: d(),
                     lang: d(),
                     reboot: false,
-                },
+                }),
+            ),
+            (
+                "keyboard",
+                SimAction::Keyboard(keyboard_cmd::KeyboardArgs {
+                    device: d(),
+                    keys: vec![],
+                    full_access: None,
+                    reboot: false,
+                }),
             ),
             (
                 "exec",
@@ -7689,6 +7693,7 @@ mod tests {
             vec!["smix", "sim", "openurl", "02", "https://example.com"],
             vec!["smix", "sim", "appearance", "02", "dark"],
             vec!["smix", "sim", "navigation", "emulator-5554"],
+            vec!["smix", "sim", "keyboard", "02", "tab", "shift+tab", "space"],
             vec!["smix", "sim", "navigation", "emulator-5554", "three-button"],
             vec!["smix", "sim", "keychain-reset", "02"],
             vec!["smix", "sim", "resolve", "02"],

@@ -3,8 +3,8 @@
 
 use std::ffi::{CString, c_char, c_void};
 
-type Id = *mut c_void;
-type Sel = *mut c_void;
+pub(crate) type Id = *mut c_void;
+pub(crate) type Sel = *mut c_void;
 type XpcObject = *mut c_void;
 type CFTypeRef = *const c_void;
 
@@ -120,12 +120,12 @@ fn ignore_events_block() -> *const c_void {
     &block.0 as *const BlockLiteral as *const c_void
 }
 
-fn sel(name: &str) -> Sel {
+pub(crate) fn sel(name: &str) -> Sel {
     let c = CString::new(name).expect("selector names have no NUL");
     unsafe { sel_registerName(c.as_ptr()) }
 }
 
-fn msg0(obj: Id, name: &str) -> Id {
+pub(crate) fn msg0(obj: Id, name: &str) -> Id {
     let f: unsafe extern "C" fn(Id, Sel) -> Id =
         unsafe { std::mem::transmute(objc_msgSend as unsafe extern "C" fn()) };
     unsafe { f(obj, sel(name)) }
@@ -190,7 +190,7 @@ fn to_string(s: CFTypeRef) -> String {
     String::from_utf8_lossy(&buf[..end]).into_owned()
 }
 
-fn developer_dir() -> Result<String, String> {
+pub(crate) fn developer_dir() -> Result<String, String> {
     let out = std::process::Command::new("xcode-select")
         .arg("-p")
         .output()
@@ -203,7 +203,7 @@ fn developer_dir() -> Result<String, String> {
 }
 
 /// The booted CoreSimulator device for `udid`.
-fn booted_device(udid: &str) -> Result<Id, String> {
+pub(crate) fn booted_device(udid: &str) -> Result<Id, String> {
     let path =
         CString::new("/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator")
             .expect("no NUL");
@@ -232,7 +232,7 @@ fn booted_device(udid: &str) -> Result<Id, String> {
         let uuid = msg0(device, "UDID");
         if to_string(msg0(uuid, "UUIDString") as CFTypeRef) == wanted {
             if msg_u64(device, "state") != SIM_STATE_BOOTED {
-                return Err(format!("{udid} is not booted; boot it before folding it"));
+                return Err(format!("{udid} is not booted; boot it first"));
             }
             return Ok(device);
         }
