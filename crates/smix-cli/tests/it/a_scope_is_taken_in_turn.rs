@@ -336,3 +336,81 @@ fn a_scope_that_requires_a_holder_refuses_while_nobody_holds_it() {
     let free = as_holder(None);
     assert!(!text(&free).contains("scope s"), "{}", text(&free));
 }
+
+#[test]
+fn a_relative_until_waits_for_the_grant_and_the_holder_can_change_it() {
+    let m = machine("until");
+    declared(&m);
+    let until = |v: &serde_json::Value| v["until"].as_str().map(str::to_string);
+    let read = || -> serde_json::Value {
+        let o = run(&m, &["lease", "status", "--scope", "s", "--json"]);
+        assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+        serde_json::from_slice(&o.stdout).unwrap_or_else(|e| panic!("{e}: {}", text(&o)))
+    };
+    let took = run(&m, &["lease", "acquire", "--scope", "s", "--holder", "a"]);
+    assert_eq!(took.status.code(), Some(0), "{}", text(&took));
+    let mut b = smix(
+        &m,
+        &[
+            "lease",
+            "acquire",
+            "--scope",
+            "s",
+            "--holder",
+            "b",
+            "--wait",
+            "--max-wait",
+            "60",
+            "--until",
+            "+60m build",
+        ],
+    )
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("spawn");
+    assert!(until_status(&m, "1. b").contains("1. b"));
+    assert_eq!(
+        until(&read()["queue"][0]).as_deref(),
+        Some("+60m build"),
+        "while it waits, the span has not started"
+    );
+
+    let o = run(&m, &["lease", "release", "--scope", "s", "--holder", "a"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert_eq!(b.wait().expect("reap").code(), Some(0));
+    let held = until(&read()["holder"]).expect("b said until");
+    assert!(
+        held != "+60m build" && held.ends_with(" build"),
+        "granted, it is a clock time: {held}"
+    );
+
+    let o = run(
+        &m,
+        &[
+            "lease", "renew", "--scope", "s", "--holder", "a", "--until", "+5m x",
+        ],
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(3),
+        "a no longer holds it: {}",
+        text(&o)
+    );
+    let o = run(
+        &m,
+        &[
+            "lease",
+            "renew",
+            "--scope",
+            "s",
+            "--holder",
+            "b",
+            "--until",
+            "+30m tests",
+        ],
+    );
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let renewed = until(&read()["holder"]).expect("b said until");
+    assert!(renewed.ends_with(" tests"), "{renewed}");
+}

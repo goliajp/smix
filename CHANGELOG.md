@@ -2,6 +2,19 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.13.0] — 2026-11-25
+
+### Changed
+
+- **`smix lease acquire --wait --until "+60m …"`** turns the span into a
+  clock time when the scope is granted, not when the holder joined the
+  queue; an hour spent waiting used to leave a holder whose end time had
+  already passed.
+
+### Added
+
+- **`smix lease renew … --until <when>`** replaces the holder's end time.
+
 ## [26.12.0] — 2026-11-24
 
 ### Added
