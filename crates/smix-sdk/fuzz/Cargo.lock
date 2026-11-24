@@ -119,9 +119,9 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "crc32fast"
-version = "1.5.5"
+version = "1.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b929dd2a135771f40afabd1073f85eed59c800b7c61901e5c254270497dad64"
+checksum = "fd9ae8fcb3ea71b0b26338b4ffb13006bb175de8fd07921089a906ce7e5e6945"
 dependencies = [
  "cfg-if",
 ]
@@ -989,7 +989,7 @@ checksum = "3244542535d5de959d90ec55d1b5ff0fd2bb7b1310223907d5f11932847f7b59"
 
 [[package]]
 name = "smix-adb"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1001,7 +1001,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "png",
@@ -1020,7 +1020,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -1029,7 +1029,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "smix-input",
  "smix-screen",
@@ -1040,14 +1040,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-lease"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-client"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -1076,7 +1076,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1087,7 +1087,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "smix-sdk"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "regex",
  "serde",
@@ -1136,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1144,14 +1144,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "libc",
  "serde",
@@ -1166,7 +1166,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "26.12.0"
+version = "26.13.0"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -1637,9 +1637,9 @@ dependencies = [
 
 [[package]]
 name = "zlib-rs"
-version = "0.6.8"
+version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b268e58e7c693d7c271f93ffc4ba3b380412554231c85bf61ca7af91042a4112"
+checksum = "aa76918995d776d9dd34d371030be228d021137449771493d56e29f77e4148ac"
 
 [[package]]
 name = "zmij"
