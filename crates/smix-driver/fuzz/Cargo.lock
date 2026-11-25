@@ -839,6 +839,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "smix-lease"
+version = "26.13.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "smix-runner-client"
 version = "26.13.0"
 dependencies = [
@@ -848,6 +858,7 @@ dependencies = [
  "smix-adb",
  "smix-error",
  "smix-input",
+ "smix-lease",
  "smix-runner-wire",
  "smix-screen",
  "smix-selector",

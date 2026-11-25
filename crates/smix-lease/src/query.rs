@@ -34,13 +34,15 @@ fn query_within(cmd: &mut Command, limit: Duration) -> io::Result<Output> {
     let stderr = drain(child.stderr.take());
     let mut pause = Duration::from_millis(1);
     let status = loop {
+        // a look that began before the deadline still counts
+        let looked = Instant::now();
         if let Some(status) = child.try_wait()? {
             break Some(status);
         }
-        if Instant::now() >= deadline {
+        if looked >= deadline {
             break None;
         }
-        std::thread::sleep(pause.min(deadline.saturating_duration_since(Instant::now())));
+        std::thread::sleep(pause.min(deadline.saturating_duration_since(looked)));
         pause = (pause * 2).min(Duration::from_millis(20));
     };
     let read = |rx: &mpsc::Receiver<Vec<u8>>| {
