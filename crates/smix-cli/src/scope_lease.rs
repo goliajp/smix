@@ -38,7 +38,8 @@ pub struct AcquireArgs {
     max_wait: Option<u64>,
     /// When the holder expects to be done, and what it is doing — shown to
     /// whoever waits. `+45m build` (also `+SECS`, `+Nh`) is turned into a
-    /// clock time when the hold starts; anything else is kept as written.
+    /// clock time when the hold is granted, so time spent waiting does not
+    /// count; anything else is kept as written.
     #[arg(long, value_name = "WHEN")]
     until: Option<String>,
     /// Minutes without a device command or `lease renew` from the holder
@@ -66,32 +67,6 @@ fn now() -> chrono::DateTime<chrono::Utc> {
 
 fn fail(e: String) -> crate::CliError {
     crate::CliError::Other(e)
-}
-
-/// `+45m build` → `14:20 build`; anything else as written.
-pub(crate) fn until_label(raw: &str, now: chrono::DateTime<chrono::Local>) -> String {
-    let Some(rest) = raw.strip_prefix('+') else {
-        return raw.to_string();
-    };
-    let (amount, note) = rest.split_once(' ').unwrap_or((rest, ""));
-    let secs = if let Some(m) = amount.strip_suffix('m') {
-        m.parse::<i64>().ok().map(|m| m * 60)
-    } else if let Some(h) = amount.strip_suffix('h') {
-        h.parse::<i64>().ok().map(|h| h * 3600)
-    } else {
-        amount
-            .strip_suffix('s')
-            .unwrap_or(amount)
-            .parse::<i64>()
-            .ok()
-    };
-    match secs {
-        Some(s) => {
-            let at = (now + chrono::Duration::seconds(s)).format("%H:%M");
-            format!("{at} {note}").trim_end().to_string()
-        }
-        None => raw.to_string(),
-    }
 }
 
 use smix_lease::scope::shown;
@@ -141,7 +116,11 @@ pub(crate) async fn run(
             ..
         } => release(&name, holder.as_deref().unwrap_or_default())?,
         A::Acquire(args) => acquire(args).await?,
-        A::Renew { scope, holder } => renew(&scope, &holder)?,
+        A::Renew {
+            scope,
+            holder,
+            until,
+        } => renew(&scope, &holder, until.as_deref())?,
         A::Scope {
             name, remove: true, ..
         } => remove(&name)?,
@@ -164,15 +143,11 @@ async fn acquire(args: AcquireArgs) -> Result<u8, crate::CliError> {
         ),
         None => None,
     };
-    let until = args
-        .until
-        .as_deref()
-        .map(|u| until_label(u, chrono::Local::now()));
     let req = Request {
         holder: args.holder.clone(),
         wait: args.wait,
         idle_secs: args.idle * 60,
-        until,
+        until: args.until.clone(),
         pid,
         asking: smix_lease::store::identify_self(),
     };
@@ -253,12 +228,12 @@ fn release(name: &str, holder: &str) -> Result<u8, crate::CliError> {
     Ok(0)
 }
 
-fn renew(name: &str, holder: &str) -> Result<u8, crate::CliError> {
+fn renew(name: &str, holder: &str, until: Option<&str>) -> Result<u8, crate::CliError> {
     let dir = scopes().map_err(fail)?;
     let (held, scope) = dir
         .update_declared(name, |s| {
             s.settle(now(), &alive);
-            (s.touch(holder, now()), s.clone())
+            (s.renew(holder, until, now()), s.clone())
         })
         .map_err(fail)?;
     if held {
@@ -346,26 +321,4 @@ pub(crate) fn gate(cmd: &crate::Cmd) -> Option<ExitCode> {
     )?;
     eprintln!("error: {why}");
     Some(ExitCode::from(REFUSED))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_relative_until_becomes_a_clock_time_and_keeps_its_note() {
-        let t = chrono::DateTime::parse_from_rfc3339("2026-11-23T13:35:00+00:00")
-            .unwrap()
-            .with_timezone(&chrono::Local);
-        let base = t.format("%H:%M").to_string();
-        assert_ne!(until_label("+45m build", t), "+45m build");
-        assert!(until_label("+45m build", t).ends_with(" build"));
-        assert!(
-            !until_label("+2h", t).contains(&base),
-            "two hours on is another time"
-        );
-        assert_eq!(until_label("+90 x", t), until_label("+90s x", t));
-        assert_eq!(until_label("23:30 nightly", t), "23:30 nightly");
-        assert_eq!(until_label("+soon", t), "+soon");
-    }
 }

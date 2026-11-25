@@ -3575,6 +3575,7 @@ smix lease acquire --scope qa --holder agent-3 --wait --until "+40m login suite"
 export SMIX_LEASE_HOLDER=agent-3                             # every device command runs as the holder
 smix run login.yaml --device sim-qa
 smix lease renew --scope qa --holder agent-3                 # during a long step that touches no device
+smix lease renew --scope qa --holder agent-3 --until "+20m retry"   # and say a new end time
 smix lease release --scope qa --holder agent-3
 smix lease status --scope qa                                 # holder, queue, recent automatic releases
 smix lease status --scope                                    # every scope on this machine
@@ -3586,6 +3587,11 @@ smix lease scope qa --remove                                 # delete it; exits 
   in the order holders asked, however often each one asks. Without
   `--wait`, a scope somebody else holds exits 75 at once and names them.
   `--max-wait <secs>` gives up with exit 75, naming the holder and the queue.
+- **`--until` is for the others.** A relative `+40m` (also `+SECS`, `+Nh`)
+  counts from when the scope is granted, not from when the holder started
+  waiting: the queue shows it as written, the holder's line as a clock time.
+  `lease renew --until` replaces it; anything not starting with `+` is kept
+  as written.
 - **One place per holder.** Asking again as the same holder keeps the place
   it has; it does not add another.
 - **Released when the holder goes quiet.** Every device command run with
@@ -4030,7 +4036,7 @@ An app can hand smix the semantics tree instead. One line, debug only:
 
 ```kotlin
 dependencies {
-    debugImplementation("jp.golia.smix:smix-probe:26.12.0")
+    debugImplementation("jp.golia.smix:smix-probe:26.13.0")
 }
 ```
 

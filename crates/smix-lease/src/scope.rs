@@ -21,7 +21,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 mod dir;
+mod until;
 pub use dir::ScopeDir;
+pub use until::until_label;
 
 /// How long a hold lasts without a command from its holder, unless the
 /// holder said otherwise when it took it.
@@ -65,7 +67,9 @@ pub struct Hold {
     pub last_seen: String,
     /// Released after this long without a command from the holder.
     pub idle_secs: u64,
-    /// What the holder said about when it will be done, free text.
+    /// What the holder said about when it will be done, free text. A
+    /// relative `+45m` is already a clock time here, counted from when the
+    /// hold was granted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub until: Option<String>,
     /// A process whose exit ends the hold, when the holder named one.
@@ -84,6 +88,8 @@ pub struct Waiter {
     /// nobody is waiting, whatever the queue says.
     pub waiting: ProcIdentity,
     pub idle_secs: u64,
+    /// As the waiter wrote it: a relative `+45m` counts from when it is
+    /// granted, so it is turned into a clock time then.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub until: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -107,6 +113,7 @@ pub struct Request {
     /// Queue when somebody else holds it, rather than answer at once.
     pub wait: bool,
     pub idle_secs: u64,
+    /// As written; see [`until_label`].
     pub until: Option<String>,
     pub pid: Option<ProcIdentity>,
     /// The process asking, which is the one that waits.
@@ -180,7 +187,7 @@ impl Scope {
                 since: t.clone(),
                 last_seen: t,
                 idle_secs: w.idle_secs,
-                until: w.until,
+                until: w.until.map(|u| until_label(&u, now)),
                 pid: w.pid,
             });
             changed = true;
@@ -202,7 +209,7 @@ impl Scope {
                 since: t.clone(),
                 last_seen: t,
                 idle_secs: req.idle_secs,
-                until: req.until.clone(),
+                until: req.until.as_deref().map(|u| until_label(u, now)),
                 pid: req.pid.clone(),
             });
             return Granted::Held;
@@ -259,9 +266,18 @@ impl Scope {
     /// Record a command or renewal from `holder`. Returns whether it holds
     /// the scope.
     pub fn touch(&mut self, holder: &str, now: DateTime<Utc>) -> bool {
+        self.renew(holder, None, now)
+    }
+
+    /// [`Self::touch`], and when `until` is given, replace what the holder
+    /// said about when it will be done, a relative one counted from `now`.
+    pub fn renew(&mut self, holder: &str, until: Option<&str>, now: DateTime<Utc>) -> bool {
         match &mut self.holder {
             Some(h) if h.holder == holder => {
                 h.last_seen = now.to_rfc3339();
+                if let Some(u) = until {
+                    h.until = Some(until_label(u, now));
+                }
                 true
             }
             _ => false,
@@ -512,6 +528,34 @@ mod tests {
             s.holder.as_ref().unwrap().holder,
             "a",
             "the holder is not touched"
+        );
+    }
+
+    #[test]
+    fn a_relative_until_counts_from_the_grant_and_renew_replaces_it() {
+        let alive_all = |_: &ProcIdentity| true;
+        let mut s = Scope::default();
+        assert_eq!(s.acquire(&ask("a", 1, false), at(0)), Granted::Held);
+        let mut b = ask("b", 2, true);
+        b.until = Some("+60m build".into());
+        assert_eq!(s.acquire(&b, at(0)), Granted::Queued(1));
+        assert_eq!(s.queue[0].until.as_deref(), Some("+60m build"));
+        assert!(s.release("a"));
+        s.settle(at(3600), &alive_all);
+        let h = s.holder.as_ref().expect("b holds it");
+        assert_eq!(h.holder, "b");
+        assert_eq!(h.until, Some(until_label("+60m build", at(3600))));
+        assert_ne!(h.until, Some(until_label("+60m build", at(0))));
+
+        assert!(!s.renew("a", Some("+30m"), at(4000)), "a does not hold it");
+        assert!(s.renew("b", Some("+30m tests"), at(4000)));
+        let h = s.holder.as_ref().expect("b holds it");
+        assert_eq!(h.until, Some(until_label("+30m tests", at(4000))));
+        assert!(s.renew("b", None, at(4100)));
+        assert_eq!(
+            s.holder.as_ref().and_then(|h| h.until.clone()),
+            Some(until_label("+30m tests", at(4000))),
+            "a renewal without --until keeps what was said"
         );
     }
 

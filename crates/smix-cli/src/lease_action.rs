@@ -78,6 +78,10 @@ pub enum LeaseAction {
         scope: String,
         #[arg(long)]
         holder: String,
+        /// Replace when the holder expects to be done, as for `acquire`;
+        /// `+30m tests` counts from now.
+        #[arg(long, value_name = "WHEN")]
+        until: Option<String>,
     },
     /// Say which devices a scope covers. Names are compared as devices:
     /// a registry alias covers the serial or UDID it runs as. Declaring it
