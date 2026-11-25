@@ -293,9 +293,8 @@ pub fn listeners() -> Vec<Listener> {
 }
 
 fn pgrep_f(pattern: &str) -> Vec<u32> {
-    let Ok(out) = std::process::Command::new("pgrep")
-        .args(["-f", pattern])
-        .output()
+    let Ok(out) =
+        smix_lease::query::query(std::process::Command::new("pgrep").args(["-f", pattern]))
     else {
         return Vec::new();
     };

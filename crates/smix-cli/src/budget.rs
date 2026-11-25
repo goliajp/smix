@@ -252,10 +252,7 @@ pub(crate) async fn running() -> Vec<Running> {
             });
         }
     }
-    let ps = Command::new("ps")
-        .args(["-A", "-o", "command="])
-        .output()
-        .ok();
+    let ps = smix_lease::query::query(Command::new("ps").args(["-A", "-o", "command="])).ok();
     for line in ps.iter().flat_map(|o| {
         String::from_utf8_lossy(&o.stdout)
             .lines()

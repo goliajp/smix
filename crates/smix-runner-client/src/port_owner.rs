@@ -309,10 +309,12 @@ pub fn ask_ios(port: u16) -> Authority {
     }
     let mut found = Vec::new();
     for pid in &pids {
-        if let Ok(out) = std::process::Command::new("ps")
-            .args(["-o", "command=", "-p", &pid.to_string()])
-            .output()
-            && let Some(u) = udid_from_command(&String::from_utf8_lossy(&out.stdout))
+        if let Ok(out) = smix_lease::query::query(std::process::Command::new("ps").args([
+            "-o",
+            "command=",
+            "-p",
+            &pid.to_string(),
+        ])) && let Some(u) = udid_from_command(&String::from_utf8_lossy(&out.stdout))
         {
             found.push(u);
         }

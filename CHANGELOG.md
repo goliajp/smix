@@ -15,6 +15,14 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 - **`smix lease renew … --until <when>`** replaces the holder's end time.
 
+### Fixed
+
+- **A `ps` or `pgrep` that never answers no longer hangs smix.** Every
+  call that asks the host about its processes is given up after 10 s with
+  a warning, where it used to wait for good: on a Linux host whose `/proc`
+  reads block on a stuck task, `ps` never returns, and neither did a
+  command or test that needed to know who owns a runner's port.
+
 ## [26.12.0] — 2026-11-24
 
 ### Added

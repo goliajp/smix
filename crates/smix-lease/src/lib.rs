@@ -34,6 +34,7 @@ pub mod environment;
 mod guards;
 pub mod held;
 pub mod owners;
+pub mod query;
 pub mod scope;
 pub mod store;
 pub mod vanish;

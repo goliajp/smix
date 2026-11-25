@@ -86,9 +86,7 @@ pub fn state_path(workspace_root: &Path, udid: &str) -> PathBuf {
 
 /// Guard probe: `pgrep -x Simulator` exit 0 => Simulator.app (Xcode <= 26) is running.
 pub fn simulator_app_running() -> bool {
-    std::process::Command::new("pgrep")
-        .args(["-x", "Simulator"])
-        .output()
+    smix_lease::query::query(std::process::Command::new("pgrep").args(["-x", "Simulator"]))
         .map(|out| out.status.success())
         .unwrap_or(false)
 }

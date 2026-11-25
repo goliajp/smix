@@ -419,9 +419,7 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
     }
     let mut lines: Vec<String> = Vec::new();
     for p in &patterns {
-        let out = std::process::Command::new("pgrep")
-            .args(["-fl", p])
-            .output()
+        let out = smix_lease::query::query(std::process::Command::new("pgrep").args(["-fl", p]))
             .map_err(|e| format!("pgrep: {e}"))?;
         lines.extend(
             String::from_utf8_lossy(&out.stdout)

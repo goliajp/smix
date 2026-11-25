@@ -968,10 +968,13 @@ fn forget_runner_row(ledger: &smix_lease::store::LeaseDir, udid: &str) {
 
 /// `ps -p <pid> -o command=` — None if the pid is gone.
 pub(crate) fn pid_command(pid: u32) -> Option<String> {
-    let out = std::process::Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "command="])
-        .output()
-        .ok()?;
+    let out = smix_lease::query::query(std::process::Command::new("ps").args([
+        "-p",
+        &pid.to_string(),
+        "-o",
+        "command=",
+    ]))
+    .ok()?;
     if !out.status.success() {
         return None;
     }

@@ -123,10 +123,9 @@ pub fn probe(_udid: &str, _name: &str, _name_is_unique: bool) -> HubShows {
 
 #[cfg(target_os = "macos")]
 fn hub_pid() -> Option<i32> {
-    let out = std::process::Command::new("pgrep")
-        .args(["-x", "DeviceHub"])
-        .output()
-        .ok()?;
+    let out =
+        smix_lease::query::query(std::process::Command::new("pgrep").args(["-x", "DeviceHub"]))
+            .ok()?;
     String::from_utf8_lossy(&out.stdout)
         .lines()
         .next()

@@ -3100,6 +3100,7 @@ dependencies = [
  "smix-adb",
  "smix-error",
  "smix-input",
+ "smix-lease",
  "smix-runner-wire",
  "smix-screen",
  "smix-selector",

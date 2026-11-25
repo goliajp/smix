@@ -1121,10 +1121,12 @@ fn is_self_or_ancestor(pid: u32) -> bool {
         if cur == pid {
             return true;
         }
-        let Ok(out) = std::process::Command::new("ps")
-            .args(["-o", "ppid=", "-p", &cur.to_string()])
-            .output()
-        else {
+        let Ok(out) = smix_lease::query::query(std::process::Command::new("ps").args([
+            "-o",
+            "ppid=",
+            "-p",
+            &cur.to_string(),
+        ])) else {
             return false;
         };
         let Ok(parent) = String::from_utf8_lossy(&out.stdout).trim().parse::<u32>() else {

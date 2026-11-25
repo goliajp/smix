@@ -7,10 +7,12 @@ use std::time::Duration;
 /// exited and only waits for a parent to reap it, which a long-lived
 /// host such as the MCP server may never do for a child it let go of.
 pub(crate) fn running(pid: u32) -> bool {
-    let Ok(out) = std::process::Command::new("ps")
-        .args(["-o", "stat=", "-p", &pid.to_string()])
-        .output()
-    else {
+    let Ok(out) = smix_lease::query::query(std::process::Command::new("ps").args([
+        "-o",
+        "stat=",
+        "-p",
+        &pid.to_string(),
+    ])) else {
         return true;
     };
     let stat = String::from_utf8_lossy(&out.stdout);
