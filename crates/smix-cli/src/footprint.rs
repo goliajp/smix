@@ -13,9 +13,8 @@ use std::process::Command;
 
 /// `(pid, ppid, command)` for every process, from `ps`.
 fn processes() -> Vec<(u32, u32, String)> {
-    let Ok(out) = Command::new("ps")
-        .args(["-A", "-o", "pid=,ppid=,command="])
-        .output()
+    let Ok(out) =
+        smix_lease::query::query(Command::new("ps").args(["-A", "-o", "pid=,ppid=,command="]))
     else {
         return Vec::new();
     };

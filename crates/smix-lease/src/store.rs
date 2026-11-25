@@ -480,10 +480,13 @@ pub fn remove(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseError> {
 }
 
 fn ps_field(pid: u32, field: &str) -> Option<String> {
-    let out = std::process::Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", field])
-        .output()
-        .ok()?;
+    let out = crate::query::query(std::process::Command::new("ps").args([
+        "-p",
+        &pid.to_string(),
+        "-o",
+        field,
+    ]))
+    .ok()?;
     if !out.status.success() {
         return None;
     }
