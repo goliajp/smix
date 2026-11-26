@@ -76,7 +76,10 @@ fn refusal(step: Step, command: &str) -> String {
         Step::SimctlCreateOrDelete => "smix sim exec <udid> <verb> … for a device smix knows",
         Step::EmulatorStart => "smix sim boot <alias|serial> (headless; --window to show it)",
         Step::EmulatorKill => "smix sim shutdown <serial>",
-        Step::AvdCreateOrDelete => "an AVD made once, by hand, outside an agent session",
+        Step::AvdCreateOrDelete => {
+            "smix sim create --android --image <package> --device <profile> --name <avd> \
+             to make one; deleting an AVD is done by hand, outside an agent session"
+        }
     };
     format!(
         "this starts, stops, erases or creates a device outside smix, and smix \

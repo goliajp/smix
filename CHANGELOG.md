@@ -2,6 +2,18 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [26.14.0] — 2026-11-26
+
+### Added
+
+- **`smix sim create --android --image <package> --device <profile> --name <avd>`**
+  makes a new Android AVD from a system image installed in the SDK whose
+  emulator smix starts, and refuses a name that already exists. It only
+  creates: `smix sim register … --avd <avd>` and `smix sim boot` take it
+  from there. avdmanager is kept in that SDK even when
+  `cmdline-tools/latest` links to a Homebrew install, which on its own
+  checks images in Homebrew's SDK instead.
+
 ## [26.13.0] — 2026-11-25
 
 ### Changed
