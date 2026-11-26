@@ -51,6 +51,10 @@ const NOT_DESTRUCTIVE: &[(&str, &str)] = &[
         "turns the display; the next turn turns it back",
     ),
     ("Budget", "reads what is running"),
+    (
+        "Create",
+        "makes a new AVD under a name nothing has yet; no device is touched",
+    ),
     ("Resolve", "reads"),
     (
         "Register",
