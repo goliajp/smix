@@ -89,7 +89,9 @@ mod record_cmd;
 mod register_emulator;
 mod runner_down;
 mod runner_list;
+mod sim_create;
 mod sim_list;
+mod sim_migrate;
 mod sim_repair;
 mod sim_shutdown;
 use device_for::device_control_for;
@@ -1845,6 +1847,8 @@ enum SimAction {
     Appearance(appearance_cmd::AppearanceArgs),
     /// Switch an emulator between three-button and gesture navigation, or print which is in use.
     Navigation(navigation_cmd::NavigationArgs),
+    /// Make a new Android AVD from an installed system image (`--android`).
+    Create(sim_create::CreateArgs),
     /// Allow destructive actions on a physical device, once.
     ///
     /// Simulators are never gated — they can be erased and rebuilt in a
@@ -2275,6 +2279,7 @@ fn adb_knows(serial: &str) -> bool {
 fn sim_action_device(action: &SimAction) -> Option<&str> {
     match action {
         SimAction::List { .. } | SimAction::Migrate { .. } | SimAction::Budget(_) => None,
+        SimAction::Create(_) => None,
         SimAction::Unregister { .. } => None,
         SimAction::Register { udid, .. } => Some(udid),
         SimAction::Resolve { device, .. }
@@ -2359,6 +2364,7 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
             // No device, or the registry rather than the device.
             SimAction::List { .. }
             | SimAction::Budget(_)
+            | SimAction::Create(_)
             | SimAction::Register { .. }
             | SimAction::AllowDestructive { .. }
             | SimAction::Migrate { .. }
@@ -2438,6 +2444,7 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         SimAction::Posture { .. } | SimAction::Orientation(_) => None,
         SimAction::List { .. }
         | SimAction::Budget(_)
+        | SimAction::Create(_)
         | SimAction::Register { .. }
         | SimAction::Resolve { .. }
         | SimAction::Migrate { .. }
@@ -2801,7 +2808,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         sim_list::cmd_sim_list(&simctl, json).await?;
                     }
                 }
-                SimAction::Migrate { from, dry_run } => cmd_sim_migrate(from, dry_run)?,
+                SimAction::Migrate { from, dry_run } => sim_migrate::migrate(from, dry_run)?,
                 SimAction::Unregister { alias } => {
                     let path = registry_path()?;
                     let sim = SimRegistry::unregister(&path, &alias)
@@ -3411,6 +3418,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 SimAction::Orientation(args) => orientation_cmd::run(&simctl, args).await?,
                 SimAction::Appearance(args) => appearance_cmd::run(&simctl, args).await?,
                 SimAction::Navigation(args) => navigation_cmd::run(args).await?,
+                SimAction::Create(args) => sim_create::run(args).await?,
                 SimAction::AllowDestructive { device } => {
                     let path = registry_path()?;
                     match smix_simctl::registry::SimRegistry::allow_destructive(&path, &device) {
@@ -4988,6 +4996,7 @@ fn is_destructive(action: &SimAction) -> bool {
 
         SimAction::List { .. }
         | SimAction::Budget(_)
+        | SimAction::Create(_)
         | SimAction::Register { .. }
         | SimAction::Resolve { .. }
         | SimAction::Migrate { .. }
@@ -6096,95 +6105,6 @@ fn cmd_sim_list_registered(json: bool) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Fold per-checkout device registries into this machine's.
-fn cmd_sim_migrate(from: Vec<PathBuf>, dry_run: bool) -> Result<(), CliError> {
-    let into = registry_path()?;
-    let sources: Vec<PathBuf> = if from.is_empty() {
-        let cwd = std::env::current_dir()
-            .map_err(|e| CliError::Other(format!("cannot determine cwd: {e}")))?;
-        SimRegistry::discover(&cwd).into_iter().collect()
-    } else {
-        from.iter()
-            .map(|p| {
-                if p.ends_with(".smix") {
-                    p.clone()
-                } else {
-                    p.join(".smix")
-                }
-            })
-            .collect()
-    };
-    if sources.is_empty() {
-        println!(
-            "nothing to migrate — no .smix registry above {}. \
-             Name the checkouts to read with --from <dir>.",
-            std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .display()
-        );
-        return Ok(());
-    }
-    // Migrating a book into itself would read every row and write it
-    // back, which is harmless but reports every device as "already
-    // there" and reads like the migration did nothing. Say which one it
-    // is instead.
-    let sources: Vec<PathBuf> = sources
-        .into_iter()
-        .filter(|p| {
-            if p == &into {
-                println!("{} is already the machine registry — skipped", p.display());
-                false
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    // A rehearsal reads the same books and applies the same merge
-    // rules; only the write is skipped. Working the answer out a second
-    // way would produce a report about the second way.
-    let report = if dry_run {
-        SimRegistry::migrate_dry_run(&into, &sources)
-    } else {
-        SimRegistry::migrate(&into, &sources)
-    }
-    .map_err(|e| CliError::Other(format!("migrate: {e}")))?;
-
-    for (path, why) in &report.unreadable {
-        eprintln!("  {} could not be read: {why}", path.display());
-    }
-    for path in &report.empty {
-        println!("  {} held no devices", path.display());
-    }
-    for alias in &report.added {
-        println!("  + {alias}");
-    }
-    for alias in &report.narrowed {
-        println!("  ~ {alias} — destructive consent narrowed to the stricter answer");
-    }
-    println!(
-        "{} device(s) {} in {} ({} already there)",
-        report.added.len(),
-        if dry_run {
-            "would be recorded"
-        } else {
-            "now recorded"
-        },
-        into.display(),
-        report.unchanged.len()
-    );
-    if !report.added.is_empty() && !dry_run {
-        // The source is deliberately left in place, so the next reader
-        // still finds it and still calls it unmigrated. Saying so beats
-        // having somebody wonder why the note did not go away.
-        println!(
-            "the source registries are untouched — delete them yourself once \
-             every tree you use has been migrated"
-        );
-    }
-    Ok(())
-}
-
 #[derive(Debug)]
 enum CliError {
     Simctl(DeviceControlError),
@@ -6925,6 +6845,15 @@ mod tests {
                 SimAction::Appearance(appearance_cmd::AppearanceArgs {
                     device: d(),
                     mode: smix_simctl::Appearance::Light,
+                }),
+            ),
+            (
+                "create",
+                SimAction::Create(sim_create::CreateArgs {
+                    android: true,
+                    image: d(),
+                    profile: d(),
+                    name: d(),
                 }),
             ),
             (
