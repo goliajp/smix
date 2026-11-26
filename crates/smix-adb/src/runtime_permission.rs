@@ -112,8 +112,9 @@ impl AdbClient {
         Ok(())
     }
 
-    /// The device's own line for one runtime permission of `<pkg>`; see
-    /// [`runtime_permission_line`].
+    /// The device's own line for one runtime permission of `<pkg>`
+    /// (`<name>: granted=<bool>, flags=[...]`), or `None` when the app has
+    /// no runtime state for it.
     pub async fn runtime_permission(
         &self,
         serial: &str,
