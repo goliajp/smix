@@ -737,6 +737,7 @@ mod tests {
     ) -> smix_screen::A11yNode {
         smix_screen::A11yNode {
             visible_bounds: None,
+            touch_bounds: None,
             hittable: None,
             window: None,
             unreadable_windows: None,

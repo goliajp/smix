@@ -13,6 +13,7 @@ use smix_screen::{A11yNode, Rect, is_visible_enough, visible_area};
 fn mk(bounds: Rect) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,

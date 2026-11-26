@@ -10,6 +10,7 @@ use smix_selector_resolver::resolve_selector;
 fn node(label: &str, text: &str, x: f64, visible: bool, children: Vec<A11yNode>) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,

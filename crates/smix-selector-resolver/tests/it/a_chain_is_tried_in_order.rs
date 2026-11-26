@@ -21,6 +21,7 @@ use smix_selector_resolver::{resolve_selector, resolve_selector_all};
 fn node(id: &str, label: &str) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,

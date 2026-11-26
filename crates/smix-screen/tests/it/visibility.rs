@@ -8,6 +8,7 @@ use smix_screen::{A11yNode, Rect, is_visible_enough, visible_area};
 fn mk(bounds: Rect) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,
@@ -157,6 +158,35 @@ fn a11y_node_serde_round_trip_camel_case() {
     let reserialized = serde_json::to_string(&node).expect("serialize");
     let parsed_back: A11yNode = serde_json::from_str(&reserialized).expect("re-parse");
     assert_eq!(node, parsed_back);
+}
+
+#[test]
+fn a_touch_delegate_area_from_the_android_runner_reaches_the_node() {
+    // the shape RunnerWire.nodeJson writes for a checkbox a TouchDelegate widens
+    let json = r#"{
+        "rawType": "android.widget.CheckBox",
+        "identifier": "checkbox-device",
+        "bounds": { "x": 900, "y": 410, "w": 45, "h": 45 },
+        "touchBounds": { "x": 860, "y": 370, "w": 126, "h": 126 },
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+    }"#;
+    let node: A11yNode = serde_json::from_str(json).expect("parse");
+    let t = node.touch_bounds.expect("touchBounds read");
+    assert_eq!((t.x, t.y, t.w, t.h), (860.0, 370.0, 126.0, 126.0));
+    let out = serde_json::to_string(&node).expect("serialize");
+    assert!(out.contains(r#""touchBounds":{"#), "{out}");
+    let plain: A11yNode =
+        serde_json::from_str(&out.replace("touchBounds", "ignored")).expect("parse");
+    assert!(plain.touch_bounds.is_none());
+    assert!(
+        !serde_json::to_string(&plain)
+            .unwrap()
+            .contains("touchBounds")
+    );
 }
 
 #[test]

@@ -2858,26 +2858,24 @@ object TreeBuilder {
         HitReader.touchRects(window).map { intArrayOf(it.left, it.top, it.right - it.left, it.bottom - it.top) }
 
     /// `null` when the node no longer exists: its subtree is left out.
-    private fun nodeToJson(node: AccessibilityNodeInfo, walk: Boolean = true, refresh: Boolean = true): JSONObject? {
-        // Per-node refresh parity with the /tap-by-id walkFind path.
-        // Chained NavHost transitions leave cached AccessibilityNodeInfo
-        // descendants stale even after parent root.refresh(); a tree
-        // dump without per-node refresh reports the pre-transition
-        // state while screencap shows the next screen actually
-        // rendered. Refreshing per-node forces the framework to re-sync
-        // each child with current Compose semantics.
-        //
-        // `refresh` answers false when the view behind the node is gone,
-        // and leaves the node holding what it last knew — reporting it
-        // would put something on the screen that is not.
+    private fun nodeToJson(
+        node: AccessibilityNodeInfo,
+        walk: Boolean = true,
+        refresh: Boolean = true,
+        delegated: Map<AccessibilityNodeInfo, IntArray> = emptyMap(),
+    ): JSONObject? {
+        // Every node is refreshed, as /tap-by-id does: after chained NavHost transitions cached
+        // descendants stay stale even when the root was refreshed. `refresh` answers false when
+        // the view behind the node is gone, and reporting it would show what is no longer there.
         if (refresh && !node.refresh()) return null
         val rect = Rect()
         node.getBoundsInScreen(rect)
+        val handed = TouchDelegates.handedOut(node, rect, delegated)
         val childArr = JSONArray()
         for (i in 0 until if (walk) node.childCount else 0) {
             val child = node.getChild(i) ?: continue
             try {
-                nodeToJson(child, refresh = refresh)?.let { childArr.put(it) }
+                nodeToJson(child, refresh = refresh, delegated = handed)?.let { childArr.put(it) }
             } finally {
                 child.recycle()
             }
@@ -2897,6 +2895,7 @@ object TreeBuilder {
             hasFocus = node.isFocused,
             visible = node.isVisibleToUser || (rect.width() > 0 && rect.height() > 0),
             children = childArr,
+            touch = delegated[node],
         )
     }
 }

@@ -995,6 +995,7 @@ object TreeWire {
         hasFocus: Boolean,
         visible: Boolean,
         children: JSONArray,
+        touch: IntArray? = null,
     ): JSONObject {
         val obj = JSONObject()
         obj.put("rawType", rawType)
@@ -1011,6 +1012,13 @@ object TreeWire {
                 .put("w", w.coerceAtLeast(0))
                 .put("h", h.coerceAtLeast(0)),
         )
+        // where a TouchDelegate on another view sends touches to this one
+        touch?.let {
+            obj.put(
+                "touchBounds",
+                JSONObject().put("x", it[0]).put("y", it[1]).put("w", it[2] - it[0]).put("h", it[3] - it[1]),
+            )
+        }
         obj.put("enabled", enabled)
         obj.put("selected", selected)
         obj.put("hasFocus", hasFocus)

@@ -11,6 +11,7 @@ fn rect(x: f64, y: f64, w: f64, h: f64) -> Rect {
 fn mk(label: Option<&str>, bounds: Rect) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,

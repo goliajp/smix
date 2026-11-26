@@ -13,6 +13,7 @@ use smix_selector::{Pattern, match_text, match_text_compiled};
 fn mk_node(label: Option<String>, id: Option<String>) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,

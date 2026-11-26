@@ -501,6 +501,12 @@ pub struct A11yNode {
     /// filter chips two versions after that was fixed host-side.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visible_bounds: Option<Rect>,
+    /// Where touches reach this element when another view hands it a
+    /// larger area with a `TouchDelegate` (Android), in the same units as
+    /// `bounds` and cut to the view that hands it out; `None` when nothing
+    /// does or the reader cannot say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub touch_bounds: Option<Rect>,
     /// Whether the element is currently interactable.
     pub enabled: bool,
     /// Whether the element is currently selected.
@@ -668,6 +674,7 @@ mod tests {
     ) -> A11yNode {
         A11yNode {
             visible_bounds: None,
+            touch_bounds: None,
             hittable: None,
             window: None,
             unreadable_windows: None,

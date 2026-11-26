@@ -58,4 +58,7 @@
     <item name="hold_result" type="id" />
     <item name="hold_plain" type="id" />
     <item name="hold_last" type="id" />
+    <item name="delegate_row" type="id" />
+    <item name="delegate_check" type="id" />
+    <item name="delegate_plain" type="id" />
 </resources>

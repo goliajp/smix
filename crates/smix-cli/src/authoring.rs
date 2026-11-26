@@ -390,6 +390,7 @@ mod tests {
     fn node(id: Option<&str>, text: Option<&str>) -> A11yNode {
         A11yNode {
             visible_bounds: None,
+            touch_bounds: None,
             hittable: None,
             window: None,
             unreadable_windows: None,

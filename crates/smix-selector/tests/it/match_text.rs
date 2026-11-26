@@ -9,6 +9,7 @@ use smix_selector::{Pattern, match_text};
 fn mk(partial: NodePartial) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,

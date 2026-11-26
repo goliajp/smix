@@ -2034,6 +2034,7 @@ mod describe_meta_tests {
     fn node_with_identifier(id: Option<&str>) -> A11yNode {
         A11yNode {
             visible_bounds: None,
+            touch_bounds: None,
             hittable: None,
             window: None,
             unreadable_windows: None,

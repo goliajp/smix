@@ -21,6 +21,7 @@ fn mk_app_for(server: &MockServer) -> App {
 fn login_tree() -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,
@@ -45,6 +46,7 @@ fn login_tree() -> A11yNode {
         visible: true,
         children: vec![A11yNode {
             visible_bounds: None,
+            touch_bounds: None,
             hittable: None,
             window: None,
             unreadable_windows: None,

@@ -10,6 +10,7 @@ use std::hint::black_box;
 fn mk(bounds: Rect) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,
