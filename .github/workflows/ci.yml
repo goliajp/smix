@@ -663,6 +663,12 @@ jobs:
                      | python3 -c 'import json,sys;d=json.load(sys.stdin)["devices"];print(next(x["udid"] for v in d.values() for x in v if x["isAvailable"]))')"
           echo "SMIX_CORPUS_SIM=$UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID" || true
+          # Booted here, outside smix, so smix will not drive it until
+          # somebody answers for it. The job does, with its reason on
+          # record, once the simulator has finished booting: half booted,
+          # the gate's own `smix sim boot` waited on it and timed out.
+          xcrun simctl bootstatus "$UDID" -b
+          target/release/smix lease claim "$UDID" --reason "booted by the CI job for the portable corpus tier"
       - name: portable corpus tier
         run: SMIX_BIN=$PWD/target/release/smix bash scripts/release/portable-tier.sh
       - name: the logs of whatever went red
