@@ -62,9 +62,89 @@ pub(crate) fn tail(log: &Path, lines: usize) -> String {
     all[start..].join("\n")
 }
 
+/// What to say when xcodebuild exits before the runner is up: the cause,
+/// then the last `lines` lines.
+///
+/// XCTest's automatic restart after a failed `test_runForever` writes
+/// twenty-odd lines of "executed 0 tests" after the failure, so the tail
+/// alone never shows why it failed. The test's own `error:` lines are
+/// brought up from wherever they are in the log.
+pub(crate) fn early_exit(log: &Path, lines: usize) -> String {
+    let text = std::fs::read_to_string(log).unwrap_or_default();
+    let tail = tail(log, lines);
+    match cause(&text) {
+        Some(cause) => format!("{cause}\n\nlog tail:\n{tail}"),
+        None => format!("log tail:\n{tail}"),
+    }
+}
+
+/// The failures a runner's test reported, with a plain sentence first when
+/// the reason is that the app is not installed.
+fn cause(text: &str) -> Option<String> {
+    let errors: Vec<&str> = text
+        .lines()
+        .filter(|l| l.contains(": error: -[") && l.contains("test_runForever"))
+        .collect();
+    let first = errors.first()?;
+    // what iOS answers when no app with that bundle id is on the device
+    let missing = first
+        .split_once("Failed to launch ")
+        .and_then(|(_, rest)| rest.split_once(": "))
+        .map(|(bundle, _)| bundle)
+        .filter(|_| first.contains("returned nil for"));
+    let said = errors.join("\n");
+    Some(match missing {
+        Some(bundle) => format!(
+            "{bundle} is not installed on this simulator, so the runner could not \
+             launch it. Install the app, then run `smix runner up` again.\n{said}"
+        ),
+        None => said,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MISSING: &str = "/x/SmixRunnerUITests.swift:903: error: -[SmixRunnerUITests.SmixRunnerUITests test_runForever] : Failed to launch com.example.app: The request to open \"com.example.app\" failed. (Underlying Error: The operation couldn\u{2019}t be completed. Application info provider (FBSApplicationLibrary) returned nil for \"com.example.app\")";
+
+    fn log_of(text: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("runner.log");
+        std::fs::write(&log, text).unwrap();
+        (dir, log)
+    }
+
+    #[test]
+    fn an_app_that_is_not_installed_is_named_above_the_restart_noise() {
+        let noise = "\tExecuted 0 tests, with 0 failures\n".repeat(30);
+        let (_d, log) = log_of(&format!(
+            "Launch com.example.app\n{MISSING}\n{noise}** TEST FAILED **\n"
+        ));
+        let said = early_exit(&log, 25);
+        assert!(
+            said.starts_with("com.example.app is not installed on this simulator"),
+            "{said}"
+        );
+        assert!(said.contains("returned nil for"), "{said}");
+        assert!(said.contains("** TEST FAILED **"), "{said}");
+    }
+
+    #[test]
+    fn another_failure_is_brought_up_as_it_was_written() {
+        let other = "/x/T.swift:1: error: -[T test_runForever] : something else broke";
+        let noise = "\tExecuted 0 tests\n".repeat(30);
+        let (_d, log) = log_of(&format!("{other}\n{noise}"));
+        let said = early_exit(&log, 25);
+        assert!(said.starts_with(other), "{said}");
+        assert!(!said.contains("not installed"), "{said}");
+    }
+
+    #[test]
+    fn a_log_without_a_test_failure_is_only_its_tail() {
+        let (_d, log) = log_of("line one\nline two\n");
+        assert_eq!(early_exit(&log, 25), "log tail:\nline one\nline two");
+    }
 
     #[test]
     fn a_file_on_stdout_is_the_log() {
