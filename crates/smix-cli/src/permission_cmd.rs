@@ -46,6 +46,14 @@ pub async fn run(simctl: &SimctlClient, args: PermissionArgs) -> Result<(), crat
     let failed = |e: smix_simctl::DeviceControlError| crate::CliError::Other(e.to_string());
     let device = if crate::device_kind_of(&args.device) == DeviceKind::Simulator {
         let udid = crate::resolve_device(&args.device)?;
+        // the SDK skips such a permission so a cross-platform flow runs
+        // on; a command naming one device and one permission says no
+        if permission.to_simctl().is_none() {
+            return Err(crate::CliError::Other(format!(
+                "{} is an Android permission; a simulator has nothing to set for it",
+                permission.name()
+            )));
+        }
         if permission.to_simctl() == Some(SimctlPermission::Notifications) {
             return notifications(simctl, &udid, app, args.action).await;
         }

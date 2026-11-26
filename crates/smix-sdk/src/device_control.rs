@@ -34,7 +34,7 @@ pub use smix_adb::CrashReport;
 /// leaking iOS-specific `SimctlPermission` into the trait signature.
 ///
 /// Naming follows iOS convention where present; Android-only permissions
-/// (Storage, PostNotifications) have explicit variants. Cross-platform
+/// (Storage, PostNotifications, LocalNetwork) have explicit variants. Cross-platform
 /// permissions (Camera/Location/etc.) map both ways via `to_simctl`
 /// and `to_android`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -62,6 +62,10 @@ pub enum Permission {
     /// Android-only POST_NOTIFICATIONS (API 33+). On iOS aliases to
     /// `Notifications` for cross-platform yaml convenience.
     PostNotifications,
+    /// Android-only ACCESS_LOCAL_NETWORK (Android 17 / API 37+, in the
+    /// nearby devices group). iOS has no such entry in `simctl privacy`:
+    /// its local network prompt is not something a simulator records.
+    LocalNetwork,
 }
 
 impl Permission {
@@ -88,6 +92,7 @@ impl Permission {
         Permission::HomeKit,
         Permission::Storage,
         Permission::PostNotifications,
+        Permission::LocalNetwork,
     ];
 
     /// The name a caller writes, in yaml or on the command line.
@@ -111,6 +116,7 @@ impl Permission {
             Permission::HomeKit => "homekit",
             Permission::Storage => "storage",
             Permission::PostNotifications => "post-notifications",
+            Permission::LocalNetwork => "local-network",
         }
     }
 
@@ -170,7 +176,7 @@ impl Permission {
             Permission::Health => Some(SimctlPermission::Health),
             Permission::FaceId => Some(SimctlPermission::Faceid),
             Permission::HomeKit => Some(SimctlPermission::HomeKit),
-            Permission::Storage => None,
+            Permission::Storage | Permission::LocalNetwork => None,
         }
     }
 
@@ -194,6 +200,7 @@ impl Permission {
             Permission::Motion => Some("android.permission.ACTIVITY_RECOGNITION"),
             Permission::Media => Some("android.permission.READ_MEDIA_AUDIO"),
             Permission::Storage => Some("android.permission.WRITE_EXTERNAL_STORAGE"),
+            Permission::LocalNetwork => Some("android.permission.ACCESS_LOCAL_NETWORK"),
             Permission::Reminders
             | Permission::Health
             | Permission::FaceId
@@ -1398,7 +1405,7 @@ mod action_level_tests {
     /// spelling fails here rather than in whichever surface asks first.
     #[test]
     fn every_permission_has_exactly_one_spelling_that_parses() {
-        assert_eq!(Permission::ALL.len(), 17, "one entry per enum variant");
+        assert_eq!(Permission::ALL.len(), 18, "one entry per enum variant");
         for permission in Permission::ALL {
             assert_eq!(
                 Permission::from_name(permission.name()),
@@ -1430,6 +1437,15 @@ mod action_level_tests {
             Permission::from_name("post-notifications"),
             Ok(Permission::PostNotifications)
         );
+        assert_eq!(
+            Permission::from_name("local-network"),
+            Ok(Permission::LocalNetwork)
+        );
+        assert_eq!(
+            Permission::LocalNetwork.to_android(),
+            Some("android.permission.ACCESS_LOCAL_NETWORK")
+        );
+        assert_eq!(Permission::LocalNetwork.to_simctl(), None);
 
         let err = Permission::from_name("camra").expect_err("a misspelling is not a permission");
         assert!(err.contains("camra"), "says what it could not read: {err}");

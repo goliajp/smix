@@ -62,6 +62,7 @@ mod android_animations;
 pub mod android_device;
 pub mod android_fcm;
 pub mod android_notifications;
+mod android_permission;
 pub mod android_push;
 mod android_refusal;
 mod ios_permission;
