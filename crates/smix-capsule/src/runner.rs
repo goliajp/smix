@@ -1737,8 +1737,8 @@ fn one_bring_up(
                 .map(|why| format!("{why}\n\n"))
                 .unwrap_or_default();
             return Err(format!(
-                "{app}xcodebuild exited early ({status}) — log tail:\n{}",
-                crate::runner_log::tail(&log, 25)
+                "{app}xcodebuild exited early ({status}) — {}",
+                crate::runner_log::early_exit(&log, 25)
             ));
         }
         // health-decider: whether the bring-up is finished — which has to

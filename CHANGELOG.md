@@ -14,6 +14,14 @@ All notable changes to the `smix` workspace are documented here. The format foll
   `cmdline-tools/latest` links to a Homebrew install, which on its own
   checks images in Homebrew's SDK instead.
 
+### Fixed
+
+- **`smix runner up` on iOS says why xcodebuild exited early.** The
+  runner test's own error lines come first, and when the app under test
+  is not installed on the simulator it says so in one sentence. It used to
+  print only the end of the log, which after XCTest's automatic restart
+  is twenty lines of "Executed 0 tests" and never the reason.
+
 ## [26.13.0] — 2026-11-25
 
 ### Changed
