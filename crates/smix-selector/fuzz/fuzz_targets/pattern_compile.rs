@@ -13,6 +13,7 @@ use smix_selector::Pattern;
 fn synth_node(label_seed: &str) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,
