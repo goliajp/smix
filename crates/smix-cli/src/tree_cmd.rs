@@ -29,7 +29,7 @@ pub async fn cmd_tree(
     // when the answer looks thin. A screen the accessibility reader has
     // gone blind on and a screen with nothing on it print identically
     // otherwise.
-    let client = crate::runner_target::runner_client(port);
+    let client = crate::runner_target::runner_client(port).with_probe_touch_areas(true);
     let mut perceived = match reader {
         TreeReader::Auto => client.get_tree(None).await,
         TreeReader::Probe => client.semantics_tree_only().await,

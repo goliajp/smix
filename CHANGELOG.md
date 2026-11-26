@@ -24,6 +24,12 @@ All notable changes to the `smix` workspace are documented here. The format foll
   `--grep <regex>` and `--level W`; `--follow --timeout <seconds>` keeps
   printing until the time runs out. Emulators only, and under the same scope
   rules as every other device command.
+- **`touchBounds` in `smix tree --json` (Android).** Where a parent View's
+  `TouchDelegate` gives a control a larger touch area than it draws, the
+  tree reports that area on the control as `touchBounds`, beside `bounds`,
+  in the same unit and cut to the parent. Read from the accessibility
+  tree, and added to the probe's tree by the runner, so an app's existing
+  smix-probe needs no update. `A11yNode::touch_bounds` carries it.
 - **`local-network` permission** (`android.permission.ACCESS_LOCAL_NETWORK`,
   Android 17): `smix sim permission <device> <app> local-network grant|revoke`
   and `launchApp.permissions` / `setPermissions` in flows. On a simulator the

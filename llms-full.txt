@@ -3879,6 +3879,15 @@ conversion either passes everything or fails everything, and both look
 like a working checker. Divide by `unitsPerPoint` from the same output
 rather than assuming a number.
 
+A control can be drawn small and still take touches over a larger area:
+on Android, a parent View's `TouchDelegate` hands one of its children a
+wider rectangle. `bounds` is what is drawn; `smix tree` also puts the
+delegated rectangle on that child as `touchBounds` (same unit as
+`bounds`, cut to the parent that hands it out), from either reader. A
+size check that should count such a control as big enough reads
+`touchBounds` when it is there. Flows do not ask for it, since it costs
+the runner a second walk of the screen when the app carries the probe.
+
 On iOS the tree is what XCUITest exposes. A UIKit screen's plain views
 are in it as `other` nodes with their frames — a view controller's view,
 a cell's content view, a table's 1pt separators — but a view

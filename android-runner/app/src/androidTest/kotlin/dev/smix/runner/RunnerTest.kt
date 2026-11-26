@@ -551,10 +551,10 @@ class SmixHttpServer(
                 // into pixels here; one number for both ends is the only
                 // way a normalised coordinate means the same thing at each.
                 val (w, h) = displaySize()
-                ProbeRoles.fill(
-                    """{"screen":[$w,$h],""" +
-                        """"roots":${b.getString("tree") ?: "[]"}}""",
-                )
+                val tree = ProbeRoles.fill("""{"screen":[$w,$h],"roots":${b.getString("tree") ?: "[]"}}""")
+                // asked for by `smix tree` only: it costs a second walk of the windows
+                if (session.parameters["touch"]?.firstOrNull() != "1") tree
+                else ProbeTouch.fill(tree, TouchDelegates.areas(instrumentation.uiAutomation))
             }
         } catch (_: Exception) {
             // Separate from /probe on purpose: that route reports WHETHER
