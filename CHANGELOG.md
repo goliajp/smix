@@ -13,6 +13,12 @@ All notable changes to the `smix` workspace are documented here. The format foll
   from there. avdmanager is kept in that SDK even when
   `cmdline-tools/latest` links to a Homebrew install, which on its own
   checks images in Homebrew's SDK instead.
+- **A holder driving a device no scope covers is told so.** A device
+  command run with `SMIX_LEASE_HOLDER` set, on a device that is in no
+  scope, prints a note: the command neither renews that holder's scope
+  nor keeps the scope's next holder off the device, so the device should
+  be added with `smix lease scope`. `smix_lease::scope::check` returns
+  the same three answers (refused, covered, uncovered) to library users.
 
 ### Fixed
 
