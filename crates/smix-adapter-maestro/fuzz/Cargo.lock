@@ -220,9 +220,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.6.9"
+version = "4.6.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "844c5c0b65be192cb68d570cca1b21a6444431d24e39c084dc0336177015337c"
+checksum = "50066ca966813ca8957ee15361752f19424a8ff620dbe9c8993d9f99d99b04b3"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -230,9 +230,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.6.7"
+version = "4.6.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec0797fb7aeb1406c84efac526901f7ec3ead2124f946b494e72879d4b54704d"
+checksum = "a0ed97c96ef4efb3cc84e09fa388df4463e7cc3224ec38d7b1d9e45749333590"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1616,7 +1616,7 @@ checksum = "3244542535d5de959d90ec55d1b5ff0fd2bb7b1310223907d5f11932847f7b59"
 
 [[package]]
 name = "smix-adapter-maestro"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "async-trait",
  "clap",
@@ -1653,7 +1653,7 @@ dependencies = [
 
 [[package]]
 name = "smix-adb"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1665,7 +1665,7 @@ dependencies = [
 
 [[package]]
 name = "smix-ai-tier"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1675,7 +1675,7 @@ dependencies = [
 
 [[package]]
 name = "smix-annotate"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "ab_glyph",
  "image",
@@ -1686,7 +1686,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "async-trait",
  "png",
@@ -1705,7 +1705,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -1714,7 +1714,7 @@ dependencies = [
 
 [[package]]
 name = "smix-fixture"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1723,7 +1723,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "smix-input",
  "smix-screen",
@@ -1734,14 +1734,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-lease"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1751,7 +1751,7 @@ dependencies = [
 
 [[package]]
 name = "smix-metro-log"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "futures-util",
  "regex",
@@ -1764,7 +1764,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-client"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -1784,7 +1784,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1795,7 +1795,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1803,7 +1803,7 @@ dependencies = [
 
 [[package]]
 name = "smix-sdk"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1826,7 +1826,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "regex",
  "serde",
@@ -1835,7 +1835,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1843,14 +1843,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "libc",
  "serde",
@@ -1865,7 +1865,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "26.13.0"
+version = "26.14.0"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -1875,7 +1875,7 @@ dependencies = [
 
 [[package]]
 name = "smix-verbs"
-version = "26.13.0"
+version = "26.14.0"
 
 [[package]]
 name = "socket2"
