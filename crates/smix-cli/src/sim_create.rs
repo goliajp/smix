@@ -244,8 +244,8 @@ mod tests {
 
     #[test]
     fn avdmanager_is_kept_in_the_sdk_and_the_callers_options_stay() {
-        let sdk = Path::new("/sdk");
-        let ours = "-Dcom.android.sdkmanager.toolsdir=\"/sdk/cmdline-tools/smix\"";
+        let sdk = Path::new("/Users/me/sdk");
+        let ours = "-Dcom.android.sdkmanager.toolsdir=\"/Users/me/sdk/cmdline-tools/smix\"";
         assert_eq!(sdk_root_opts(sdk, None), ours);
         assert_eq!(sdk_root_opts(sdk, Some(" ")), ours);
         assert_eq!(sdk_root_opts(sdk, Some("-Xmx1g")), format!("-Xmx1g {ours}"));
