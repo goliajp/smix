@@ -6,7 +6,7 @@
 
 mod status;
 
-use smix_lease::scope::{DEFAULT_IDLE_SECS, Granted, Request, Scope, ScopeDir};
+use smix_lease::scope::{Check, DEFAULT_IDLE_SECS, Granted, Request, Scope, ScopeDir};
 use std::collections::BTreeSet;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
@@ -312,13 +312,36 @@ pub(crate) fn gate(cmd: &crate::Cmd) -> Option<ExitCode> {
     let devices = crate::command_devices::devices(cmd);
     let me = std::env::var(HOLDER_ENV).ok().filter(|s| !s.is_empty());
     let targets: BTreeSet<String> = devices.iter().flat_map(|d| identities(d)).collect();
-    let why = smix_lease::scope::refusal(
+    let check = smix_lease::scope::check(
         &ScopeDir::machine()?,
         &targets,
         &identities,
         me.as_deref(),
         &alive,
-    )?;
-    eprintln!("error: {why}");
-    Some(ExitCode::from(REFUSED))
+    );
+    match check {
+        Check::Refused(why) => {
+            eprintln!("error: {why}");
+            Some(ExitCode::from(REFUSED))
+        }
+        Check::Uncovered => {
+            if let (Some(me), false) = (me, devices.is_empty()) {
+                eprintln!("{}", uncovered_note(&me, &devices));
+            }
+            None
+        }
+        Check::Covered => None,
+    }
+}
+
+/// Said when a holder drives a device no scope covers: the command runs,
+/// but it renews nothing and keeps nobody else off the device.
+fn uncovered_note(me: &str, devices: &[String]) -> String {
+    format!(
+        "note: {HOLDER_ENV}={me}, but no scope covers {}: this command does not renew \
+         {me}'s scope, and a scope released to someone else does not keep them off it. \
+         Add it to the scope: smix lease scope <name> --device … (declaring replaces \
+         the device list and --require-holder, so give every device again)",
+        devices.join(", ")
+    )
 }

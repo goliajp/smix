@@ -301,32 +301,66 @@ pub fn refusal(
     me: Option<&str>,
     alive: &dyn Fn(&ProcIdentity) -> bool,
 ) -> Option<String> {
-    if targets.is_empty() {
-        return None;
+    match check(dir, targets, ids, me, alive) {
+        Check::Refused(why) => Some(why),
+        Check::Covered | Check::Uncovered => None,
     }
+}
+
+/// What [`check`] found for a command's devices.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Check {
+    /// A scope keeps the command off them; the text says whose.
+    Refused(String),
+    /// A scope covers one of them and lets the command run.
+    Covered,
+    /// No scope covers any of them, or the command names no device.
+    Uncovered,
+}
+
+/// [`refusal`], also telling apart a device no scope covers. A holder
+/// driving such a device has nothing that renews its own scope or keeps
+/// the next holder off that device.
+pub fn check(
+    dir: &ScopeDir,
+    targets: &std::collections::BTreeSet<String>,
+    ids: &dyn Fn(&str) -> std::collections::BTreeSet<String>,
+    me: Option<&str>,
+    alive: &dyn Fn(&ProcIdentity) -> bool,
+) -> Check {
+    if targets.is_empty() {
+        return Check::Uncovered;
+    }
+    let mut covered = false;
     for name in dir.names() {
         let read = dir.update(&name, |s| {
             let now = Utc::now();
             s.settle(now, alive);
             if !s.devices.iter().any(|m| !ids(m).is_disjoint(targets)) {
-                return None;
+                return Check::Uncovered;
             }
             match (&s.holder, me) {
-                (None, _) => s.require_holder.then(|| unheld_text(&name, me)),
+                (None, _) if s.require_holder => Check::Refused(unheld_text(&name, me)),
+                (None, _) => Check::Covered,
                 (Some(h), Some(me)) if h.holder == me => {
                     s.touch(me, now);
-                    None
+                    Check::Covered
                 }
-                (Some(h), _) => Some(refusal_text(&name, h, me)),
+                (Some(h), _) => Check::Refused(refusal_text(&name, h, me)),
             }
         });
         match read {
-            Ok(None) => {}
-            Ok(Some(why)) => return Some(why),
-            Err(e) => return Some(format!("scope {name} could not be read: {e}")),
+            Ok(Check::Uncovered) => {}
+            Ok(Check::Covered) => covered = true,
+            Ok(refused @ Check::Refused(_)) => return refused,
+            Err(e) => return Check::Refused(format!("scope {name} could not be read: {e}")),
         }
     }
-    None
+    if covered {
+        Check::Covered
+    } else {
+        Check::Uncovered
+    }
 }
 
 /// The environment variable a device command names its holder in.
@@ -628,6 +662,52 @@ mod tests {
             "outside it"
         );
         assert!(refusal(&dir, &Default::default(), &ids, Some("b"), &all_alive).is_none());
+    }
+
+    #[test]
+    fn a_device_no_scope_covers_is_told_apart_from_a_covered_one() {
+        let t = tempfile::tempdir().expect("tempdir");
+        let dir = ScopeDir::at(t.path());
+        let ids = |n: &str| std::collections::BTreeSet::from([n.to_string()]);
+        let inside = std::collections::BTreeSet::from(["dev-1".to_string()]);
+        let outside = std::collections::BTreeSet::from(["dev-2".to_string()]);
+        dir.update("s", |s| s.devices = vec!["dev-1".into()])
+            .unwrap();
+        assert_eq!(
+            check(&dir, &inside, &ids, Some("a"), &all_alive),
+            Check::Covered,
+            "free"
+        );
+        assert_eq!(
+            check(&dir, &outside, &ids, Some("a"), &all_alive),
+            Check::Uncovered
+        );
+        dir.update("s", |s| s.acquire(&ask("a", 1, true), Utc::now()))
+            .unwrap();
+        assert_eq!(
+            check(&dir, &inside, &ids, Some("a"), &all_alive),
+            Check::Covered,
+            "held"
+        );
+        assert_eq!(
+            check(&dir, &outside, &ids, Some("a"), &all_alive),
+            Check::Uncovered
+        );
+        let both: std::collections::BTreeSet<String> = inside.union(&outside).cloned().collect();
+        assert_eq!(
+            check(&dir, &both, &ids, Some("a"), &all_alive),
+            Check::Covered
+        );
+        assert!(matches!(
+            check(
+                &dir,
+                &outside.union(&inside).cloned().collect(),
+                &ids,
+                Some("b"),
+                &all_alive
+            ),
+            Check::Refused(_)
+        ));
     }
 
     #[test]
