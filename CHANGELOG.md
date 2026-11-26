@@ -19,6 +19,11 @@ All notable changes to the `smix` workspace are documented here. The format foll
   nor keeps the scope's next holder off the device, so the device should
   be added with `smix lease scope`. `smix_lease::scope::check` returns
   the same three answers (refused, covered, uncovered) to library users.
+- **`smix sim log <emulator>`** prints the emulator's logcat, narrowed with
+  `--app <package>` (by the app's uid), `--since 10m` or `--since 14:05`,
+  `--grep <regex>` and `--level W`; `--follow --timeout <seconds>` keeps
+  printing until the time runs out. Emulators only, and under the same scope
+  rules as every other device command.
 - **`local-network` permission** (`android.permission.ACCESS_LOCAL_NETWORK`,
   Android 17): `smix sim permission <device> <app> local-network grant|revoke`
   and `launchApp.permissions` / `setPermissions` in flows. On a simulator the
