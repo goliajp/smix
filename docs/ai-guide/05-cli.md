@@ -397,12 +397,18 @@ smix sim frontmost <DEVICE>                               # which app is in fron
 smix sim crashes <DEVICE> --app <BUNDLE>                  # what the device recorded
 ```
 
-Four things worth knowing before you rely on them:
+Things worth knowing before you rely on them:
 
 - **`wake` turns the screen on. It does not unlock.** A device with a passcode
   keeps its keyguard, and nothing here gets past it.
 - **`stay-awake` writes a device setting**, so it outlives the run that set it.
   `off` is how it goes back.
+- **`permission` on Android reads the app's state back.** `pm` can exit 0 and
+  change nothing — Android keeps a permission it granted on its own (flag
+  `REVOKE_WHEN_REQUESTED`, as with `local-network` for an app that targets a
+  release older than Android 17) — so the command fails with the device's own
+  line when the state did not change. `local-network` is
+  `ACCESS_LOCAL_NETWORK`, Android only.
 - **`crashes` exits 0 whether or not it finds anything.** A read that found
   nothing is not a failure; under `set -e` the other choice would kill a healthy
   run. With `--app` the last line says how many of the reports named that

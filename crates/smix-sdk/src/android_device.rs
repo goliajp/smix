@@ -574,28 +574,7 @@ impl DeviceControl for AndroidDeviceControl {
             // friendly; matches IosDeviceControl behavior for Storage on iOS).
             return Ok(());
         };
-        match action {
-            PermissionAction::Grant => self
-                .client
-                .pm_grant(serial, bundle_id, android_perm)
-                .await
-                .map_err(|e| adb_to_simctl_err(e, "shell pm grant")),
-            PermissionAction::Revoke => self
-                .client
-                .pm_revoke(serial, bundle_id, android_perm)
-                .await
-                .map_err(|e| adb_to_simctl_err(e, "shell pm revoke")),
-            PermissionAction::Reset => {
-                // Android has no direct `pm reset <perm>` per-package; reset
-                // = uninstall+reinstall OR `pm reset-permissions`. For
-                // cross-platform yaml `permissions: { camera: unset }`
-                // semantic, treat as revoke (closest match).
-                self.client
-                    .pm_revoke(serial, bundle_id, android_perm)
-                    .await
-                    .map_err(|e| adb_to_simctl_err(e, "shell pm revoke (Reset alias)"))
-            }
-        }
+        crate::android_permission::set(&self.client, serial, bundle_id, android_perm, action).await
     }
 
     // === Recording ===

@@ -19,9 +19,19 @@ All notable changes to the `smix` workspace are documented here. The format foll
   nor keeps the scope's next holder off the device, so the device should
   be added with `smix lease scope`. `smix_lease::scope::check` returns
   the same three answers (refused, covered, uncovered) to library users.
+- **`local-network` permission** (`android.permission.ACCESS_LOCAL_NETWORK`,
+  Android 17): `smix sim permission <device> <app> local-network grant|revoke`
+  and `launchApp.permissions` / `setPermissions` in flows. On a simulator the
+  command refuses it by name; a flow skips it there, as it does `storage`.
 
 ### Fixed
 
+- **An Android permission change is read back.** `pm grant` / `pm revoke`
+  can exit 0 without changing anything; on Android 17 revoking
+  `ACCESS_LOCAL_NETWORK` from an app the system granted it to (flag
+  `REVOKE_WHEN_REQUESTED`) is one such case. smix used to report it done.
+  It now reads the app's runtime state afterwards and fails with the
+  device's own line, through the new `DeviceControlError::NotApplied`.
 - **`smix runner up` on iOS says why xcodebuild exited early.** The
   runner test's own error lines come first, and when the app under test
   is not installed on the simulator it says so in one sentence. It used to

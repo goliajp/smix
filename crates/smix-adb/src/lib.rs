@@ -21,6 +21,7 @@ mod binary;
 mod crash;
 mod launch;
 mod launcher;
+mod runtime_permission;
 mod unlock;
 pub mod wait;
 
@@ -206,39 +207,6 @@ pub fn parse_devices_stdout(stdout: &str) -> Result<Vec<AdbDevice>, AdbError> {
 pub struct AdbClient {
     /// Override the `adb` binary path; defaults to [`adb_path`].
     binary: Option<String>,
-}
-
-/// Pull the granted names out of `dumpsys package`'s `runtime permissions:`
-/// section.
-///
-/// Each entry reads `<name>: granted=<bool>, flags=[...]`, indented under
-/// the heading. The section ends at the first line that does not parse as
-/// one, since dumpsys simply moves on to its next topic.
-fn parse_granted_runtime_permissions(dumpsys_stdout: &str) -> Vec<String> {
-    let mut granted = Vec::new();
-    let mut in_section = false;
-    for line in dumpsys_stdout.lines() {
-        let trimmed = line.trim();
-        if trimmed == "runtime permissions:" {
-            in_section = true;
-            continue;
-        }
-        if !in_section {
-            continue;
-        }
-        let Some((name, rest)) = trimmed.split_once(": ") else {
-            in_section = false;
-            continue;
-        };
-        if !name.contains('.') {
-            in_section = false;
-            continue;
-        }
-        if rest.starts_with("granted=true") {
-            granted.push(name.to_string());
-        }
-    }
-    granted
 }
 
 /// `adb reverse` argv: the device's port, then this machine's.
@@ -1195,18 +1163,6 @@ impl AdbClient {
         Ok(parse_crash_buffer(&stdout))
     }
 
-    /// `adb -s <serial> shell pm grant <pkg> <android.permission.X>`.
-    pub async fn pm_grant(
-        &self,
-        serial: &str,
-        package: &str,
-        permission: &str,
-    ) -> Result<(), AdbError> {
-        self.run_capture(Some(serial), "shell", &["pm", "grant", package, permission])
-            .await?;
-        Ok(())
-    }
-
     /// `adb -s <serial> shell pm clear <pkg>` — wipe the app's data.
     ///
     /// Measured: this also reverts the package's runtime permissions to
@@ -1225,38 +1181,6 @@ impl AdbClient {
                 detail: stdout.trim().to_string(),
             })
         }
-    }
-
-    /// The runtime permissions `<pkg>` currently holds.
-    ///
-    /// Read from `dumpsys package`, which is the only host-side view of
-    /// them: `pm reset-permissions` exists but reverts every app on the
-    /// device, including whatever the runner was granted to do its job.
-    pub async fn runtime_permissions_granted(
-        &self,
-        serial: &str,
-        package: &str,
-    ) -> Result<Vec<String>, AdbError> {
-        let (stdout, _) = self
-            .run_capture(Some(serial), "shell", &["dumpsys", "package", package])
-            .await?;
-        Ok(parse_granted_runtime_permissions(&stdout))
-    }
-
-    /// `adb -s <serial> shell pm revoke <pkg> <android.permission.X>`.
-    pub async fn pm_revoke(
-        &self,
-        serial: &str,
-        package: &str,
-        permission: &str,
-    ) -> Result<(), AdbError> {
-        self.run_capture(
-            Some(serial),
-            "shell",
-            &["pm", "revoke", package, permission],
-        )
-        .await?;
-        Ok(())
     }
 }
 
@@ -1305,6 +1229,7 @@ fn console_port(serial: &str) -> Result<u16, AdbError> {
 
 #[cfg(test)]
 mod tests {
+    use crate::runtime_permission::parse_granted_runtime_permissions;
     /// Verbatim from `dumpsys package` on an API 33 emulator, including the
     /// section that follows — the parser has to know where to stop, and a
     /// sample written by hand would not have taught it that.

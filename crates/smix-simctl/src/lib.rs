@@ -140,6 +140,15 @@ pub enum DeviceControlError {
         /// Parser-side detail.
         detail: String,
     },
+    /// The command exited 0, and reading the device back shows it did not
+    /// do what it was asked to.
+    #[error("{subcommand} exited 0, but {detail}")]
+    NotApplied {
+        /// The command, as a reader would retype it.
+        subcommand: String,
+        /// What the device says instead, in its own words.
+        detail: String,
+    },
     /// `xcrun simctl <sub>` did not complete within the deadline.
     #[error("{subcommand} timed out after {ms}ms")]
     Timeout {
