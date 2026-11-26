@@ -86,6 +86,7 @@ const NOT_DESTRUCTIVE: &[(&str, &str)] = &[
     ("Notification", "reads them, or opens one as a finger does"),
     ("Frontmost", "reads"),
     ("Crashes", "reads"),
+    ("Log", "reads"),
     (
         "Reverse",
         "opens a route from the device to this machine, and closes it by \

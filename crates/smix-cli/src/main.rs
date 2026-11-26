@@ -90,7 +90,9 @@ mod register_emulator;
 mod runner_down;
 mod runner_list;
 mod sim_create;
+mod sim_launch;
 mod sim_list;
+mod sim_log;
 mod sim_migrate;
 mod sim_repair;
 mod sim_shutdown;
@@ -100,7 +102,7 @@ mod script;
 
 use clap::{Parser, Subcommand};
 use smix_simctl::registry::{self, RegistryError, SimRegistry};
-use smix_simctl::{DeviceControlError, LaunchResult, SimctlClient};
+use smix_simctl::{DeviceControlError, SimctlClient};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -1849,6 +1851,8 @@ enum SimAction {
     Navigation(navigation_cmd::NavigationArgs),
     /// Make a new Android AVD from an installed system image (`--android`).
     Create(sim_create::CreateArgs),
+    /// Print an emulator's log (logcat), narrowed by app, time, text and priority, once or followed for a set time.
+    Log(sim_log::LogArgs),
     /// Allow destructive actions on a physical device, once.
     ///
     /// Simulators are never gated — they can be erased and rebuilt in a
@@ -2301,6 +2305,7 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         | SimAction::Lock(lock_cmd::LockArgs { device })
         | SimAction::Frontmost { device, .. }
         | SimAction::Crashes { device, .. }
+        | SimAction::Log(sim_log::LogArgs { device, .. })
         | SimAction::Openurl { device, .. }
         | SimAction::Appearance(appearance_cmd::AppearanceArgs { device, .. })
         | SimAction::Navigation(navigation_cmd::NavigationArgs { device, .. })
@@ -2378,6 +2383,8 @@ fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::De
             SimAction::Push(_) | SimAction::Notification(_) | SimAction::Lock(_) => POWERABLE,
             // the navbar overlays; a phone's own navigation is its owner's
             SimAction::Navigation(_) => &[Emulator],
+            // logcat; a phone's log is its owner's
+            SimAction::Log(_) => &[Emulator],
 
             SimAction::Erase { .. }
             | SimAction::Repair { .. }
@@ -2461,6 +2468,7 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         | SimAction::Push(_)
         | SimAction::Notification(_)
         | SimAction::Lock(_)
+        | SimAction::Log(_)
         | SimAction::Exec { .. } => None,
     }
 }
@@ -3232,50 +3240,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     child_env,
                     launch_args,
                 } => {
-                    let udid = resolve_device(&device)?;
-                    let kind = device_kind_of(&device);
-                    let pairs: Vec<(&str, &str)> = child_env
-                        .iter()
-                        .map(|(k, v)| (k.as_str(), v.as_str()))
-                        .collect();
-                    // `SIMCTL_CHILD_*` is a CoreSimulator facility: the
-                    // simulator's launchd hands the variables to the
-                    // child. `am start` has no equivalent -- an activity
-                    // inherits the system's environment and nothing
-                    // else -- so passing them would be dropping them
-                    // silently, which §9 #1 ③ is about.
-                    if !pairs.is_empty() && kind != smix_simctl::registry::DeviceKind::Simulator {
-                        return Err(CliError::Other(format!(
-                            "--child-env sets the launched process's environment, and only \
-                             a simulator's launchd can do that; {udid} is driven by \
-                             {}.\nInstead: pass the values as launch arguments, which \
-                             every backend carries.",
-                            if kind == smix_simctl::registry::DeviceKind::PhysicalIos {
-                                "devicectl"
-                            } else {
-                                "adb"
-                            }
-                        )));
-                    }
-                    let pid = if kind == smix_simctl::registry::DeviceKind::Simulator {
-                        let LaunchResult { pid } = simctl
-                            .launch_with_args_and_env(&udid, &bundle_id, &launch_args, &pairs)
-                            .await?;
-                        pid
-                    } else {
-                        device_control_for(kind, &udid)
-                            .launch_with_args(&udid, &bundle_id, &launch_args, None)
-                            .await
-                            .map_err(|e| CliError::Other(e.to_string()))?
-                    };
-                    // `am start` reports no pid and the Android backend
-                    // returns 0 for it. Printing "(pid 0)" reads as a
-                    // process number rather than as its absence.
-                    if pid == 0 {
-                        println!("launched: {bundle_id} on {udid}");
-                    } else {
-                        println!("launched: {bundle_id} on {udid} (pid {pid})");
-                    }
+                    sim_launch::run(&simctl, &device, &bundle_id, &child_env, &launch_args).await?
                 }
                 SimAction::Terminate(args) => terminate_cmd::run(args).await?,
                 SimAction::Install { device, app_path } => {
@@ -3419,6 +3384,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 SimAction::Appearance(args) => appearance_cmd::run(&simctl, args).await?,
                 SimAction::Navigation(args) => navigation_cmd::run(args).await?,
                 SimAction::Create(args) => sim_create::run(args).await?,
+                SimAction::Log(args) => sim_log::run(args).await?,
                 SimAction::AllowDestructive { device } => {
                     let path = registry_path()?;
                     match smix_simctl::registry::SimRegistry::allow_destructive(&path, &device) {
@@ -5020,6 +4986,7 @@ fn is_destructive(action: &SimAction) -> bool {
         | SimAction::StayAwake { .. }
         | SimAction::Frontmost { .. }
         | SimAction::Crashes { .. }
+        | SimAction::Log(_)
         // A permission grant is the app's, and revoking is the same
         // verb with the other argument. `privacy_reset_all` is the
         // destructive one, and it is not this.
@@ -6854,6 +6821,18 @@ mod tests {
                     image: d(),
                     profile: d(),
                     name: d(),
+                }),
+            ),
+            (
+                "log",
+                SimAction::Log(sim_log::LogArgs {
+                    device: d(),
+                    app: None,
+                    since: None,
+                    grep: None,
+                    level: None,
+                    follow: false,
+                    timeout: None,
                 }),
             ),
             (

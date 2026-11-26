@@ -2935,6 +2935,7 @@ smix sim permission <DEVICE> <BUNDLE> camera grant        # grant (allow) / revo
 smix sim lock <DEVICE>                                    # screen off, locked when it has a lock screen
 smix sim frontmost <DEVICE>                               # which app is in front
 smix sim crashes <DEVICE> --app <BUNDLE>                  # what the device recorded
+smix sim log <EMULATOR> --app <PKG> --since 10m --level W  # logcat, narrowed; --grep <regex>; --follow --timeout <s>
 ```
 
 Things worth knowing before you rely on them:
@@ -2949,6 +2950,10 @@ Things worth knowing before you rely on them:
   release older than Android 17) — so the command fails with the device's own
   line when the state did not change. `local-network` is
   `ACCESS_LOCAL_NETWORK`, Android only.
+- **`log` reads an emulator's logcat**, never a phone's. `--app` matches the
+  app's uid, so it isolates an installed app but not a system app that shares
+  uid 1000. `--since` takes a span back from now (`90s`, `10m`, `2h`) or a time
+  today (`14:05`); `--follow` needs `--timeout` and exits 0 when it runs out.
 - **`crashes` exits 0 whether or not it finds anything.** A read that found
   nothing is not a failure; under `set -e` the other choice would kill a healthy
   run. With `--app` the last line says how many of the reports named that
