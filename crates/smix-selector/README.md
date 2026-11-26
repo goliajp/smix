@@ -65,6 +65,7 @@ let pattern = Pattern::text("Login");
 let compiled = pattern.compile().expect("text compile is infallible");
 let node = A11yNode { /* ... */
 #    visible_bounds: None,
+#    touch_bounds: None,
 #    raw_type: "button".into(), element_type_raw: 9, role: Some(Role::Button),
 #    identifier: None, label: Some("Login".into()),
 #    title: None, placeholder_value: None, value: None, text: None,
