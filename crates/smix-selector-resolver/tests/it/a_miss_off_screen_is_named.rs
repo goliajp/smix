@@ -10,6 +10,7 @@ use smix_selector_resolver::{matched_off_screen, resolve_selector};
 fn node(id: &str, y: f64) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,

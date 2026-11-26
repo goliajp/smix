@@ -20,6 +20,7 @@ use smix_selector_resolver::resolve_selector;
 fn leaf(id: &str, label: &str, y: f64) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,

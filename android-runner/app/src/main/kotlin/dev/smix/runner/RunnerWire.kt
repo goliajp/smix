@@ -995,6 +995,7 @@ object TreeWire {
         hasFocus: Boolean,
         visible: Boolean,
         children: JSONArray,
+        touch: IntArray? = null,
     ): JSONObject {
         val obj = JSONObject()
         obj.put("rawType", rawType)
@@ -1011,6 +1012,13 @@ object TreeWire {
                 .put("w", w.coerceAtLeast(0))
                 .put("h", h.coerceAtLeast(0)),
         )
+        // where a TouchDelegate on another view sends touches to this one
+        touch?.let {
+            obj.put(
+                "touchBounds",
+                JSONObject().put("x", it[0]).put("y", it[1]).put("w", it[2] - it[0]).put("h", it[3] - it[1]),
+            )
+        }
         obj.put("enabled", enabled)
         obj.put("selected", selected)
         obj.put("hasFocus", hasFocus)
@@ -1172,14 +1180,4 @@ object WindowRules {
         val named = foreign.joinToString(", ") { "${it.pkg} (${kindOf(it.type)})" }
         return "Above ${app ?: "the app"}, and holding the focus: $named.$mine"
     }
-}
-
-// What a text field holds, as opposed to what is written on it. Since
-// API 26 an empty EditText reports its hint as the node's text and sets
-// isShowingHintText; read as content, a search field's "Search…" was
-// seven characters that /clear-text could not delete (AB1, 2026-09-25).
-// The hint is not lost: the tree carries it as placeholderValue.
-object FieldText {
-    fun held(text: CharSequence?, showingHint: Boolean): String =
-        if (showingHint) "" else text?.toString() ?: ""
 }

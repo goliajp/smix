@@ -245,7 +245,15 @@ impl HttpRunnerClient {
 
     /// The probe's tree, or `None` when it could not be had.
     async fn probe_tree(&self, app: Option<&str>) -> Option<A11yNode> {
-        let named = app.map(|a| format!("?app={a}")).unwrap_or_default();
+        let mut query: Vec<String> = app.map(|a| format!("app={a}")).into_iter().collect();
+        if self.probe_touch_areas {
+            query.push("touch=1".into());
+        }
+        let named = if query.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", query.join("&"))
+        };
         let payload = self
             .json_get::<serde_json::Value>(&format!("/probe/tree{named}"), None)
             .await

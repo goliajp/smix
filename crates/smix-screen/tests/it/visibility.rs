@@ -8,6 +8,7 @@ use smix_screen::{A11yNode, Rect, is_visible_enough, visible_area};
 fn mk(bounds: Rect) -> A11yNode {
     A11yNode {
         visible_bounds: None,
+        touch_bounds: None,
         hittable: None,
         window: None,
         unreadable_windows: None,
@@ -160,6 +161,35 @@ fn a11y_node_serde_round_trip_camel_case() {
 }
 
 #[test]
+fn a_touch_delegate_area_from_the_android_runner_reaches_the_node() {
+    // the shape RunnerWire.nodeJson writes for a checkbox a TouchDelegate widens
+    let json = r#"{
+        "rawType": "android.widget.CheckBox",
+        "identifier": "checkbox-device",
+        "bounds": { "x": 900, "y": 410, "w": 45, "h": 45 },
+        "touchBounds": { "x": 860, "y": 370, "w": 126, "h": 126 },
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+    }"#;
+    let node: A11yNode = serde_json::from_str(json).expect("parse");
+    let t = node.touch_bounds.expect("touchBounds read");
+    assert_eq!((t.x, t.y, t.w, t.h), (860.0, 370.0, 126.0, 126.0));
+    let out = serde_json::to_string(&node).expect("serialize");
+    assert!(out.contains(r#""touchBounds":{"#), "{out}");
+    let plain: A11yNode =
+        serde_json::from_str(&out.replace("touchBounds", "ignored")).expect("parse");
+    assert!(plain.touch_bounds.is_none());
+    assert!(
+        !serde_json::to_string(&plain)
+            .unwrap()
+            .contains("touchBounds")
+    );
+}
+
+#[test]
 fn a11y_node_serde_terminal_node_no_children_field() {
     // Forward-compat: a JSON terminal that omits "children" entirely should
     // still parse (default-derived to Vec::new()).
@@ -173,4 +203,25 @@ fn a11y_node_serde_terminal_node_no_children_field() {
     }"#;
     let node: A11yNode = serde_json::from_str(json).expect("parse");
     assert!(node.children.is_empty());
+}
+
+#[test]
+fn a_touch_delegate_area_the_runner_added_to_the_probe_tree_reaches_the_node() {
+    let json = r#"{"screen":[1080,2340],"roots":[{"id":1,"bounds":[0,0,1080,2340],"children":[
+        {"id":3,"resourceId":"delegate_check","className":"android.widget.CheckBox",
+         "bounds":[110,385,176,451],"touchBounds":[44,319,242,517],"children":[]},
+        {"id":4,"resourceId":"delegate_plain","bounds":[0,561,66,627],"children":[]}]}]}"#;
+    let root = smix_screen::probe_tree_to_a11y(json).expect("probe tree");
+    let find = |id: &str| {
+        fn walk<'a>(n: &'a A11yNode, id: &str) -> Option<&'a A11yNode> {
+            if n.identifier.as_deref() == Some(id) {
+                return Some(n);
+            }
+            n.children.iter().find_map(|c| walk(c, id))
+        }
+        walk(&root, id).cloned().expect("node")
+    };
+    let t = find("delegate_check").touch_bounds.expect("touchBounds");
+    assert_eq!((t.x, t.y, t.w, t.h), (44.0, 319.0, 198.0, 198.0));
+    assert!(find("delegate_plain").touch_bounds.is_none());
 }
