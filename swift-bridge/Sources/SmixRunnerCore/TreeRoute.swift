@@ -336,23 +336,6 @@ public enum TreeRoute {
     return out
   }
 
-  /// The frames of a window's children drawn after child `i` — what a
-  /// window shows over everything before it. Empty and off-screen ones
-  /// cover nothing.
-  static func drawnAfter(_ children: [A11ySnapshotData], _ i: Int, _ rootFrame: CGRect) -> [CGRect] {
-    children[(i + 1)...].map(\.frame).filter { f in
-      let shown = rootFrame.isNull || rootFrame.isEmpty ? f : f.intersection(rootFrame)
-      return !shown.isNull && shown.width > 0 && shown.height > 0
-    }
-  }
-
-  /// Whether a node's centre lies under any of `layers`.
-  static func covers(_ layers: [CGRect], _ frame: CGRect) -> Bool {
-    guard frame.width > 0, frame.height > 0 else { return false }
-    let centre = CGPoint(x: frame.midX, y: frame.midY)
-    return layers.contains { $0.contains(centre) }
-  }
-
   /// `visible` heuristic. Snapshots are dead frames so no live `isHittable`
   /// is available. Use frame ∩ the snapshot's own root frame as a cheap
   /// (~µs/node) proxy: empty frames map to false; a node entirely outside
