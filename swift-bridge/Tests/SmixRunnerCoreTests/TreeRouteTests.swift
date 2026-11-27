@@ -407,6 +407,63 @@ final class TreeRouteLayerTests: XCTestCase {
     XCTAssertNil(node(d, id: "form_row_3")?["hittable"])
   }
 
+  /// A full-window overlay holding one small badge, drawn after the
+  /// content: touches outside the badge reach the content.
+  private func badgeOverContent(badgeFrame: CGRect) -> TreeRoute.A11ySnapshotData {
+    let screen = CGRect(x: 0, y: 0, width: 402, height: 874)
+    let tab = mkData(type: 9, identifier: "tab_home",
+                     frame: CGRect(x: 20, y: 800, width: 80, height: 50))
+    let underBadge = mkData(type: 9, identifier: "under_badge",
+                            frame: CGRect(x: 12, y: 690, width: 100, height: 30))
+    let content = mkData(type: 1, frame: screen, children: [tab, underBadge])
+    let badge = mkData(type: 9, identifier: "badge", frame: badgeFrame)
+    let host = mkData(type: 1, frame: screen, children: [badge])
+    let window = mkData(type: 4, frame: screen, children: [content, host])
+    return mkData(type: 2, frame: screen, children: [window])
+  }
+
+  func test_a_full_window_overlay_covers_only_what_it_holds() {
+    var truncated = false
+    let screen = CGRect(x: 0, y: 0, width: 402, height: 874)
+    let d = TreeRoute.nodeToDictForTesting(
+      badgeOverContent(badgeFrame: CGRect(x: 12, y: 694, width: 101, height: 23)),
+      rootFrame: screen, truncated: &truncated)
+    XCTAssertNil(node(d, id: "tab_home")?["hittable"],
+                 "the overlay draws nothing over the tab bar")
+    XCTAssertEqual(node(d, id: "under_badge")?["hittable"] as? Bool, false,
+                   "the badge itself still covers what is under it")
+  }
+
+  func test_a_full_window_layer_with_nothing_inside_covers_everything() {
+    var truncated = false
+    let screen = CGRect(x: 0, y: 0, width: 402, height: 874)
+    let row = mkData(type: 75, identifier: "row", frame: CGRect(x: 16, y: 300, width: 370, height: 52))
+    let content = mkData(type: 1, frame: screen, children: [row])
+    let dimming = mkData(type: 1, frame: screen)
+    let window = mkData(type: 4, frame: screen, children: [content, dimming])
+    let d = TreeRoute.nodeToDictForTesting(
+      mkData(type: 2, frame: screen, children: [window]), rootFrame: screen, truncated: &truncated)
+    XCTAssertEqual(node(d, id: "row")?["hittable"] as? Bool, false)
+  }
+
+  func test_a_sheet_smaller_than_the_window_covers_its_whole_frame() {
+    var truncated = false
+    let screen = CGRect(x: 0, y: 0, width: 402, height: 874)
+    // the sheet's rows sit well below the form row; the sheet's own frame
+    // still reaches it
+    let formRow = mkData(type: 75, identifier: "form_row",
+                         frame: CGRect(x: 16, y: 200, width: 370, height: 52))
+    let sheetRow = mkData(type: 75, identifier: "sheet_row",
+                          frame: CGRect(x: 16, y: 600, width: 370, height: 52))
+    let form = mkData(type: 1, frame: screen, children: [formRow])
+    let sheet = mkData(type: 1, frame: CGRect(x: 0, y: 60, width: 402, height: 814), children: [sheetRow])
+    let host = mkData(type: 1, frame: screen, children: [sheet])
+    let window = mkData(type: 4, frame: screen, children: [form, host])
+    let d = TreeRoute.nodeToDictForTesting(
+      mkData(type: 2, frame: screen, children: [window]), rootFrame: screen, truncated: &truncated)
+    XCTAssertEqual(node(d, id: "form_row")?["hittable"] as? Bool, false)
+  }
+
   func test_a_window_with_one_child_covers_nothing() {
     var truncated = false
     let screen = CGRect(x: 0, y: 0, width: 402, height: 874)

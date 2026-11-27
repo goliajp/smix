@@ -37,6 +37,16 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Fixed
 
+- **On iOS a full-window overlay no longer marks the whole app as not
+  hittable.** An app that keeps a screen-sized view over its content for a
+  badge or a floating button had every element in `smix tree --json` at
+  `hittable: false`, because the overlay's frame was taken as the area it
+  covers. A screen-sized layer that holds other elements now covers only
+  where those elements are; a smaller layer (a sheet) and a screen-sized one
+  with nothing inside (a dimming view) still cover their whole frame. On
+  iOS `hittable` is stated only when something may cover the element:
+  `false` means a layer or a modal is drawn over its centre, and an absent
+  field means nothing is.
 - **An Android permission change is read back.** `pm grant` / `pm revoke`
   can exit 0 without changing anything; on Android 17 revoking
   `ACCESS_LOCAL_NETWORK` from an app the system granted it to (flag
